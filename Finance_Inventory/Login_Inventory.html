@@ -705,7 +705,7 @@
 
   /* top bar, same as the landing page */
   .site-nav{ position:sticky; top:0; z-index:40; background:rgba(7,17,26,.9); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid var(--border); }
-  .site-nav-in{ display:flex; align-items:center; justify-content:space-between; gap:16px; height:64px; max-width:1200px; margin:0 auto; padding:0 clamp(16px,3vw,28px); }
+  .site-nav-in{ display:flex; align-items:center; justify-content:space-between; gap:16px; height:72px; max-width:1360px; margin:0 auto; padding:0 clamp(16px,3vw,28px); }
   .site-brand{ display:flex; align-items:center; gap:11px; color:var(--text); text-decoration:none; }
   .site-brand img{ width:36px; height:36px; border-radius:9px; }
   .site-brand b{ display:block; font-family:'Oswald',sans-serif; font-weight:600; font-size:17px; letter-spacing:.8px; text-transform:uppercase; line-height:1; }
@@ -753,9 +753,9 @@
   .shell .wrap.wide{ flex-basis:532px; }
   /* big desktop screens: scale the whole page (bar, card, footer) up together so it is not a small card in a sea of empty space */
   .shell{ align-items:center; }
-  @media (min-width:1400px){ .site-nav, .shell, .site-foot{ zoom:1.2; } }
-  @media (min-width:1700px){ .site-nav, .shell, .site-foot{ zoom:1.4; } }
-  @media (min-width:2200px){ .site-nav, .shell, .site-foot{ zoom:1.75; } }
+  @media (min-width:1400px){ .site-nav, .shell, .site-foot{ zoom:1.08; } }
+  @media (min-width:1700px){ .site-nav, .shell, .site-foot{ zoom:1.15; } }
+  @media (min-width:2200px){ .site-nav, .shell, .site-foot{ zoom:1.45; } }
   @media (max-width:640px){
     .site-links a:not(.cta){ display:none; }
     .site-brand small{ display:none; }
@@ -777,7 +777,7 @@
     <div class="site-nav-in">
       <a href="LandingPage_Inventory-1.html" class="site-brand" aria-label="Triple E Metal Products home">
         <img src="favicon.svg" alt="" width="36" height="36">
-        <div><b>Triple E Metal</b><small>Secure Sign In</small></div>
+        <div><b>Triple E Metal</b></div>
       </a>
       <nav class="site-links" aria-label="Primary">
         <a href="Shop_Info.html">Help</a>
@@ -806,7 +806,6 @@
       <div class="screen active" id="loginScreen">
         <div class="brand-mark">
           <div class="mark">3<span class="cursive-e">E</span></div>
-          <span class="eyebrow live"><i></i>Secure sign in</span>
         </div>
         <h1>Triple E Metal Products</h1>
         <p class="sub">Sign in to your account</p>
