@@ -1060,7 +1060,7 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       } catch (err) { console.warn('[quotes] last-quote history skipped:', err.message); }   // the list must never fail because of a hint
     }
     // convertedOrder tells the Sales report that this quotation's money belongs to an order it already lists (§10)
-    res.json(rows.map((q) => ({ ...quoteJson(q), customer: q.contact_name, phone: q.phone, email: q.customer_email,
+    res.json(rows.map((q) => ({ ...quoteJson(q), productionOverride: q.production_override_by ? { by: q.production_override_name, note: q.production_override_note } : undefined, customer: q.contact_name, phone: q.phone, email: q.customer_email,
       handledBy: q.handled_by_name || undefined, convertedOrder: q.converted_order_no || undefined,
       lastQuote: (q.status === 'pending_approval' && lastOf(q)) || undefined })));
   }));
@@ -1171,8 +1171,11 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       if (!(await client.query(`SELECT 1 FROM job_orders WHERE quote_id = $1 AND status <> 'draft'`, [cur.quote_id])).rowCount)
         throw bad('status', 'Issue the raw materials and finishing supplies for this custom item first (Job order), then mark it ready');
     }
-    if (next === 'preparing' && cur.pay_method === 'Xendit' && round2(+cur.quoted_amount - (+cur.paid_amount || 0)) > 0.004)
-      throw bad('payment', 'The customer chose to pay online and has not paid yet. Wait for the Xendit payment, or record a payment received another way first');
+    if (next === 'preparing') {
+      const pt = app.locals.paymentTerms;
+      if (!pt) throw bad('payment', 'Payment checks are unavailable. Production cannot start.');
+      await pt.assertProduction(client, cur);
+    }
     if (next === 'completed') {
       if (receivedBy.length < 2 || receivedBy.length > 80) throw bad('receivedBy', `Enter the name of the person who ${cur.fulfillment === 'Delivery' ? 'received' : 'picked up'} the order (2 to 80 characters)`);
       const owed = round2(+cur.quoted_amount - (+cur.paid_amount || 0));

@@ -68,9 +68,10 @@ seed({ contact_name: 'Dan Reyes', customer_id: 9, phone: '09201234567', product_
   quantity: '260 linear m', specs: { material: 'GI', thickness: '0.4 mm', finish: 'Pre-painted' }, needed_by: '2026-11-15',
   fulfillment: 'Delivery', area: 'Brgy. San Isidro, Cabanatuan, Nueva Ecija', status: 'pending_approval', proposed_amount: 108000,
   approval_reason: 'Roofing at 0.4 mm below the usual 0.45 mm order size', source: 'shop' });
+// This fixture is an actionable quote in quote-chain.test.js; its validity must move with the test date.
 seed({ contact_name: 'Eva Son', customer_id: 10, phone: '09211234567', product_sku: 'ANG-0203', product_name: 'Angle Bar 2×2',
   quantity: '20 pcs', specs: { material: 'Carbon steel', size: '2 × 2 in', thickness: '3 mm' }, needed_by: '2026-11-05',
-  status: 'quoted', quoted_amount: 14200, lead_time: '3-5 working days', valid_until: '2026-10-26', reply_note: 'Price includes cutting to 6 m.', source: 'shop' });
+  status: 'quoted', quoted_amount: 14200, lead_time: '3-5 working days', valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), reply_note: 'Price includes cutting to 6 m.', source: 'shop' });
 seed({ contact_name: 'Ferdinand Ope', customer_id: 11, phone: '09221234567', product_sku: 'SSB-0010', product_name: 'Stainless Flat Bar 25×3',
   quantity: '120 kg', specs: { material: 'Stainless Steel 304' }, needed_by: '2026-10-30', status: 'quoted', quoted_amount: 23400,
   lead_time: 'In stock', valid_until: '2026-10-22', source: 'pos' });

@@ -617,6 +617,14 @@ module.exports = function mountQuoteAutomation({ app, pool, auth, wrap, tx, audi
     if (!['ordered', 'dismissed', 'open', 'received'].includes(st)) throw bad('status', 'Mark it ordered, received, dismissed or open');
     if (note.length > 200) throw bad('note', 'Keep the note within 200 characters');
     const r = await tx(async (client) => {
+      const suggestion = (await client.query('SELECT * FROM purchase_suggestions WHERE suggestion_id=$1', [id])).rows[0];
+      if (!suggestion) throw bad('id', 'Purchase suggestion not found');
+      if (suggestion.quote_id && ['ordered','received'].includes(st)) {
+        const q = (await client.query('SELECT * FROM quote_requests WHERE quote_id=$1 FOR UPDATE', [suggestion.quote_id])).rows[0];
+        const pt = app.locals.paymentTerms;
+        if (!q || !pt) throw bad('payment', 'Quote payment checks are unavailable. Material purchasing is blocked.');
+        await pt.assertProduction(client, q);
+      }
       const s = (await client.query(`UPDATE purchase_suggestions SET status = $2, note = COALESCE(NULLIF($3, ''), note), decided_by = $4, decided_at = now() WHERE suggestion_id = $1 RETURNING *`,
         [id, st, note, req.user.id])).rows[0];
       if (!s) throw bad('id', 'Purchase suggestion not found');

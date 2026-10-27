@@ -10,7 +10,7 @@
      • customer  on the due date, and again every BALANCE_REPEAT_DAYS (default 3) days while it stays unpaid
      • Finance   the day it becomes overdue, and again every 7 days — so someone decides what to do
 
-   What it will NOT do: cancel the order or refund the down payment by itself. The customer has already paid real money,
+   After BALANCE_GRACE_DAYS (default 7) overdue days, orders are put On Hold. It will not cancel or refund by itself. The customer has already paid real money,
    so cancelling means a refund / forfeiture decision. That stays with Finance, who sees the overdue list below.
    Orders Finance granted a credit exception on are skipped: the balance was agreed to be paid later.
 
@@ -18,8 +18,8 @@
      GET /api/shop/balance-due        (customer) due date of this customer's own partly paid orders
      GET /api/finance/balance-overdue (finance)  every partly paid order with its due date, overdue first
 
-   .env (all optional):  BALANCE_DUE_DAYS=7  BALANCE_REMIND_BEFORE_DAYS=2  BALANCE_REPEAT_DAYS=3  BALANCE_CHECK_MINUTES=60
-   Mounted in server.js after payment-terms (it needs the ledger columns that module creates). No schema change. */
+   .env (all optional):  BALANCE_GRACE_DAYS=7  BALANCE_DUE_DAYS=7  BALANCE_REMIND_BEFORE_DAYS=2  BALANCE_REPEAT_DAYS=3  BALANCE_CHECK_MINUTES=60
+   Mounted in server.js after payment-terms (it needs the ledger columns that module creates). Policy columns are prepared by payment-terms.js. */
 const mailer = require('./mailer');
 const sms = require('./sms');
 const { escapeHtml: esc } = mailer;
@@ -39,12 +39,12 @@ module.exports = function makeBalanceReminders({ app, pool, auth, wrap }) {
   const OPEN_SQL = `
     SELECT o.order_id, o.order_no, o.customer_id, o.total, o.paid_amount, o.status,
            u.email, u.full_name, u.phone AS account_phone,
-           f.first_paid + make_interval(days => $1::int) AS due_at
+           COALESCE(o.balance_due_at, f.first_paid + make_interval(days => $1::int)) AS due_at
       FROM orders o
       JOIN (SELECT order_id, MIN(created_at) AS first_paid
               FROM payments WHERE order_id IS NOT NULL AND direction = 'in' GROUP BY order_id) f ON f.order_id = o.order_id
       JOIN users u ON u.user_id = o.customer_id
-     WHERE o.payment_state = 'partially_paid'
+     WHERE o.paid_amount > 0
        AND o.total - o.paid_amount > 0.004
        AND o.status NOT IN ('Cancelled', 'Returned', 'Delivered', 'Picked Up')
        AND o.credit_exception_by IS NULL`;
@@ -80,11 +80,25 @@ module.exports = function makeBalanceReminders({ app, pool, auth, wrap }) {
 
   let running = false;
   async function check() {
-    if (running || !nc()) return { checked: false };
+    if (running) return { checked: false };
     running = true;
     let sent = 0;
     try {
+      const pt = app.locals.paymentTerms;
+      if (!pt) return { checked: false };
+      await pt.ready;
+      // Include held orders even after final payment, so a restart can recover and release their hold.
+      const candidates = (await pool.query("SELECT order_no FROM orders WHERE status = 'On Hold' OR (paid_amount > 0 AND total - paid_amount > 0.004 AND status NOT IN ('Cancelled','Returned','Delivered','Picked Up','Out for Delivery'))")).rows;
+      for (const c of candidates) {
+        const held = await pt.holdOverdue(c.order_no);
+        if (held && nc()) sent += await nc().notifyRole('finance', { category: 'payment', severity: 'critical',
+          title: 'On Hold — balance unpaid', body: `${held.no}: ${peso(held.balance)} remains unpaid after the grace period. Choose extend, grant a credit exception, or cancel and decide the down payment.`,
+          link: 'Finance_Inventory.html#payment-terms', entityType: 'order', entityId: held.no,
+          dedupeKey: `balance_hold:${held.no}:${held.due}`,
+          meta: { actions: ['extend','credit-exception','cancel'] } });
+      }
       const { rows } = await pool.query(OPEN_SQL, [DUE_DAYS]);
+      if (!nc()) return { checked: true, orders: rows.length, sent };
       const now = Date.now();
       for (const r of rows) {
         const v = view(r, now), no = r.order_no, owe = peso(v.balance), by = day(v.dueAt);
@@ -95,7 +109,7 @@ module.exports = function makeBalanceReminders({ app, pool, auth, wrap }) {
           const added = await nc().notifyUser(r.customer_id, { category: 'payment', severity: 'warn', link, entityType: 'order', entityId: no,
             title: first ? 'Your balance is due' : 'Your balance is overdue',
             body: `Order ${no}: ${owe} was due on ${by}. Please settle it so we can release your order. If you already paid, ignore this.`,
-            dedupeKey: `bal_over:${no}:${n}` }, 'customer');
+            dedupeKey: `bal_over:${no}:${v.dueAt}:${n}` }, 'customer');
           sent += added;
           if (added) await deliver(r, v, { subject: first ? `Your balance for order ${no} is due` : `Your balance for order ${no} is overdue`,
             line: `The remaining balance on your order was due on ${by}. Please settle it so we can release your order.`,
@@ -104,13 +118,13 @@ module.exports = function makeBalanceReminders({ app, pool, auth, wrap }) {
             link: 'Finance_Inventory.html#sales', entityType: 'order', entityId: no,
             title: 'Order balance overdue',
             body: `${no} is ${v.overdueDays} day${v.overdueDays === 1 ? '' : 's'} past its due date (${by}); ${owe} still unpaid of ${peso(v.total)}. Chase the customer, grant a credit exception, or cancel and settle the down payment.`,
-            dedupeKey: `balfin:${no}:${Math.floor(v.overdueDays / 7)}` });
+            dedupeKey: `balfin:${no}:${v.dueAt}:${Math.floor(v.overdueDays / 7)}` });
         } else if (v.daysLeft <= BEFORE) {
           const when = v.daysLeft <= 1 ? 'tomorrow' : 'in ' + v.daysLeft + ' days';
           const added = await nc().notifyUser(r.customer_id, { category: 'payment', severity: 'info', link, entityType: 'order', entityId: no,
             title: 'Balance due soon',
             body: `Order ${no}: ${owe} is due on ${by} (${when}).`,
-            dedupeKey: `bal_soon:${no}` }, 'customer');
+            dedupeKey: `bal_soon:${no}:${v.dueAt}` }, 'customer');
           sent += added;
           if (added) await deliver(r, v, { subject: `Balance for order ${no} is due ${when}`,
             line: `The remaining balance on your order is due on ${by} (${when}).`,
@@ -142,7 +156,7 @@ module.exports = function makeBalanceReminders({ app, pool, auth, wrap }) {
     const ids = acct ? acct.user_id : null;
     const orders = (await pool.query(
       `SELECT o.order_no, o.total, o.paid_amount, o.status, o.payment_state, o.terms_key, o.terms_percent, o.terms_condition,
-              o.credit_exception_by, o.created_at,
+              o.credit_exception_by, o.created_at, o.balance_due_at,
               (SELECT MIN(p.created_at) FROM payments p WHERE p.order_id = o.order_id AND p.direction = 'in') AS first_paid
          FROM orders o
         WHERE o.status NOT IN ('Cancelled','Returned')
@@ -156,7 +170,7 @@ module.exports = function makeBalanceReminders({ app, pool, auth, wrap }) {
     const now = Date.now(), r2 = (n) => Math.round(n * 100) / 100;
     const open = orders.filter((o) => +o.total - +o.paid_amount > 0.004 && +o.paid_amount > 0 && !['Delivered', 'Picked Up'].includes(o.status) || (o.payment_state === 'partially_paid' && +o.total - +o.paid_amount > 0.004))
       .map((o) => {
-        const due = o.first_paid ? new Date(o.first_paid).getTime() + DUE_DAYS * DAY : null;
+        const due = o.balance_due_at ? new Date(o.balance_due_at).getTime() : o.first_paid ? new Date(o.first_paid).getTime() + DUE_DAYS * DAY : null;
         return { kind: 'order', no: o.order_no, total: +o.total, paid: +o.paid_amount, balance: r2(+o.total - +o.paid_amount), status: o.status,
           termsKey: o.terms_key || 'full', termsPercent: o.terms_percent == null ? null : +o.terms_percent, condition: o.terms_condition || null,
           dueAt: due, daysLeft: due ? Math.ceil((due - now) / DAY) : null, overdueDays: due && now >= due ? Math.floor((now - due) / DAY) : 0,
@@ -179,7 +193,7 @@ module.exports = function makeBalanceReminders({ app, pool, auth, wrap }) {
   app.get('/api/finance/balance-overdue', auth('finance'), wrap(async (req, res) => {
     const { rows } = await pool.query(OPEN_SQL + ' ORDER BY due_at', [DUE_DAYS]);
     const list = rows.map((r) => view(r));
-    res.json({ dueDays: DUE_DAYS, overdue: list.filter((x) => x.overdueDays > 0 || x.daysLeft <= 0), upcoming: list.filter((x) => x.overdueDays === 0 && x.daysLeft > 0) });
+    res.json({ dueDays: DUE_DAYS, graceDays: app.locals.paymentTerms.balanceSettings.graceDays, overdue: list.filter((x) => x.overdueDays > 0 || x.daysLeft <= 0), upcoming: list.filter((x) => x.overdueDays === 0 && x.daysLeft > 0) });
   }));
 
   const timer = setInterval(check, EVERY); timer.unref && timer.unref();

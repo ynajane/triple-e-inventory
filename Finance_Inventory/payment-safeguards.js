@@ -1,0 +1,91 @@
+/* Finance's explicit balance/production decisions. Server enforces role, locks and approvals. */
+(function () {
+  'use strict';
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  async function api(path, body) {
+    const r = await fetch('/api' + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type':'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const data = await r.json(); if (!r.ok) throw new Error(Object.values(data.fields || {}).join('; ') || data.error || 'Request failed'); return data;
+  }
+  function dialog(title, fields, submit, options = {}) {
+    const d = document.createElement('dialog');
+    d.style.cssText = 'width:min(560px,95vw);background:var(--panel,#fff);color:var(--text,#16202b);border:1px solid #aaa;border-radius:10px;padding:24px';
+    d.innerHTML = '<form><h2>' + esc(title) + '</h2>' + fields + '<label style="display:block;margin:12px 0">Finance note<textarea name="note" required minlength="5" maxlength="300" style="display:block;width:100%"></textarea></label><p role="alert" style="color:#c0392b"></p><button type="button" data-close>Back</button> <button type="submit">Save decision</button></form>';
+    const note = d.querySelector('[name=note]');
+    note.required = options.noteRequired !== false;
+    note.minLength = note.required ? 5 : 0;
+    if (options.setup) options.setup(d);
+    document.body.append(d); d.showModal();
+    return new Promise((resolve) => {
+      d.addEventListener('close', () => { d.remove(); resolve(null); });
+      d.querySelector('[data-close]').onclick = () => d.close();
+      d.querySelector('form').onsubmit = async (e) => {
+        e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); const button = e.submitter; button.disabled = true;
+        try { const result = await submit(b); resolve(result); d.close(); }
+        catch (err) { d.querySelector('[role=alert]').textContent = err.message; button.disabled = false; }
+      };
+    });
+  }
+  window.PaymentSafeguards = {
+    async cancel(no, approve) {
+      const policy = await api('/finance/orders/' + encodeURIComponent(no) + '/cancellation-policy');
+      const partial = policy.madeToOrder && policy.paid > 0;
+      return dialog('Cancel ' + no,
+        (approve ? '' : '<label>Reason<select name="reasonCode" required><option value="">Choose reason</option><option value="changed_mind">Changed mind</option><option value="balance_unpaid">Balance unpaid after grace period</option><option value="other">Other</option></select></label>') +
+        (partial ? '<label data-deposit hidden style="margin:12px 0">Made-to-order down payment<select name="depositDisposition"><option value="">Choose disposition</option><option value="refund">Refund</option><option value="forfeit">Forfeit down payment</option></select><span>Any refundable amount is queued for Finance settlement.</span></label>' : ''),
+        (b) => api('/orders/' + encodeURIComponent(no) + (approve ? '/cancel-decision' : '/cancel'), { ...b, approve: !!approve, reason: b.note }), {
+          noteRequired: !approve,
+          setup(d) {
+            if (!partial) return;
+            const select = d.querySelector('[name=reasonCode]'), label = d.querySelector('[data-deposit]'), note = d.querySelector('[name=note]');
+            const update = () => {
+              const needed = ['changed_mind','balance_unpaid'].includes(select ? select.value : policy.requestedReason);
+              label.hidden = !needed;
+              label.querySelector('select').required = needed;
+              note.required = !approve || needed;
+              note.minLength = note.required ? 5 : 0;
+            };
+            if (select) select.addEventListener('change', update);
+            update();
+          }
+        });
+    }
+  };
+  let loading = false;
+  async function render() {
+    const page = document.getElementById('payment-terms');
+    if (!page || !page.classList.contains('active-page') || loading) return;
+    loading = true;
+    let box = document.getElementById('balanceSafeguards');
+    if (!box) { box = document.createElement('section'); box.id = 'balanceSafeguards'; box.className = 'panel'; page.append(box); }
+    try {
+      const [data, debt, quotes] = await Promise.all([api('/finance/balance-overdue'), api('/finance/receivables'), api('/finance/quotes')]);
+      const orders = debt.orders;
+      box.innerHTML = '<h3>Balance decisions</h3><p>Overdue grace period: ' + Number(data.graceDays) + ' days. Single Finance credit limit: ₱' + Number(debt.creditLimit).toLocaleString() + '.</p>' +
+        orders.map((o) => '<div style="padding:12px;border-top:1px solid #ccc"><b>' + esc(o.no) + '</b> — ' + esc(o.status) + ' — balance ₱' + Number(o.outstanding).toLocaleString() +
+          '<div>' + (o.creditPending ? 'Pending second approval: ' + esc(o.creditPending.note) + '<button data-act="approve">Approve as second Finance user</button>' : '<button data-act="extend">Extend due date</button> <button data-act="grant">Grant credit exception</button>') +
+          ' <button data-act="revoke">Revoke credit request / exception</button>' + (o.status === 'On Hold' ? ' <button data-act="cancel">Cancel</button>' : '') + '</div></div>').join('');
+      const production = document.createElement('div');
+      production.innerHTML = '<h3>Production payment overrides</h3>' + quotes.filter((q) => ['accepted','preparing'].includes(q.status) && !q.convertedOrder).map((q) => '<p>' + esc(q.id) + (q.productionOverride ? ' — override by ' + esc(q.productionOverride.by) + ': ' + esc(q.productionOverride.note) : '') + ' <button data-production-override="' + esc(q.id) + '" data-action="' + (q.productionOverride ? 'revoke' : 'grant') + '">' + (q.productionOverride ? 'Revoke override' : 'Record Finance override') + '</button></p>').join('');
+      box.append(production);
+      [...box.querySelectorAll('[data-act]')].forEach((button) => {
+        const row = button.parentElement.parentElement, index = [...box.children].indexOf(row) - 2, o = orders[index];
+        button.onclick = async () => {
+          const action = button.dataset.act;
+          if (action === 'cancel') await window.PaymentSafeguards.cancel(o.no, false);
+          else await dialog(o.no + ' — ' + action, action === 'extend' ? '<label>New due date<input type="datetime-local" name="date" required></label>' : '<p>Balances above the limit require a second signed-in Finance user. Your account identifies the approver.</p>', (b) => api('/finance/orders/' + encodeURIComponent(o.no) + (action === 'extend' ? '/balance-extension' : '/credit-exception'), action === 'extend' ? { note:b.note, dueAt:new Date(b.date).toISOString() } : { note:b.note, action }));
+          loading = false; render();
+        };
+      });
+    } catch (err) { box.textContent = err.message; }
+    finally { loading = false; }
+  }
+  document.addEventListener('page:change', render);
+  const target = document.getElementById('payment-terms');
+  if (target) new MutationObserver(render).observe(target, { attributes: true, attributeFilter: ['class'] });
+  setInterval(render, 15000); render();
+  // The quote detail already identifies the selected quote; Finance can authorize an unpaid job explicitly.
+  document.addEventListener('click', (e) => {
+    const button = e.target.closest('[data-production-override]'); if (!button) return;
+    dialog('Production override — ' + button.dataset.productionOverride, '<p>Your Finance account name and reason are recorded in the audit log. This permits fabrication and material purchasing before payment.</p>', (b) => api('/finance/quotes/' + encodeURIComponent(button.dataset.productionOverride) + '/production-override', { ...b, action: button.dataset.action || 'grant' }));
+  });
+})();

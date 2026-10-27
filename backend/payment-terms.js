@@ -225,7 +225,7 @@ module.exports = function mountPaymentTerms({ app, pool, auth, wrap, tx, audit, 
        WHERE q.quoted_amount IS NOT NULL AND q.converted_order_id IS NULL
          AND q.status IN ('accepted','preparing','ready')`, 'quote receivables view');
   }
-  const ready = ensureSchema().catch(() => {});
+  const ready = ensureSchema().then(() => pool.query(require('node:fs').readFileSync(require('node:path').join(__dirname, 'db/027_balance_safeguards.sql'), 'utf8')));
 
   // Is the database keeping paid_amount in step for us? Checked once, after the schema pass; if the trigger is
   // missing (a restricted database user) every write through this module refuses to run rather than keep a second,
@@ -409,6 +409,7 @@ module.exports = function mountPaymentTerms({ app, pool, auth, wrap, tx, audit, 
       // it is in the account, so it is recorded as it is and Finance refunds the difference.
       if (cents(amount) > cents(balance) && !spec.allowOver) throw bad('amount', `The balance is only ${peso(balance)}`);
     } else {
+      if (kind === 'order' && cents(amount) > cents(Math.max(0, paid - Number(cur.forfeited_amount || 0)))) throw bad('amount', 'This refund would spend the forfeited down payment');
       if (cents(amount) > cents(paid)) throw bad('amount', `Only ${peso(paid)} was received on this ${P.label.toLowerCase()}, so that is the most that can be refunded`);
       // One payment can be refunded at most once, in parts: what was already given back for it counts against it.
       const original = (await client.query('SELECT payment_id, amount FROM payments WHERE payment_id = $1', [Number(spec.reversedOf)])).rows[0];
@@ -788,6 +789,7 @@ module.exports = function mountPaymentTerms({ app, pool, auth, wrap, tx, audit, 
      redirect, a chosen method or a typed reference: only the ledger and the named credit exception Finance granted. */
   function releaseDecision(o, { action = 'confirm', role = 'cashier', verified = false } = {}) {
     const m = orderMoney(o);
+    if (o && o.status === 'On Hold') return { ok: false, field: 'payment', money: m, reason: 'On Hold — balance unpaid. Finance must extend the due date, grant a credit exception, or cancel.' };
     if (!m) return { ok: false, field: 'id', reason: 'Order not found' };
     const credit = o.credit_exception_by ? { by: o.credit_exception_by, note: o.credit_exception_note || 'credit exception granted by Finance' } : null;
     const cod = /^Cash on /.test(o.payment_method || '');
@@ -835,7 +837,9 @@ module.exports = function mountPaymentTerms({ app, pool, auth, wrap, tx, audit, 
   /* Gives back up to `amount` of what the ledger holds for one order, newest payment first, one 'out' row per payment
      reversed. Returns what was actually written (0 when nothing was ever recorded, e.g. an old COD order). */
   async function refundOrderPayments(client, o, amount, actor, note) {
-    let left = round2(Math.min(Number(amount) || 0, Number(o.paid_amount) || 0)), done = 0;
+    const refundable = round2(Math.max(0, Number(o.paid_amount || 0) - Number(o.forfeited_amount || 0)));
+    if (Number(amount) > refundable + 0.004) throw bad('amount', 'The refund exceeds the unretained payment on this order');
+    let left = round2(Math.min(Number(amount) || 0, refundable)), done = 0;
     if (!(left > 0)) return 0;
     const ins = (await client.query(
       `SELECT p.payment_id, p.amount, p.method, COALESCE((SELECT SUM(x.amount) FROM payments x WHERE x.reversed_of = p.payment_id), 0) AS back
@@ -949,29 +953,6 @@ module.exports = function mountPaymentTerms({ app, pool, auth, wrap, tx, audit, 
   /* ---------------- §8: releasing an order that still has money on it ----------------
      The only door past the release gate. Finance names the reason; the counter can then hand the goods over with the
      balance still outstanding. Revoking it puts the gate back up. Recorded on the order and in the audit log.      */
-  app.post('/api/finance/orders/:no/credit-exception', auth('finance'), wrap(async (req, res) => {
-    const b = req.body || {}, action = str(b.action) || 'grant';
-    if (!['grant', 'revoke'].includes(action)) throw bad('action', 'Choose grant or revoke');
-    const note = str(b.note);
-    if (action === 'grant' && (note.length < 5 || note.length > 300)) throw bad('note', 'Write why this order may go out with a balance (5–300 characters)');
-    const out = await tx(async (client) => {
-      const cur = (await client.query('SELECT * FROM orders WHERE order_no = $1 FOR UPDATE', [req.params.no])).rows[0];
-      if (!cur) throw bad('id', 'Order not found');
-      if (['Cancelled', 'Returned'].includes(cur.status)) throw bad('status', 'This order is closed, so a credit exception makes no difference');
-      const r = action === 'grant'
-        ? await client.query(`UPDATE orders SET credit_exception_by = $2, credit_exception_note = $3, credit_exception_at = now() WHERE order_id = $1
-                RETURNING credit_exception_by, credit_exception_note, credit_exception_at`, [cur.order_id, req.user.id, note])
-        : await client.query(`UPDATE orders SET credit_exception_by = NULL, credit_exception_note = NULL, credit_exception_at = NULL WHERE order_id = $1
-                RETURNING credit_exception_by, credit_exception_note, credit_exception_at`, [cur.order_id]);
-      const m = orderMoney(Object.assign({}, cur, action === 'grant'
-        ? { credit_exception_by: req.user.id, credit_exception_note: note } : { credit_exception_by: null }));
-      await audit(client, req.user, 'Record edited', `Order ${cur.order_no}: credit exception ${action}` +
-        (action === 'grant' ? ` — ${peso(m.balance)} still outstanding. ${note}` : ''));
-      return { row: r.rows[0], money: m };
-    });
-    res.json({ ok: true, creditException: action === 'grant' ? { by: req.user.id, note } : null, outstanding: out.money.balance });
-  }));
-
   /* ---------------- §9: who still owes money ----------------
      One read for the Finance screen: every order and every accepted quotation with a balance on it, the terms that
      balance sits under, and whether Finance already signed an exception for it. The figures are the ones the database
@@ -983,6 +964,8 @@ module.exports = function mountPaymentTerms({ app, pool, auth, wrap, tx, audit, 
     outstanding: round2(Number(x.outstanding) || 0), paymentState: x.payment_state || 'unpaid',
     termsKey: x.terms_key || 'full', termsPercent: x.terms_percent == null ? null : +x.terms_percent,
     termsCondition: x.terms_condition || undefined, status: x.status,
+    balanceDueAt: x.balance_due_at || undefined,
+    creditPending: x.credit_pending_by ? { by: Number(x.credit_pending_by), note: x.credit_pending_note } : undefined,
     creditException: x.credit_exception_by ? { note: x.credit_exception_note || 'granted by Finance' } : undefined,
     at: ms(x.at) || undefined
   }, extra || {});
@@ -990,7 +973,7 @@ module.exports = function mountPaymentTerms({ app, pool, auth, wrap, tx, audit, 
   app.get('/api/finance/receivables', auth('finance'), wrap(async (req, res) => {
     const open = await pool.query(`SELECT o.order_no AS no, o.customer_id, COALESCE(u.full_name, '') AS customer,
           o.total, o.paid_amount, o.payment_state, o.terms_key, o.terms_percent, o.terms_condition, o.status,
-          o.payment_method, o.credit_exception_by, o.credit_exception_note, o.created_at AS at,
+          o.payment_method, o.credit_exception_by, o.credit_exception_note, o.credit_pending_by, o.credit_pending_note, o.balance_due_at, o.balance_hold_from, o.created_at AS at,
           GREATEST(o.total - COALESCE(o.paid_amount, 0), 0) AS outstanding
        FROM orders o LEFT JOIN users u ON u.user_id = o.customer_id
       WHERE o.status <> 'Cancelled' AND GREATEST(o.total - COALESCE(o.paid_amount, 0), 0) > 0.005
@@ -1006,7 +989,7 @@ module.exports = function mountPaymentTerms({ app, pool, auth, wrap, tx, audit, 
     const quotes = quoted.rows.map((x) => moneyJson(x, { kind: 'quote' }));
     const sum = (list) => round2(list.reduce((n, x) => n + x.outstanding, 0));
     res.json({ asOf: Date.now(), ledgerReady: await ledgerOwnsTotals(null), orders, quotes,
-      totals: { openOrders: orders.length, openQuotes: quotes.length,
+      creditLimit: safeguards.balanceSettings.creditLimit, totals: { openOrders: orders.length, openQuotes: quotes.length,
         ordersOwed: sum(orders), quotesOwed: sum(quotes), allOwed: round2(sum(orders) + sum(quotes)) } });
   }));
 
@@ -1140,7 +1123,9 @@ module.exports = function mountPaymentTerms({ app, pool, auth, wrap, tx, audit, 
   };
   app.get('/api/pos/payment-ledger/:kind/:no', auth('cashier'), wrap(ledgerView));
 
+  const safeguards = require('./payment-safeguards')({ app, pool, auth, wrap, tx, audit, bad, str, ready, orderMoney, releaseDecision, approvedDueOf, isMadeToOrder });
   app.locals.paymentTerms = {
+    ...safeguards,
     ready, listTerms, optionsFor, amountFor, quoteTerms, approvedDueOf, isMadeToOrder, autoTermsCheck, attachTerms, afterTermsAttached,
     applyPayment, ledgerFor, termRows, moveQuotePaymentsToOrder, inheritTerms, DEFAULT_TERMS, METHODS, TERMS,
     orderMoney, owedOnOrder, orderTerms, setOrderTerms, releaseDecision, refundOrderPayments,

@@ -1442,12 +1442,14 @@ app.post('/api/movements', auth('finance'), wrap(async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ref`,
       [prod.product_id, m.type, m.reason, m.quantity, req.user.id, m.note, supplierId, m.invoiceNo, m.unitCost != null ? m.unitCost : oldCost]);
     if (newCost !== oldCost) await client.query('UPDATE products SET unit_cost = $2 WHERE product_id = $1', [prod.product_id, newCost]);
+    // General replenishment must not approve a quote's purchase before its payment gate.
+    // Quote-linked suggestions are received through the Finance purchase-suggestion route.
     if (m.type === 'in' && m.reason === 'supplier_receipt') {
       await client.query(
         `UPDATE purchase_suggestions
             SET status = 'received',
                 note = COALESCE(NULLIF(note, ''), 'Received via delivery') || ' (Ref: ' || $2 || ')'
-          WHERE product_id = $1 AND status IN ('open', 'ordered')`,
+          WHERE product_id = $1 AND quote_id IS NULL AND status IN ('open', 'ordered')`,
         [prod.product_id, ins.rows[0].ref]
       ).catch((e) => console.warn('[movements] suggestion update error:', e.message));
     }

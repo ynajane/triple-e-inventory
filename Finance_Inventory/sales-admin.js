@@ -50,7 +50,8 @@
         toast(action === 'approve' ? 'Quotation ' + id + ' payment terms approved.' : 'Quotation ' + id + ' terms refused.');
       }
     } else if (kind === 'cancel') {
-      await post('/orders/' + encodeURIComponent(id) + '/cancel-decision', { approve: action === 'approve' });
+      if (action === 'approve') { if (!await window.PaymentSafeguards.cancel(id, true)) return; }
+      else await post('/orders/' + encodeURIComponent(id) + '/cancel-decision', { approve: false });
       toast(action === 'approve' ? 'Order ' + id + ' cancellation approved. Stock restored.' : 'Order ' + id + ' cancellation rejected.');
     } else if (kind === 'void') {
       await post('/pos/void-requests/' + encodeURIComponent(id) + '/decision', { approve: action === 'approve' });

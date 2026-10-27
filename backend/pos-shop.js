@@ -52,7 +52,7 @@ const FLOW = {
   Pickup:   ['Pending Confirmation', 'Paid', 'Packed', 'Ready for Pickup', 'Picked Up']
 };
 const FINAL_STATUS = ['Delivered', 'Picked Up'];
-const ADMIN_CANCELLABLE = ['Pending Confirmation', 'Paid', 'Packed'];   // once it is out for delivery / ready for pickup it can no longer be cancelled
+const ADMIN_CANCELLABLE = ['Pending Confirmation', 'Paid', 'Packed', 'On Hold'];   // once it is out for delivery / ready for pickup it can no longer be cancelled
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 // Refunds: a customer can ask for one after the order is Delivered / Picked Up, within this many days.
 const REFUND_WINDOW_DAYS = Number(process.env.REFUND_WINDOW_DAYS) || 7;
@@ -68,6 +68,7 @@ const REFUND_REASONS = {
 // after that window the shop decides. Change the window with CANCEL_AUTO_HOURS in .env (default 24 hours).
 const CANCEL_AUTO_HOURS = Number(process.env.CANCEL_AUTO_HOURS) || 24;
 const CANCEL_REASONS = {
+  balance_unpaid: 'Balance unpaid after grace period', // Finance/system only
   changed_mind: 'Changed my mind',
   ordered_by_mistake: 'Ordered by mistake',
   wrong_item_or_qty: 'Wrong item or quantity',
@@ -138,7 +139,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
               EXECUTE format('ALTER TABLE orders DROP CONSTRAINT %I', c.conname);
             END LOOP;
             ALTER TABLE orders ADD CONSTRAINT orders_status_flow_check CHECK (status IN
-              ('Pending Confirmation','Paid','Packed','Out for Delivery','Ready for Pickup','Delivered','Picked Up','Cancelled'));
+              ('Pending Confirmation','Paid','Packed','Out for Delivery','Ready for Pickup','Delivered','Picked Up','Cancelled','On Hold'));
           END IF;
         END $$`);
       await pool.query(`CREATE TABLE IF NOT EXISTS order_cancel_requests (
@@ -1268,7 +1269,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
   }));
   app.get('/api/shop/config', auth('customer'), wrap(async (req, res) => {
     const d = await ratesSummary();
-    res.json({ deliveryFee: d.fallback, deliveryFeeFrom: d.from, deliveryFeeTo: d.to, refundWindowDays: REFUND_WINDOW_DAYS, cancelAutoHours: CANCEL_AUTO_HOURS, cancelReasons: CANCEL_REASONS, info: shopInfo() });
+    res.json({ deliveryFee: d.fallback, deliveryFeeFrom: d.from, deliveryFeeTo: d.to, refundWindowDays: REFUND_WINDOW_DAYS, cancelAutoHours: CANCEL_AUTO_HOURS, cancelReasons: Object.fromEntries(Object.entries(CANCEL_REASONS).filter(([key]) => key !== 'balance_unpaid')), info: shopInfo() });
   }));
   // Fee for one delivery address: the customer sees it at checkout before placing the order (the server recalculates it when the order is placed)
   app.get('/api/shop/delivery-fee', auth('customer'), wrap(async (req, res) => {
@@ -1279,7 +1280,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
   // Public: the Help page (delivery, refunds, contact) can be read without signing in. Nothing secret is in here.
   app.get('/api/shop/info', wrap(async (req, res) => {
     const d = await ratesSummary();
-    res.json({ deliveryFee: d.fallback, deliveryFeeFrom: d.from, deliveryFeeTo: d.to, deliveryRates: d, refundWindowDays: REFUND_WINDOW_DAYS, cancelAutoHours: CANCEL_AUTO_HOURS, cancelReasons: CANCEL_REASONS, info: shopInfo() });
+    res.json({ deliveryFee: d.fallback, deliveryFeeFrom: d.from, deliveryFeeTo: d.to, deliveryRates: d, refundWindowDays: REFUND_WINDOW_DAYS, cancelAutoHours: CANCEL_AUTO_HOURS, cancelReasons: Object.fromEntries(Object.entries(CANCEL_REASONS).filter(([key]) => key !== 'balance_unpaid')), info: shopInfo() });
   }));
 
   /* ---------- delivery rates: Finance manages them ---------- */
@@ -1379,6 +1380,10 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     shipTo: o.fulfillment === 'Delivery' && o.city ? { recipient: o.recipient_name, addressLine: o.address_line, landmark: o.landmark || undefined,
       barangay: o.barangay, city: o.city, province: o.province, region: o.region, zip: o.zip_code } : undefined,
     phone: o.phone, method: o.payment_method, subtotal: +o.subtotal, deliveryFee: +o.delivery_fee, total: +o.total, status: o.status, paymentStatus: o.payment_status || 'unpaid',
+    cancelReasonCode: o.cancel_reason_code || undefined,
+    depositDisposition: o.deposit_disposition || undefined,
+    depositDecisionNote: o.deposit_decision_note || undefined,
+    holdReason: o.status === 'On Hold' ? 'Balance unpaid' : undefined,
     forfeited: +o.forfeited_amount > 0 ? +o.forfeited_amount : undefined,
     delivery: o.fulfillment === 'Delivery' && ['Out for Delivery', 'Delivered'].includes(o.status) ? delivery.customerJson(dlv, o) : undefined,
     cancelRequested: !!cancelPending,
@@ -1572,7 +1577,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
   app.post('/api/shop/orders/:no/cancel-request', auth('customer'), wrap(async (req, res) => {
     const b = req.body || {};
     const code = str(b.reason), details = str(b.details);
-    if (!CANCEL_REASONS[code]) throw bad('reason', 'Choose the reason for cancelling');
+    if (!CANCEL_REASONS[code] || code === 'balance_unpaid') throw bad('reason', 'Choose the reason for cancelling');
     if (code === 'other' && details.length < 5) throw bad('details', 'Please tell us the reason (at least 5 characters)');
     if (details.length > 300) throw bad('details', 'Please keep the details under 300 characters');
     const reason = CANCEL_REASONS[code] + (details ? ' \u2014 ' + details : '');
@@ -1713,17 +1718,18 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       const r = await client.query(`SELECT * FROM orders WHERE order_no = $1 FOR UPDATE`, [req.params.no]);
       if (!r.rowCount) throw bad('id', 'Order not found');
       const o = r.rows[0];
-      const q = await client.query(`SELECT request_id FROM order_cancel_requests WHERE order_id = $1 AND status = 'pending' FOR UPDATE`, [o.order_id]);
+      const q = await client.query(`SELECT request_id, reason_code FROM order_cancel_requests WHERE order_id = $1 AND status = 'pending' FOR UPDATE`, [o.order_id]);
       if (!q.rowCount) throw bad('id', 'There is no pending cancellation request for this order');
       if (approve) {
-        if (!['Pending Confirmation', 'Paid'].includes(o.status)) throw bad('id', 'This order is already packed, so it cannot be cancelled');
+        if (!['Pending Confirmation', 'Paid'].includes(o.balance_hold_from || o.status)) throw bad('id', 'This order is already packed, so it cannot be cancelled');
         if (o.stock_deducted) {
           const { rows: items } = await client.query('SELECT product_id, qty FROM order_items WHERE order_id = $1 ORDER BY product_id', [o.order_id]);
           for (const i of items) await postMovement(client, { productId: i.product_id, type: 'in', reason: 'refund', qty: +i.qty,
             userId: req.user.id, sourceType: 'order', sourceId: o.order_id, note: `Cancelled ${o.order_no}` });
         }
         await client.query(`UPDATE orders SET status = 'Cancelled', stock_deducted = FALSE, status_updated_at = now() WHERE order_id = $1`, [o.order_id]);
-        const owed = await queueCancelRefund(client, o, req.user.id);
+        const kept = await app.locals.paymentTerms.cancellationPolicy(client, o, q.rows[0].reason_code || 'other', req.body || {}, req.user);
+        const owed = await queueCancelRefund(client, o, req.user.id, kept);
         await logStatus(client, o.order_id, o.status, 'Cancelled', req.user.id, 'Customer cancellation approved' + (owed ? ` — refund of ${peso(owed)} queued` : ''));
       }
       await client.query(`UPDATE order_cancel_requests SET status = $2, decided_by = $3, decided_at = now() WHERE request_id = $1`,
@@ -1956,12 +1962,16 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
 
   // Admin cancels an order directly (reason required). Stock goes back if it was already deducted.
   app.post('/api/orders/:no/cancel', auth('finance'), wrap(async (req, res) => {
-    const reason = str((req.body || {}).reason);
+    const body = req.body || {};
+    let code = str(body.reasonCode) || 'other';
+    if (!CANCEL_REASONS[code]) throw bad('reasonCode', 'Choose a cancellation reason');
+    const reason = str(body.reason);
     if (reason.length < 5 || reason.length > 300) throw bad('reason', 'Please explain why (5 to 300 characters)');
     await tx(async (client) => {
       const r = await client.query('SELECT * FROM orders WHERE order_no = $1 FOR UPDATE', [req.params.no]);
       if (!r.rowCount) throw bad('id', 'Order not found');
       const o = r.rows[0];
+      if (!body.reasonCode && o.status === 'On Hold' && o.balance_hold_from) code = 'balance_unpaid';
       if (o.status === 'Cancelled') throw bad('id', 'This order is already cancelled');
       if (FINAL_STATUS.includes(o.status)) throw bad('id', `This order was already ${o.status.toLowerCase()}, so it cannot be cancelled. Handle it as a return instead`);
       if (!ADMIN_CANCELLABLE.includes(o.status)) throw bad('id', `An order that is "${o.status}" can no longer be cancelled`);
@@ -1972,7 +1982,8 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       }
       await client.query(`UPDATE orders SET status = 'Cancelled', stock_deducted = FALSE, status_updated_at = now() WHERE order_id = $1`, [o.order_id]);
       await client.query(`UPDATE order_cancel_requests SET status = 'approved', decided_by = $2, decided_at = now() WHERE order_id = $1 AND status = 'pending'`, [o.order_id, req.user.id]);
-      const owed = await queueCancelRefund(client, o, req.user.id);
+      const kept = await app.locals.paymentTerms.cancellationPolicy(client, o, code, body, req.user);
+      const owed = await queueCancelRefund(client, o, req.user.id, kept);
       await logStatus(client, o.order_id, o.status, 'Cancelled', req.user.id, reason + (owed ? ` — refund of ${peso(owed)} queued` : ''));
       await audit(client, req.user, 'Record edited', `Order ${o.order_no} cancelled by admin: ${reason}${o.stock_deducted ? ' — stock restored, refund to original payment method due' : ''}`);
     });

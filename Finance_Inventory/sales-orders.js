@@ -548,7 +548,8 @@
         await api('/pos/void-requests/' + encodeURIComponent(v.id) + '/decision', { method: 'POST', body: JSON.stringify({ approve: ok }) });
         toast(ok ? no + ' was voided and the stock returned.' : 'Void request for ' + no + ' rejected.');
       } else {
-        await api('/orders/' + encodeURIComponent(b.dataset.soCancel) + '/cancel-decision', { method: 'POST', body: JSON.stringify({ approve: b.dataset.ok === '1' }) });
+        if (b.dataset.ok === '1') { if (!await window.PaymentSafeguards.cancel(b.dataset.soCancel, true)) return; }
+        else await api('/orders/' + encodeURIComponent(b.dataset.soCancel) + '/cancel-decision', { method: 'POST', body: JSON.stringify({ approve: false }) });
         toast(b.dataset.ok === '1' ? 'Cancellation approved. Stock restored.' : 'Cancellation rejected.');
       }
       await load();
