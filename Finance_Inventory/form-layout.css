@@ -50,3 +50,15 @@ html body .policy-card-head { flex-wrap: wrap; }
   html body #reports .donut-legend-left { min-width: 0; flex-wrap: wrap; }
   html body #reports .donut-legend-name { overflow-wrap: anywhere; }
 }
+
+/* Drop-down lists (the open list of a <select>): always readable in both themes.
+   Without this the list can keep the page's light text on the browser's white popup in dark mode. */
+html:not([data-theme="light"]) select, html:not([data-theme="light"]) select option, html:not([data-theme="light"]) select optgroup { color-scheme: dark; }
+html[data-theme="light"] select, html[data-theme="light"] select option, html[data-theme="light"] select optgroup { color-scheme: light; }
+html body select option, html body select optgroup { background-color: var(--card, var(--panel, #0d1a26)); color: var(--text, #e7edf3); }
+html body select option:disabled { color: var(--text-faint, #8093a3); }
+html body select option:checked { background-color: var(--blue, #23679d); color: #fff; }
+html body select optgroup { font-weight: 600; color: var(--text-dim, #8fa1b0); }
+/* the suggestion list under a typed field (City, Barangay...) follows the theme too */
+html:not([data-theme="light"]) input[list] { color-scheme: dark; }
+html[data-theme="light"] input[list] { color-scheme: light; }
