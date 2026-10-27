@@ -131,12 +131,12 @@
         if (k === 'material' && !state[p].locked) cascade(p, sel.value ? 'the material ' + sel.value : '');     // finish, thickness and cutting that do not go with it are dropped
         check(p, k);
       });
-      if (c) { c.addEventListener('input', function () { if (c.classList.contains('is-bad')) check(p, k); }); c.addEventListener('blur', function () { check(p, k); }); }
+      if (c) { c.addEventListener('input', function () { check(p, k); }); c.addEventListener('blur', function () { check(p, k); }); }
       var box = $(p + 'X_' + k);
       if (box) {
         box.addEventListener('input', function (e) {
           if (e.target.matches('input[data-n]')) { var t = e.target, clean = t.value.replace(t.getAttribute('data-n') === 'pipe' ? /[^\d.\/\- ]/g : /[^\d.]/g, ''); if (clean !== t.value) t.value = clean; }
-          compose(p, k); var typed = box.querySelector('input[data-n]'); if (sel.classList.contains('is-bad') || box.querySelector('.is-bad') || (typed && typed.value)) check(p, k);
+          compose(p, k); check(p, k);
         });
         box.addEventListener('change', function () { compose(p, k); if (box.querySelector('input[data-n]').value) check(p, k); });
         box.addEventListener('focusout', function (e) { if (!box.contains(e.relatedTarget)) { compose(p, k); check(p, k); } });
@@ -154,8 +154,8 @@
     $(p + 'Qty').addEventListener('blur', function () { check(p, 'quantity'); });
     $(p + 'Qty').addEventListener('input', function () { var el = $(p + 'Qty'), d = el.value.replace(wholeUnit(p) ? /[^\d,]/g : /[^\d.,]/g, ''); if (d !== el.value) el.value = d; if (el.value || el.classList.contains('is-bad')) check(p, 'quantity'); updateLeadRule(p); });
     $(p + 'Unit').addEventListener('change', function () { state[p].unitTouched = true; var el = $(p + 'Qty'); if (wholeUnit(p)) el.value = el.value.replace(/\..*$/, ''); if (el.value) check(p, 'quantity'); });
-    $(p + 'Needed').addEventListener('change', function () { check(p, 'neededBy'); neededNote(p); });
-    $(p + 'Notes').addEventListener('input', function () { $(p + 'NotesCount').textContent = $(p + 'Notes').value.length + ' / 1000'; });
+    ['input', 'change'].forEach(function (event) { $(p + 'Needed').addEventListener(event, function () { check(p, 'neededBy'); neededNote(p); }); });
+    $(p + 'Notes').addEventListener('input', function () { $(p + 'NotesCount').textContent = $(p + 'Notes').value.length + ' / 1000'; check(p, 'notes'); });
     $(p + 'Narrow').addEventListener('click', function (e) { if (e.target.closest('[data-showall]')) { state[p].offKey = state[p].hint && state[p].hint.key; refresh(p); } });
     var item = itemInput(p); if (item) item.addEventListener('input', function () { clearTimeout(state[p].timer); state[p].timer = setTimeout(function () { refresh(p); }, 250); });
     refresh(p); syncUnits(p);
@@ -610,17 +610,11 @@
     var h = detect(p), fromName = h && (h.pick || h.famName);              // a grade in the name (ADC12) gives the exact material; a name that only says "brass" gives "Brass"
     // what kind of item the product is (from its name), so a detail its record leaves out offers the right choices
     s.catalogType = h && h.types && h.types.length === 1 ? h.types[0] : null;
-    var open = [];
     Object.keys(ALIAS).forEach(function (k) {
       var v = ALIAS[k].map(function (a) { return lower[a]; }).filter(Boolean)[0], why = 'From the product record. Locked.';
       if (!v && k === 'material' && fromName) { v = fromName; why = 'Read from the product name. Locked.'; }
-      if (!v) { open.push(k); return; }                                            // not on the record: it has to be chosen (the server checks the same)
+      if (!v) { v = NOT_SET; why = 'Not stated on the product record. Sold as is.'; }
       setLocked(p, k, v, why);
-    });
-    open.forEach(function (k) {
-      unlock(p, k); rebuild(p, k);
-      lockNote(p, $(p + 'S_' + k), 'Not on the product record \u2014 required. Choose what the customer needs.');
-      $(p + 'S_' + k).parentNode.classList.add('qx-required');
     });
     updateAvailability(p);
     setLocked(p, 'service', AS_IS, 'Ready-made item, sold as is. Locked.');

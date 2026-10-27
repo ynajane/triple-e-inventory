@@ -758,6 +758,7 @@
   @media (prefers-reduced-motion:reduce){ .eyebrow.live i{ animation:none; } html{ scroll-behavior:auto; } }
 </style>
 
+<link rel="stylesheet" href="form-layout.css?v=1">
 </head>
 <body>
 
@@ -1129,7 +1130,7 @@
 
   <p class="site-foot">&copy; Triple E Metal Products &middot; <a href="LandingPage_Inventory-1.html">Back to the home page</a></p>
 
-<script src="form-assist.js?v=2"></script>
+<script src="form-assist.js?v=3"></script>
 <script>
 (function(){
   'use strict';
@@ -1192,6 +1193,10 @@
     if (cdEmail && clean($('email').value).toLowerCase() !== cdEmail) stopCountdown();   // the countdown belongs to the account that was locked
   });
   $('password').addEventListener('input', clearLoginState);
+  [['email', () => emailPattern.test(clean($('email').value)) ? '' : 'Enter a valid email address.'], ['password', () => $('password').value ? '' : 'Enter your password.']].forEach(([id, rule]) => {
+    const check = FormAssist.validation.bind($(id), rule, $(id + 'Error'));
+    ['input', 'blur'].forEach(event => $(id).addEventListener(event, () => $(id + 'Field').classList.toggle('invalid', !!check(true))));
+  });
 
   /* ---------- locked account: 3 wrong passwords -> unlock link by email -> countdown starts when the link is opened ---------- */
   const cdBox = $('loginCountdown'), cdTime = $('cdTime'), cdText = $('cdText'), cdBar = $('cdBar');
@@ -1390,7 +1395,7 @@
     $('suStrengthBar').style.width = lv[1]; $('suStrengthBar').style.background = lv[2];
     $('suStrengthLabel').textContent = 'Strength: ' + lv[0];
   }
-  ['suPass','suConfirm'].forEach(id => $(id).addEventListener('input', () => { paintPassword(); setErr(id, ''); if (id === 'suPass' && $('suConfirm').value) setErr('suConfirm', ''); }));
+  ['suPass','suConfirm'].forEach(id => $(id).addEventListener('input', () => { paintPassword(); setErr(id, V[id]()); if (id === 'suPass' && $('suConfirm').value) setErr('suConfirm', V.suConfirm()); }));
 
   /* ---------- duplicate-email check (while typing) ---------- */
   let emailCheck = { email: '', ok: null, msg: '' }, emailTimer = null, emailPending = null;
@@ -1412,12 +1417,13 @@
   $('suEmail').addEventListener('input', () => {
     setErr('suEmail', ''); hint.className = 'hint'; hint.textContent = 'We\u2019ll send a verification link to this address.';
     emailCheck = { email: '', ok: null, msg: '' };
+    setErr('suEmail', V.suEmail());
     clearTimeout(emailTimer); emailTimer = setTimeout(checkEmailNow, 600);
   });
   $('suEmail').addEventListener('blur', () => { $('suEmail').value = clean($('suEmail').value).toLowerCase(); clearTimeout(emailTimer); checkEmailNow(); });
 
   /* ---------- little input niceties ---------- */
-  $('suPhone').addEventListener('input', function(){ const n = this.value.replace(/[^\d+\s().-]/g, ''); if (n !== this.value) this.value = n; setErr('suPhone', ''); });
+  $('suPhone').addEventListener('input', function(){ const n = this.value.replace(/[^\d+\s().-]/g, ''); if (n !== this.value) this.value = n; setErr('suPhone', V.suPhone()); });
   /* ---------- Task 9: one phone format, "already on an account?" (a warning, not a block), Enter moves on, unsaved warning ---------- */
   const FA = window.FormAssist;
   let phoneSeq = 0;
@@ -1443,15 +1449,15 @@
         el.value = fixed;
         try { el.setSelectionRange(left.length, left.length); } catch (_) {}
       }
-      setErr(id, el.value === '' ? '' : V[id]());
+      setErr(id, V[id]());
     });
     el.addEventListener('blur', () => { el.value = clean(el.value); setErr(id, id === 'suMiddle' && !el.value ? '' : V[id]()); });
   });
   ['suSuffix','suGender'].forEach(id => $(id).addEventListener('change', () => { setErr(id, ''); $(id).classList.toggle('placeholder', !$(id).value); }));
   // Birthdate: required, 18 or older. Checked as soon as a full date is typed or picked, and again when the field is left.
-  ['input','change'].forEach(ev => $('suBirth').addEventListener(ev, () => { setErr('suBirth', $('suBirth').value ? V.suBirth() : ''); }));
+  ['input','change'].forEach(ev => $('suBirth').addEventListener(ev, () => { setErr('suBirth', V.suBirth()); }));
   $('suBirth').addEventListener('blur', () => setErr('suBirth', V.suBirth()));
-  ['suTerms','suPrivacy'].forEach(id => $(id).addEventListener('change', () => setErr(id, '')));
+  ['suTerms','suPrivacy'].forEach(id => $(id).addEventListener('change', () => setErr(id, V[id]())));
   $('suBirth').max = adultCutoffISO();                 // the date picker stops at "18 years ago"
   // show a field's problem as soon as the person leaves it
   Object.keys(V).forEach(id => { if (['suTerms','suPrivacy','suEmail','suConfirm','suFirst','suLast','suMiddle','suBirth'].includes(id)) return; $(id).addEventListener('blur', () => { if ($(id).value !== '') setErr(id, V[id]()); }); });
@@ -1594,6 +1600,16 @@
     if (pw !== cf) return ['fpConf', 'Passwords do not match.'];
     return null;
   }
+  ['fpEmail', 'fpCode', 'fpNew', 'fpConf'].forEach(id => {
+    const check = () => {
+      if (id === 'fpEmail') return fpSet(id, emailPattern.test(clean($(id).value)) ? '' : 'Enter a valid email address.');
+      if (id === 'fpCode') return fpSet(id, /^\d{6}$/.test($(id).value) ? '' : 'Enter the 6-digit code.');
+      const pw = $('fpNew').value, cf = $('fpConf').value, problem = fpPwProblem(pw, pw);
+      if (id === 'fpNew') { fpSet(id, problem ? problem[1] : ''); if (cf) fpSet('fpConf', pw === cf ? '' : 'Passwords do not match.'); }
+      else fpSet(id, !cf ? 'Re-enter your new password.' : pw === cf ? '' : 'Passwords do not match.');
+    };
+    ['input', 'blur'].forEach(event => $(id).addEventListener(event, check));
+  });
   async function fpSendCode(){
     fpShow(''); fpNote('');
     const email = $('fpEmail').value.trim().toLowerCase();
@@ -1672,11 +1688,11 @@
     otpExp = setInterval(() => { left--; if (left <= 0){ clearInterval(otpExp); t.textContent = 'expired'; t.classList.add('expired'); } else draw(); }, 1000);
   }
   const otpValue = () => otpBoxes.map(i => i.value).join('');
-  function otpError(msg){ const e = $('otpError'); e.textContent = msg || ''; e.classList.toggle('show', !!msg); $('otpRow').classList.toggle('invalid', !!msg); }
+  function otpError(msg){ const e = $('otpError'); e.textContent = msg || ''; e.classList.toggle('show', !!msg); e.setAttribute('aria-live', 'polite'); $('otpRow').classList.toggle('invalid', !!msg); otpBoxes.forEach(box => { box.setAttribute('aria-invalid', String(!!msg)); box.setAttribute('aria-describedby', e.id); }); }
   function otpClear(){ otpBoxes.forEach(i => { i.value = ''; i.classList.remove('filled'); }); otpError(''); }
   otpBoxes.forEach((box, i) => {
     box.addEventListener('input', () => {
-      box.value = box.value.replace(/\D/g, '').slice(-1); box.classList.toggle('filled', !!box.value); otpError('');
+      box.value = box.value.replace(/\D/g, '').slice(-1); box.classList.toggle('filled', !!box.value); otpError(otpValue().length === 6 ? '' : 'Enter all 6 digits of the code.');
       if (box.value && i < 5) otpBoxes[i + 1].focus();
       if (otpValue().length === 6) $('cpVerify').click();
     });
@@ -1685,6 +1701,7 @@
       const d = ((e.clipboardData || window.clipboardData).getData('text') || '').replace(/\D/g, '').slice(0, 6);
       if (!d) return; e.preventDefault();
       otpBoxes.forEach((b, k) => { b.value = d[k] || ''; b.classList.toggle('filled', !!b.value); });
+      otpError(d.length === 6 ? '' : 'Enter all 6 digits of the code.');
       (otpBoxes[Math.min(d.length, 5)]).focus();
       if (d.length === 6) $('cpVerify').click();
     });
@@ -1776,7 +1793,7 @@
   let loToken = '', loChannel = '', loCd = null, loExp = null, loOptions = {};
   const loBoxes = Array.from(document.querySelectorAll('#loOtpRow .otp-digit'));
   const loValue = () => loBoxes.map(i => i.value).join('');
-  function loError(msg){ const e = $('loOtpError'); e.textContent = msg || ''; e.classList.toggle('show', !!msg); $('loOtpRow').classList.toggle('invalid', !!msg); }
+  function loError(msg){ const e = $('loOtpError'); e.textContent = msg || ''; e.classList.toggle('show', !!msg); e.setAttribute('aria-live', 'polite'); $('loOtpRow').classList.toggle('invalid', !!msg); loBoxes.forEach(box => { box.setAttribute('aria-invalid', String(!!msg)); box.setAttribute('aria-describedby', e.id); }); }
   function loDigitsClear(){ loBoxes.forEach(i => { i.value = ''; i.classList.remove('filled'); }); }
   function loMsg(text){ const m = $('loMsg'); m.classList.toggle('show', !!text); m.textContent = text || ''; }
   function loCooldown(sec){
@@ -1793,7 +1810,7 @@
   }
   loBoxes.forEach((box, i) => {
     box.addEventListener('input', () => {
-      box.value = box.value.replace(/\D/g, '').slice(-1); box.classList.toggle('filled', !!box.value); loError('');
+      box.value = box.value.replace(/\D/g, '').slice(-1); box.classList.toggle('filled', !!box.value); loError(loValue().length === 6 ? '' : 'Enter all 6 digits of the code.');
       if (box.value && i < 5) loBoxes[i + 1].focus();
       if (loValue().length === 6) $('loVerify').click();
     });
@@ -1802,6 +1819,7 @@
       const d = ((e.clipboardData || window.clipboardData).getData('text') || '').replace(/\D/g, '').slice(0, 6);
       if (!d) return; e.preventDefault();
       loBoxes.forEach((b, k) => { b.value = d[k] || ''; b.classList.toggle('filled', !!b.value); });
+      loError(d.length === 6 ? '' : 'Enter all 6 digits of the code.');
       loBoxes[Math.min(d.length, 5)].focus();
       if (d.length === 6) $('loVerify').click();
     });

@@ -148,7 +148,22 @@
     cfg.saveBtn.addEventListener('click', function () { cfg.banner(''); [cfg.cur, cfg.nw, cfg.conf, code].forEach(cfg.clearError); return stage === 0 ? step1() : finish(); });
     sendBtn.addEventListener('click', send);
     choices.addEventListener('change', function () { sentTo = ''; code.value = ''; cfg.clearError(code); cooldown(0); say('Tap Send code to get a code on your ' + (channel() === 'sms' ? 'mobile number' : 'email') + '.'); });
-    code.addEventListener('input', function () { this.value = this.value.replace(/\D/g, '').slice(0, 6); cfg.clearError(code); });
+    code.addEventListener('input', function () { this.value = this.value.replace(/\D/g, '').slice(0, 6); cfg.clearError(code); if (!/^\d{6}$/.test(this.value)) cfg.setError(code, 'Enter the 6-digit code we sent you'); });
+    function livePassword(input) {
+      cfg.clearError(input);
+      var value = input.value, message = '';
+      if (input === cfg.cur) message = value ? '' : 'Type your current password';
+      else if (input === cfg.conf) message = !value ? 'Re-enter your new password' : value === cfg.nw.value ? '' : 'Passwords do not match';
+      else message = value.length < 8 ? 'Use at least 8 characters' : !/[A-Z]/.test(value) ? 'Add an uppercase letter' : !/[a-z]/.test(value) ? 'Add a lowercase letter' : !/\d/.test(value) ? 'Add a number' : !/[^A-Za-z0-9]/.test(value) ? 'Add a special character' : '';
+      if (message) cfg.setError(input, message);
+    }
+    [cfg.cur, cfg.nw, cfg.conf].forEach(function (input) {
+      ['input', 'blur'].forEach(function (event) { input.addEventListener(event, function () {
+        if (input.readOnly) return;
+        livePassword(input);
+        if (input === cfg.nw && cfg.conf.value) livePassword(cfg.conf);
+      }); });
+    });
     box.querySelector('.pc-edit').addEventListener('click', function () { backToFields(); cfg.nw.focus(); });
 
     /* the current password is never pre-filled: random name, no autocomplete, read-only until the person clicks into it */

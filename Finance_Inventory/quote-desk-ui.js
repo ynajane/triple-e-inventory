@@ -22,6 +22,27 @@
   const qtyParts = (text) => { const m = /^([\d,.]+)\s+(.+)$/.exec(String(text || '').trim()); if (!m) return null; const n = Number(m[1].replace(/,/g, '')); return Number.isFinite(n) && n > 0 ? { qty: n, unit: m[2] } : null; };
   const requestId = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 32) : 'qd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 14));
   const fieldErr = (e) => (e && e.fields ? Object.values(e.fields)[0] : e && e.message) || 'Something went wrong. Try again.';
+  function liveDeskField(input) {
+    if (!window.FormAssist || !input.matches?.('input, select, textarea')) return;
+    const value = input.value.trim(), n = Number(value.replace(/,/g, '')), form = input.form;
+    let message = null;
+    if (input.name === 'unit' && form?.id === 'qdPriceForm') {
+      message = !/^\d+(?:\.\d{1,2})?$/.test(value) || n <= 0 ? 'Enter the unit price in pesos, up to two decimals.' : '';
+      const q = qtyParts(S.detail?.quantity), margin = rulesNow()?.minMarginPct || 20;
+      const floor = S.draft?.costTotal > 0 ? Math.round(S.draft.costTotal / (1 - margin / 100) * 100) / 100 : 0;
+      if (!message && q && Math.round(n * q.qty * 100) / 100 < floor - 0.004) message = 'Price cannot be below the ' + margin + '% margin floor (' + peso(floor) + ' total).';
+    }
+    if (input.matches('[data-rqty]')) message = /^\d+(?:\.\d+)?$/.test(value.replace(/,/g, '')) && n > 0 ? '' : 'Enter a quantity per piece greater than zero.';
+    if (form?.id === 'qdCollectForm' && input.name === 'amount') message = !/^\d+(?:\.\d{1,2})?$/.test(value) || n <= 0 ? 'Enter an amount greater than zero, up to two decimals.' : n > Number(S.detail?.balance) + 0.004 ? 'The balance is only ' + money(S.detail.balance) + '.' : '';
+    if (form?.id === 'qdCollectForm' && input.name === 'reference') message = form.elements.method.value !== 'Cash' && value.length < 4 ? 'Enter the reference (at least 4 characters).' : '';
+    if (input.matches('[data-jsku]')) {
+      const m = S.job?.materials?.find(x => x.sku === input.dataset.jsku);
+      message = value && (!/^\d{1,8}(?:\.\d{1,2})?$/.test(value.replace(/,/g, '')) || n < 0) ? 'Use a quantity of 0 or more, with at most 2 decimals.' : m && n > Number(m.onHand) ? 'Only ' + m.onHand + ' ' + m.unit + ' in stock.' : '';
+    }
+    if (input.matches('[data-recv]')) message = value.length < 2 || value.length > 80 ? 'Enter the recipient’s name (2–80 characters).' : '';
+    if (message !== null) FormAssist.validation.show(input, message);
+    return message;
+  }
   async function call(path, opts) {
     try { return await api(path, opts); }
     catch (e) {                                          // api() throws a plain Error; keep the server's per-field message
@@ -912,6 +933,8 @@
     const no = encodeURIComponent(d.id), box = el('qdDrawerBody').querySelector('[data-job]');
     try {
       if (act === 'jobissue') {
+        const invalid = Array.from(box.querySelectorAll('[data-jsku]')).find(i => liveDeskField(i));
+        if (invalid) { invalid.focus(); return; }
         const items = Array.from(box.querySelectorAll('[data-jsku]')).map((i) => ({ sku: i.dataset.jsku, quantity: i.value.replace(/,/g, '').trim() })).filter((i) => Number(i.quantity) > 0);
         if (!items.length) { toast('Enter how much of each material the job uses.', true); return; }
         const go = await pqConfirm({ title: 'Issue these materials for ' + d.id + '?', description: 'They leave stock now as \u201CUsed in production\u201D and the quote moves to Preparing.',
@@ -923,6 +946,8 @@
         await call('/api/pos/quotes/' + no + '/job/finish', { method: 'POST', body: '{}' });
         toast('Job finished. The customer was told it is ' + (d.fulfillment === 'Delivery' ? 'out for delivery.' : 'ready for pickup.'));
       } else if (act === 'complete') {
+        const recipient = box.querySelector('[data-recv]');
+        if (recipient && liveDeskField(recipient)) { recipient.focus(); return; }
         const recv = (box.querySelector('[data-recv]') || {}).value || '';
         await call('/api/pos/quotes/' + no + '/step', { method: 'POST', body: JSON.stringify({ status: 'completed', receivedBy: recv.trim() }) });
         toast(d.id + ' is complete.');
@@ -946,7 +971,7 @@
     email: () => { const v = el('pqEmail').value.trim(); return !v || (v.length <= 120 && PQ_MAIL_RE.test(v)) ? '' : 'Enter a valid email address, or leave it empty.'; },
     company: () => (el('pqCompany').value.trim().length <= 80 ? '' : 'Keep the company name within 80 characters.'),
     productName: () => el('pqProduct').value || el('pqItem').value.trim().length >= 3 ? '' : 'Tell us what they need (at least 3 characters).',
-    neededBy: () => (!pqNeededVal() || isFlexible() ? '' : 'Choose the date they need it, or tick that the date is flexible.'),
+    neededBy: () => (pqNeededVal() || isFlexible() ? '' : 'Choose the date they need it, or tick that the date is flexible.'),
     region: () => (pqFulfil() === 'Delivery' && !el('pqRegion').value ? 'Choose the region.' : ''),
     province: () => (pqFulfil() !== 'Delivery' ? '' : !el('pqProvince').value ? 'Choose the province.' : pqNoCover),
     city: () => { if (pqFulfil() !== 'Delivery') return ''; const v = pqClean(el('pqCity').value); return !v ? 'Choose the city or municipality.' : PQG.cities.length && !pqCode(PQG.cities, v) ? 'Pick the city / municipality from the list.' : ''; },
@@ -1127,7 +1152,7 @@
     const f = pqFulfil();
     const fields = ['contactName', 'phone', 'email', 'company', 'productName', 'neededBy'].concat(f === 'Delivery' ? ['region', 'province', 'city', 'barangay', 'street'] : []);
     let first = null;
-    fields.forEach((k) => { if (!pqField(k) && !first) first = PQ_IDS[k]; });
+    fields.forEach((k) => { if (!pqField(k) && !first) first = PQ_IDS[k] || (k === 'neededBy' ? 'pqNeeded' : null); });
     if (pqMounted) { const qf = QuoteFields.validate('pq'); if (!qf.ok && !first) first = qf.focus; }
     if (first) { err.textContent = 'Please fix the highlighted fields.'; const x = el(first); x.scrollIntoView({ block: 'center', behavior: 'smooth' }); if (x.focus) x.focus({ preventScroll: true }); return; }
     buildReview();
@@ -1183,6 +1208,7 @@
     el('qdDrawerClose').addEventListener('click', closeDetail);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.detail) { if (!el('qdClarifyOverlay').hidden) closeClarify(); else closeDetail(); } });
     el('qdDrawerBody').addEventListener('input', (e) => {
+      liveDeskField(e.target);
       if (e.target.matches('[data-rqty]')) { readRecipe(e.target.form); S.recipeMode = 'edited'; recalcDraft(e.target.form); return; }
       if (e.target.name === 'unit') { if (!S.fillingUnit) { e.target.dataset.auto = ''; const n = e.target.form.querySelector('[data-unit-note]'); if (n) n.textContent = 'your price'; }
         const d = S.detail, q = qtyParts(d.quantity), out = e.target.form.querySelector('[data-total]');
@@ -1193,6 +1219,7 @@
         termTimer = setTimeout(() => loadTermOptions(e.target.form, q && okNum ? Number(e.target.value) * q.qty : 0, (d.terms || {}).key), 350); }
     });
     el('qdDrawerBody').addEventListener('change', (e) => {
+      liveDeskField(e.target);
       if (e.target.name === 'leadTime') updateReady(e.target.form);
       if (e.target.name === 'term') { syncTermFields(e.target.form); if (e.target.form.id === 'qdPriceForm') { const u = e.target.form.elements.unit, q = qtyParts(S.detail.quantity); syncRoute(e.target.form, u && q ? Number(u.value) * q.qty : 0); } }
       if (e.target.matches('[data-rsku], [data-runit]')) {
@@ -1228,7 +1255,9 @@
     el('qdDrawerBody').addEventListener('change', (e) => {      // a reference is only asked for when the money did not come as cash
       const f = e.target.closest('#qdCollectForm'); if (!f || e.target.name !== 'method') return;
       f.querySelector('[data-refrow]').hidden = e.target.value === 'Cash';
+      liveDeskField(f.elements.reference);
     });
+    el('qdDrawerBody').addEventListener('focusout', e => liveDeskField(e.target));
     el('qdDrawerBody').addEventListener('click', (e) => {
       const form = el('qdPriceForm'); if (!form || !form.contains(e.target)) return;
       if (e.target.closest('[data-use-sys]')) { const u = form.elements.unit; u.dataset.auto = '1'; const n = form.querySelector('[data-unit-note]'); if (n) n.textContent = 'filled in with the suggested price'; fillUnit(form); u.focus(); }
@@ -1250,8 +1279,8 @@
     el('pqProvince').addEventListener('change', pqOnProvince);
     el('pqCity').addEventListener('change', pqOnCity);
     el('pqBrgy').addEventListener('change', pqOnBarangay);
-    el('pqFlexible').addEventListener('change', () => { const x = pqNeededEl(); if (!x) return; x.disabled = isFlexible(); if (isFlexible()) { x.value = ''; pqErr('neededBy', ''); } });
-    Object.keys(PQ_IDS).forEach((f) => { const x = el(PQ_IDS[f]); x.addEventListener('blur', () => pqField(f)); x.addEventListener('input', () => { if (x.classList.contains('is-bad')) pqField(f); el('pqErr').textContent = ''; }); });
+    el('pqFlexible').addEventListener('change', () => { const x = pqNeededEl(); if (!x) return; x.disabled = isFlexible(); if (isFlexible()) x.value = ''; pqField('neededBy'); });
+    Object.keys(PQ_IDS).forEach((f) => { const x = el(PQ_IDS[f]); x.addEventListener('blur', () => pqField(f)); x.addEventListener('input', () => { pqField(f); el('pqErr').textContent = ''; }); });
     el('pqPhone').addEventListener('input', () => { const p = el('pqPhone'), d = p.value.replace(/[^\d+\s]/g, ''); if (d !== p.value) p.value = d; });
     el('pqForm').addEventListener('submit', (e) => { e.preventDefault(); saveWalkIn(); });
     if (FA) {

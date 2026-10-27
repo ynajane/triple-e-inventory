@@ -477,6 +477,7 @@ function setErr(name, msg) {
   const box = document.querySelector(`#coAction [data-err="${name}"]`);
   if (!box) { const g = $('coActErr'); if (g) g.textContent = msg || ''; return; }
   box.textContent = msg || ''; box.closest('.co-fld').classList.toggle('bad', !!msg);
+  const input = $('co_' + name); if (input) { if (!box.id) box.id = 'coError_' + name; input.setAttribute('aria-describedby', box.id); input.setAttribute('aria-invalid', String(!!msg)); }
 }
 function clearErrs() { document.querySelectorAll('#coAction [data-err]').forEach((x) => { x.textContent = ''; x.closest('.co-fld').classList.remove('bad'); }); $('coActErr').textContent = ''; }
 
@@ -634,14 +635,39 @@ $('coAction').addEventListener('submit', (e) => { if (e.target.id === 'coForm') 
 $('coAction').addEventListener('input', (e) => {
   if (e.target.id === 'co_cashReceived') updateChange();
   if (e.target.id === 'co_amount' || e.target.id === 'co_tendered') updatePayChange();
-  const f = e.target.closest && e.target.closest('.co-fld'); if (f && f.dataset.fld) setErr(f.dataset.fld, '');
+  liveActionField(e.target);
 });
+function liveActionField(input) {
+  const field = input?.closest?.('.co-fld')?.dataset.fld; if (!field) return;
+  const v = input.value.trim(), n = parseMoney(v); let message = '';
+  if (!input.disabled && input.getClientRects().length) {
+    if (field === 'amount') message = n === null || n <= 0 ? 'Enter an amount greater than zero, with at most 2 decimals.' : payFor && n > dueOf(payFor) + 0.001 ? 'Only ' + peso(dueOf(payFor)) + ' is outstanding on this order.' : '';
+    if (field === 'tendered' || field === 'cashReceived') {
+      const due = field === 'tendered' ? parseMoney($('co_amount')?.value || '') : chosen ? dueOf(chosen) : null;
+      message = n === null ? 'Enter the cash handed over.' : due !== null && n + 1e-9 < due ? 'That is less than the amount due (' + peso(due) + ').' : due !== null && n > due + 100000 ? 'That is far above the amount. Check the cash.' : '';
+    }
+    if (field === 'reference') message = REF_RE.test(v) ? '' : 'Enter the reference from the app, receipt or statement (4–40 characters).';
+    if (field === 'receivedBy') message = NAME_RE.test(v) ? '' : 'Enter the full name (2–80 letters, no numbers).';
+    if (field === 'relationship') message = v.length >= 3 && v.length <= 60 ? '' : 'Enter how this person is related or authorised (3–60 characters).';
+    if (field === 'pickupIdType') message = ID_TYPES.includes(v) ? '' : 'Choose the ID that was presented.';
+    if (field === 'pickupIdLast4') message = /^[A-Za-z0-9]{4}$/.test(v) ? '' : 'Enter exactly 4 letters or numbers.';
+    if (field === 'failReason') message = v ? '' : 'Choose what happened.';
+    if (field === 'failNote') message = $('co_failReason')?.value === 'other' && v.length < 5 ? 'Describe what happened (at least 5 characters).' : '';
+    if (field === 'note' && v.length > 200) message = 'The note must be 200 characters or fewer.';
+  }
+  setErr(field, message);
+  if (field === 'amount' && $('co_tendered')?.value) liveActionField($('co_tendered'));
+}
+$('coAction').addEventListener('focusout', e => liveActionField(e.target));
 $('coAction').addEventListener('change', (e) => {
-  if (e.target.id === 'co_method') { syncPayMethod(); return; }
+  liveActionField(e.target);
+  if (e.target.id === 'co_failReason' && $('co_failNote')) liveActionField($('co_failNote'));
+  if (e.target.id === 'co_method') { syncPayMethod(); ['co_reference','co_tendered'].forEach(id => liveActionField($(id))); return; }
   if (e.target.id !== 'co_rep' || !chosen) return;                         // "someone else is collecting": the name must be typed fresh
   $('coRepBox').hidden = !e.target.checked;
   const n = $('co_receivedBy'); n.value = e.target.checked ? '' : (chosen.fulfillment === 'Delivery' ? (chosen.recipient || chosen.customer) : chosen.customer);
   if (e.target.checked) n.focus();
+  liveActionField($('co_relationship')); liveActionField(n);
 });
 $('coSearch').addEventListener('input', render); $('coFilter').addEventListener('change', render); $('coRefresh').addEventListener('click', () => load(false));
 

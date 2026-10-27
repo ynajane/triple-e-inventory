@@ -36,6 +36,7 @@ a.nav-item{text-decoration:none}
 #checkout #payPlan:not([hidden]){border-top:1px solid var(--border,#e2e8f0);padding-top:12px;margin-top:12px}
 </style>
 <style>html.gate body{visibility:hidden}</style><script>document.documentElement.classList.add("gate")</script>
+<link rel="stylesheet" href="form-layout.css?v=1">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -197,7 +198,7 @@ a.nav-item{text-decoration:none}
           <div id="addrBox"></div>
           <div id="contactBox">
             <div class="sec-title">Contact</div>
-            <label for="phone" style="margin-top:0">Mobile number</label><input id="phone" inputmode="tel" placeholder="0917 123 4567">
+            <label for="phone" style="margin-top:0">Mobile number</label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="20" placeholder="0917 123 4567"><div id="phoneError" class="err-text" aria-live="polite"></div>
           </div>
           <div class="sec-title">Payment</div>
           <div class="opt-stack" id="payOpts"></div>
@@ -467,13 +468,13 @@ a.nav-item{text-decoration:none}
 </style>
 
 <script>window.ACCOUNT_CFG = { roleLabel: 'Customer', idLabel: 'Customer ID', idPrefix: 'CUS', deptLabel: 'Account Type', customer: true };</script>
-<script src="password-change.js?v=1"></script>
+<script src="password-change.js?v=2"></script>
 <script src="account-menu.js?v=3"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="shop-address.js"></script>
 <script src="notification-center.js?v=8"></script>
-<script src="form-assist.js?v=2"></script>
-<script src="quote-fields.js?v=13"></script>
+<script src="form-assist.js?v=3"></script>
+<script src="quote-fields.js?v=14"></script>
 
 <script>
 /* ===== Role check: customers belong here; staff are sent to their own page ===== */
@@ -596,7 +597,7 @@ const catIcon = c => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${
 const EMPTY_CART_ICO = '<svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>';
 
 function toast(msg, err) { const t = $('toast'); t.textContent = msg; t.className = (err ? 'err ' : '') + 'show'; clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 3000); }
-function closeModal(id) { $(id).classList.remove('show'); }
+function closeModal(id) { $(id).classList.remove('show'); if (window.FormAssist) FormAssist.validation.reset($(id)); }
 /* CSP: no inline onclick/onerror attributes — elements carry data-* flags and these delegated listeners act on them */
 document.addEventListener('click', e => {
   const t = e.target.closest && e.target.closest('[data-close-modal],[data-goto-profile],[data-noop-link]');
@@ -1365,7 +1366,7 @@ async function placeOrder() {
     phone = ship.phone;
   } else {
     phone = $('phone').value.replace(/[\s().-]/g, '');
-    if (!/^(\+63|0)9\d{9}$/.test(phone)) return fail('Enter a valid mobile number, e.g. 0917 123 4567.');
+    if (checkoutPhoneProblem()) { FormAssist.validation.show($('phone'), checkoutPhoneProblem(), $('phoneError')); $('phone').focus(); return fail('Please correct the mobile number.'); }
   }
   fail('');
   const online = ONLINE.includes(pay);
@@ -1487,9 +1488,13 @@ async function openProductDetails(sku) {
   area.querySelectorAll('[data-pdtab]').forEach(b => b.onclick = () => openTab(b.dataset.pdtab));
   area.querySelectorAll('[data-pdtab-go]').forEach(b => b.onclick = () => { openTab(b.dataset.pdtabGo); area.querySelector('.pd-tabs').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
   const qty = $('pdQty'), clamp = () => { let v = Number(qty.value); if (!Number.isFinite(v) || v < need()) v = need(); const room = p.available - inCart(p.sku); if (room > 0 && v > room) v = room; qty.value = frac ? Math.round(v * 100) / 100 : Math.floor(v); };
+  const checkQty = FormAssist.validation.bind(qty, value => {
+    const n = Number(value), room = p.available - inCart(p.sku);
+    return !value || n < need() ? 'Enter at least ' + need() + ' ' + p.unit + '.' : n > room ? 'Only ' + Math.max(0, room) + ' ' + p.unit + ' available to add.' : !frac && !Number.isInteger(n) ? 'Use a whole number.' : Math.abs(n * 100 - Math.round(n * 100)) > 1e-6 ? 'Use at most 2 decimals.' : '';
+  });
   $('pdMinus').onclick = () => { qty.value = Number(qty.value) - step; clamp(); };
   $('pdPlus').onclick = () => { qty.value = Number(qty.value) + step; clamp(); };
-  qty.onchange = clamp;
+  qty.onchange = () => { clamp(); checkQty(true); };
   $('pdAdd').onclick = () => {
     clamp(); const n = Number(qty.value), l = cart.find(x => x.sku === p.sku);
     if ((l ? l.qty : 0) + n > p.available) return toast('Only ' + p.available + ' ' + p.unit + ' available.', true);
@@ -1915,10 +1920,7 @@ $('qCity').addEventListener('change', qOnCity); $('qBrgy').addEventListener('cha
   $(id).addEventListener('blur', () => qField(f));
   $(id).addEventListener('input', e => {
     if (e.isTrusted) $(id).dataset.touched = '1';
-    const live = f === 'phone' ? qPhoneLive() : null;
-    if (f === 'phone' && $(id).value.trim()) { if (live) qErr('phone', live); else if ($(id).classList.contains('is-bad') || $(id).value.replace(/[\s().-]/g, '').length >= 11) qField('phone'); }
-    else if (['productName', 'contactName', 'street'].includes(f) && $(id).value.trim()) qField(f);
-    else if ($(id).classList.contains('is-bad')) qField(f);
+    qField(f);
     $('qErr').textContent = '';
   });
 });
@@ -2105,6 +2107,34 @@ $('refundSend').onclick = async () => {
   try { orders = await loadOrders(); } catch (e) {}
   renderOrders(); syncCounts(); toast('Refund request sent. We will review it soon.');
 };
+function checkoutPhoneProblem() {
+  return /^(\+63|0)9\d{9}$/.test($('phone').value.replace(/[\s().-]/g, '')) ? '' : 'Enter a valid mobile number, e.g. 0917 123 4567.';
+}
+if (window.FormAssist) {
+  FormAssist.validation.bind($('phone'), checkoutPhoneProblem, $('phoneError'));
+  ['cancel', 'refund'].forEach(prefix => {
+    FormAssist.validation.bind($(prefix + 'Reason'), value => value ? '' : 'Please choose a reason.');
+    const checkDetails = FormAssist.validation.bind($(prefix + 'Details'), value => (prefix === 'refund' || $(prefix + 'Reason').value === 'other') && value.trim().length < 5 ? 'Please explain the reason (at least 5 characters).' : '');
+    $(prefix + 'Reason').addEventListener('change', () => checkDetails(true));
+  });
+  $('quoteList').addEventListener('input', e => {
+    const input = e.target, form = input.closest('[data-clarify-quote]'); if (!form || !input.name) return;
+    const q = QUOTES.find(x => String(x.id) === form.dataset.clarifyQuote), requested = q?.clarification?.fields || [];
+    const key = input.name.replace(/^spec_/, ''), value = input.value.trim();
+    let message = '';
+    if (input.name === 'response') {
+      const needed = requested.includes('other') || requested.includes('drawing');
+      message = needed && value.length < 10 ? 'Explain it in at least 10 characters.' : !needed && value && value.length < 5 ? 'Write at least 5 characters, or leave it empty.' : '';
+    } else if (CLARIFY[key] && (requested.includes(key) || (value && value !== clarifyNow(q, key)))) message = clarifyProblem(key, value);
+    FormAssist.validation.show(input, message, form.querySelector('[data-err="' + input.name + '"]'));
+  });
+  $('cartRows').addEventListener('input', e => {
+    const input = e.target.closest('[data-qtyin]'), p = input && prod(input.dataset.qtyin); if (!p) return;
+    const n = Number(input.value), step = p.fractional ? 0.5 : 1;
+    const message = !input.value.trim() || !Number.isFinite(n) || n < minQty(p) ? 'Enter at least ' + minQty(p) + ' ' + p.unit + '.' : n > p.available ? 'Only ' + p.available + ' ' + p.unit + ' available.' : Math.abs(n / step - Math.round(n / step)) > 1e-6 ? 'Use increments of ' + step + ' ' + p.unit + '.' : '';
+    FormAssist.validation.show(input, message);
+  });
+}
 $('q').oninput = $('sort').onchange = $('inStock').onchange = renderCatalog;
 $('q').onkeydown = e => { if (e.key === 'Escape') { $('shopDetailsBg').style.display='none'; $('q').value = ''; renderCatalog(); } };
 document.addEventListener('keydown', e => {

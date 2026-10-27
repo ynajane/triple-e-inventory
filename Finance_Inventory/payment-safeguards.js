@@ -8,18 +8,29 @@
   }
   function dialog(title, fields, submit, options = {}) {
     const d = document.createElement('dialog');
+    d.className = 'safeguard-dialog';
     d.style.cssText = 'width:min(560px,95vw);background:var(--panel,#fff);color:var(--text,#16202b);border:1px solid #aaa;border-radius:10px;padding:24px';
-    d.innerHTML = '<form><h2>' + esc(title) + '</h2>' + fields + '<label style="display:block;margin:12px 0">Finance note<textarea name="note" required minlength="5" maxlength="300" style="display:block;width:100%"></textarea></label><p role="alert" style="color:#c0392b"></p><button type="button" data-close>Back</button> <button type="submit">Save decision</button></form>';
+    d.innerHTML = '<form novalidate><h2>' + esc(title) + '</h2>' + fields + '<label>Finance note<textarea name="note" required minlength="5" maxlength="300"></textarea></label><p role="alert" style="color:#c0392b"></p><div class="safeguard-actions"><button type="button" class="btn-secondary" data-close>Back</button><button type="submit" class="btn-primary">Save decision</button></div></form>';
     const note = d.querySelector('[name=note]');
     note.required = options.noteRequired !== false;
     note.minLength = note.required ? 5 : 0;
     if (options.setup) options.setup(d);
     document.body.append(d); d.showModal();
+    const checks = [...d.querySelectorAll('input, select, textarea')].map(input => ({ input, check: FormAssist.validation.bind(input, value => {
+      if (input.name === 'note') return (input.required && value.trim().length < 5) || (value.trim() && value.trim().length < input.minLength) ? 'Write a Finance note (at least 5 characters).' : value.length > 300 ? 'Keep the note within 300 characters.' : '';
+      if (input.name === 'date' && value) {
+        const date = new Date(value).getTime();
+        if (!Number.isFinite(date) || date <= Math.max(Date.now(), new Date(options.dueAt || 0).getTime() || 0)) return 'Choose a future date later than the current due date.';
+      }
+      return FormAssist.validation.nativeProblem(input);
+    }) }));
+    d.addEventListener('change', () => checks.forEach(({check}) => check(false)));
     return new Promise((resolve) => {
       d.addEventListener('close', () => { d.remove(); resolve(null); });
       d.querySelector('[data-close]').onclick = () => d.close();
       d.querySelector('form').onsubmit = async (e) => {
-        e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); const button = e.submitter; button.disabled = true;
+        e.preventDefault(); const bad = checks.filter(({check}) => check(true)); if (bad.length) { bad[0].input.focus(); return; }
+        const b = Object.fromEntries(new FormData(e.target)); const button = e.submitter || d.querySelector('[type=submit]'); button.disabled = true;
         try { const result = await submit(b); resolve(result); d.close(); }
         catch (err) { d.querySelector('[role=alert]').textContent = err.message; button.disabled = false; }
       };
@@ -41,6 +52,7 @@
               const needed = ['changed_mind','balance_unpaid'].includes(select ? select.value : policy.requestedReason);
               label.hidden = !needed;
               label.querySelector('select').required = needed;
+              label.querySelector('select').disabled = !needed;
               note.required = !approve || needed;
               note.minLength = note.required ? 5 : 0;
             };
@@ -62,7 +74,7 @@
       const orders = debt.orders;
       box.innerHTML = '<h3>Balance decisions</h3><p>Overdue grace period: ' + Number(data.graceDays) + ' days. Single Finance credit limit: ₱' + Number(debt.creditLimit).toLocaleString() + '.</p>' +
         orders.map((o) => '<div style="padding:12px;border-top:1px solid #ccc"><b>' + esc(o.no) + '</b> — ' + esc(o.status) + ' — balance ₱' + Number(o.outstanding).toLocaleString() +
-          '<div>' + (o.creditPending ? 'Pending second approval: ' + esc(o.creditPending.note) + '<button data-act="approve">Approve as second Finance user</button>' : '<button data-act="extend">Extend due date</button> <button data-act="grant">Grant credit exception</button>') +
+          '<div class="safeguard-actions">' + (o.creditPending ? 'Pending second approval: ' + esc(o.creditPending.note) + '<button data-act="approve">Approve as second Finance user</button>' : '<button data-act="extend">Extend due date</button> <button data-act="grant">Grant credit exception</button>') +
           ' <button data-act="revoke">Revoke credit request / exception</button>' + (o.status === 'On Hold' ? ' <button data-act="cancel">Cancel</button>' : '') + '</div></div>').join('');
       const production = document.createElement('div');
       production.innerHTML = '<h3>Production payment overrides</h3>' + quotes.filter((q) => ['accepted','preparing'].includes(q.status) && !q.convertedOrder).map((q) => '<p>' + esc(q.id) + (q.productionOverride ? ' — override by ' + esc(q.productionOverride.by) + ': ' + esc(q.productionOverride.note) : '') + ' <button data-production-override="' + esc(q.id) + '" data-action="' + (q.productionOverride ? 'revoke' : 'grant') + '">' + (q.productionOverride ? 'Revoke override' : 'Record Finance override') + '</button></p>').join('');
@@ -72,10 +84,11 @@
         button.onclick = async () => {
           const action = button.dataset.act;
           if (action === 'cancel') await window.PaymentSafeguards.cancel(o.no, false);
-          else await dialog(o.no + ' — ' + action, action === 'extend' ? '<label>New due date<input type="datetime-local" name="date" required></label>' : '<p>Balances above the limit require a second signed-in Finance user. Your account identifies the approver.</p>', (b) => api('/finance/orders/' + encodeURIComponent(o.no) + (action === 'extend' ? '/balance-extension' : '/credit-exception'), action === 'extend' ? { note:b.note, dueAt:new Date(b.date).toISOString() } : { note:b.note, action }));
+          else await dialog(o.no + ' — ' + action, action === 'extend' ? '<label>New due date<input type="datetime-local" name="date" required></label>' : '<p>Balances above the limit require a second signed-in Finance user. Your account identifies the approver.</p>', (b) => api('/finance/orders/' + encodeURIComponent(o.no) + (action === 'extend' ? '/balance-extension' : '/credit-exception'), action === 'extend' ? { note:b.note, dueAt:new Date(b.date).toISOString() } : { note:b.note, action }), {dueAt:o.dueAt});
           loading = false; render();
         };
       });
+      box.querySelectorAll('button').forEach(button => button.classList.add('btn-secondary'));
     } catch (err) { box.textContent = err.message; }
     finally { loading = false; }
   }

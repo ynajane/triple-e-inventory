@@ -44,7 +44,7 @@
   if (!allowZero && v <= 0) return { ok: false, error: 'Amount must be more than 0.' };
   return { ok: true, value: v };
  }
- const fieldErr = (id, msg) => { const i = $(id), e = $(id + 'Err'); if (i) i.classList.toggle('is-bad', !!msg); if (e) e.textContent = msg || ''; };
+ const fieldErr = (id, msg) => { const i = $(id), e = $(id + 'Err'); if (i) { i.classList.toggle('is-bad', !!msg); i.setAttribute('aria-invalid', String(!!msg)); if (e) i.setAttribute('aria-describedby', e.id); } if (e) { e.textContent = msg || ''; e.setAttribute('aria-live', 'polite'); } };
 
  // Empty boxes mean zero; typed counts must match the server's integer-count contract.
  function readCashCount(inputs) {
@@ -258,6 +258,7 @@
    const dep = depositNow(c); fieldErr('csDeposit', dep.ok ? '' : dep.error);
    $('csNext').textContent = c.ok && dep.ok ? 'Stays in the drawer, and is pre-filled when the next shift opens: ' + fmt((cents(c.value) - cents(dep.value)) / 100) : '';
    const noteOk = !needNote || $('csNote').value.trim().length >= 5;
+   fieldErr('csNote', !noteOk ? 'Please explain the difference (at least 5 characters).' : '');
    $('csConfirmClose').disabled = !(c.ok && dep.ok && $('csSure').checked && noteOk);
    return { c, diff, needNote, noteOk, dep };
   };
@@ -376,7 +377,15 @@
   else if (t.id === 'sgCloseNow') { if (current) closeDialog({ forced: true }); else refresh(); }
   else if (t.dataset.sgfill) { const box = $('sgCash'), now = MoneyInput.parse(box.value) || 0; MoneyInput.set(box, t.dataset.sgfill === 'clear' ? '' : ((cents(now) + cents(t.dataset.sgfill)) / 100).toFixed(2)); fieldErr('sgCash', ''); gateUpdate(); box.focus(); }
  });
- document.addEventListener('input', e => { if (e.target.id === 'sgCash') { fieldErr('sgCash', ''); gateUpdate(); } });
+ function liveCashField(input) {
+  const id = input.id;
+  if (['sgCash', 'csOpening', 'csMvAmount', 'csTotal'].includes(id)) {
+   const p = parseAmount(input.value, {allowZero:id !== 'csMvAmount'});
+   fieldErr(id, !p.ok ? p.error : id === 'csMvAmount' && kind === 'cash_out' && current && p.value > current.expectedCash + 0.004 ? 'Only ' + fmt(current.expectedCash) + ' should be in the drawer.' : '');
+  } else if (id === 'csMvReason') fieldErr(id, input.value.trim().length < 5 ? 'Write a reason (at least 5 characters).' : '');
+  if (id === 'sgCash') gateUpdate();
+ }
+ ['input', 'focusout'].forEach(event => document.addEventListener(event, e => liveCashField(e.target)));
  document.addEventListener('change', e => { if (e.target.id === 'sgSure') gateUpdate(); });
  document.addEventListener('keydown', e => {
   if (!gated) return;

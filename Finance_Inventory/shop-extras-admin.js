@@ -735,10 +735,25 @@
     if (guided) h += '<div class="sx-box" id="sxWhy"><b>Why the system suggests this</b><span class="faint">Loading\u2026</span></div>';
     h += '<div class="sx-box sx-log" id="sxLog"><b>Decision log</b><span class="faint">Loading\u2026</span></div>';
     $('sxBody').innerHTML = h;
-    if ($('sxNote') && window.FormAssist) FormAssist.validation.bind($('sxNote'), function (value) {
+    var noteCheck;
+    if ($('sxNote') && window.FormAssist) noteCheck = FormAssist.validation.bind($('sxNote'), function (value) {
       var note = value.trim();
+      if ($('sxCloseBox') && !$('sxCloseBox').hidden) {
+        if ($('sxCloseReason')?.value === 'other' && note.length < 10) return 'Explain the reason (at least 10 characters).';
+        if (x.paidAmount > 0 && note.length < 5) return 'Write how the payment is refunded or settled (at least 5 characters).';
+      }
       return note && note.length < 5 ? 'Write at least 5 characters, or leave the message empty.' : '';
     });
+    if (window.FormAssist) {
+      if ($('sxAmount')) FormAssist.validation.bind($('sxAmount'), function(value) { return !(MoneyInput.parse(value) > 0) ? 'Enter a quoted amount greater than zero.' : ''; });
+      ['sxReady','sxValid','sxLead','sxDays','sxCloseReason'].forEach(function(id) {
+        var input = $(id); if (!input) return;
+        FormAssist.validation.bind(input, function(value) { return !value ? 'Choose a value.' : FormAssist.validation.nativeProblem(input); });
+      });
+      if ($('sxCloseReason')) $('sxCloseReason').addEventListener('change', function() {
+        if (noteCheck) noteCheck(true);
+      });
+    }
     prefillPayment(x);
     if ($('sxReady')) loadGuide(x);
     if ($('sxJob')) loadJob(x);

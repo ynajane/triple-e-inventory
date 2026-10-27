@@ -42,6 +42,7 @@
 .cartpane .lines{flex:1 0 120px}
 #complete{white-space:normal;line-height:1.25;letter-spacing:.4px;font-size:13.5px;min-height:48px;overflow-wrap:anywhere}
 </style>
+<link rel="stylesheet" href="form-layout.css?v=1">
 </head>
 <body>
 <!-- cash shift gate: full screen, no dismiss; cash-shift-ui.js fills it and lifts it once a shift is open -->
@@ -487,11 +488,11 @@
 <script>window.ACCOUNT_CFG = { roleLabel: 'Cashier', idLabel: 'Employee ID', idPrefix: 'TEM', deptLabel: 'Department' };</script>
 <script src="cashier-customers.js?v=3"></script>
 <script src="input-rules.js?v=1"></script>
-<script src="password-change.js?v=1"></script>
+<script src="password-change.js?v=2"></script>
 <script src="account-menu.js?v=3"></script>
-<script src="form-assist.js?v=2"></script>
-<script src="quote-fields.js?v=13"></script>
-<script src="quote-desk-ui.js?v=15"></script>
+<script src="form-assist.js?v=3"></script>
+<script src="quote-fields.js?v=14"></script>
+<script src="quote-desk-ui.js?v=16"></script>
 <script src="pos-delivery.js?v=3"></script>
 <script src="pos-customer-account.js?v=1"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -545,7 +546,7 @@ let PRODUCTS = [], cart = [], sales = [], method = 'Cash', voidId = null, cat = 
 const TRASH = '<svg class="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>';
 
 function toast(msg, err) { const t = $('toast'); t.textContent = msg; t.className = (err ? 'err ' : '') + 'show'; clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 3000); }
-function closeModal(id, force = false) { if (!force && salesRequestBusy && ['returnBg','voidBg'].includes(id)) return; $(id).classList.remove('show'); }
+function closeModal(id, force = false) { if (!force && salesRequestBusy && ['returnBg','voidBg'].includes(id)) return; $(id).classList.remove('show'); if (window.FormAssist) FormAssist.validation.reset($(id)); }
 /* CSP: no inline onclick attributes — buttons carry data-close-modal and this one listener closes the modal */
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-close-modal]'); if (b) closeModal(b.dataset.closeModal); });
 const prod = sku => PRODUCTS.find(p => p.sku === sku) || payments.flatMap(p => p.items || []).filter(i => i.sku === sku).map(i => ({ ...i, name:i.sku, unit:'pcs', available:0 }))[0];
@@ -1070,6 +1071,15 @@ function custErr(id, msg) { const b = $(id + 'Err'); if (b) b.textContent = msg 
     const val = $('custName').value.trim();
     if (fulfil === 'Delivery' && val.length >= 2 && DLV_NAME_RE.test(val)) custErr('custName', '');
   });
+  FA.validation.bind($('custName'), value => {
+    const name = value.trim();
+    if (fulfil === 'Delivery') return name.length < 2 || name.length > 50 || !DLV_NAME_RE.test(name) ? 'Enter the customer’s full name (2–50 characters, letters only).' : '';
+    return name && (name.length < 2 || name.length > 80) ? 'Use 2–80 characters, or leave the name empty.' : '';
+  }, $('custNameErr'));
+  FA.validation.bind($('custPhone'), value => {
+    if (fulfil === 'Delivery') return DLV_PHONE_RE.test(value.replace(/[\s().-]/g, '')) ? '' : 'Enter a valid mobile number, e.g. 0917 123 4567.';
+    return !value.trim() || /^\+?[0-9][0-9 ()-]{5,18}[0-9]$/.test(value.trim()) ? '' : 'Enter a valid phone number, or leave it empty.';
+  }, $('custPhoneErr'));
 })();
 function setFulfil(f) {
   fulfil = f; document.querySelectorAll('[data-fulfil]').forEach(b => b.classList.toggle('on', b.dataset.fulfil === f));
@@ -1193,6 +1203,25 @@ function openVoid(id) {
 }
 $('voidReason').onchange = () => { $('voidDetailsLbl').textContent = $('voidReason').value === 'other' ? 'Please explain (required)' : 'More details (optional)'; $('voidReason').classList.remove('is-bad'); $('voidErr').textContent = ''; };
 $('voidDetails').oninput = () => { $('voidDetails').classList.remove('is-bad'); $('voidErr').textContent = ''; };
+if (window.FormAssist) {
+  ['void', 'return'].forEach(prefix => {
+    FormAssist.validation.bind($(prefix + 'Reason'), value => value ? '' : 'Please choose a reason.');
+    const check = FormAssist.validation.bind($(prefix + 'Details'), value => $(prefix + 'Reason').value === 'other' && value.trim().length < 5 ? 'Please explain the reason (at least 5 characters).' : '');
+    $(prefix + 'Reason').addEventListener('change', () => check(true));
+  });
+  FormAssist.validation.bind($('priceNew'), value => {
+    const n = parseMoney(value); return !(n > 0) ? 'Enter a price above zero.' : n > 10000000 ? 'That price is too large.' : '';
+  });
+  FormAssist.validation.bind($('supEmail'), value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) ? '' : 'Enter the supervisor email.');
+  FormAssist.validation.bind($('supPass'), value => value ? '' : 'Enter the supervisor password.');
+  FormAssist.validation.bind($('cardRef'), value => CARD_RE.test(value.trim()) ? '' : 'Reference must be 4–30 letters, numbers or dashes.');
+  FormAssist.validation.bind($('tendered'), value => cart.length && method === 'Cash' && cents(parseMoney(value)) < cents(total()) ? 'Cash received is less than the total.' : '');
+  $('lines').addEventListener('input', e => {
+    const input = e.target.closest('[data-qty]'), p = input && prod(input.dataset.qty); if (!p) return;
+    const n = Number(input.value), message = !input.value.trim() || !Number.isFinite(n) || n < minQty(p) ? 'Enter at least ' + fmtQty(minQty(p)) + ' ' + p.unit + '.' : n > p.available ? 'Only ' + fmtQty(p.available) + ' ' + p.unit + ' available.' : !isFrac(p) && !Number.isInteger(n) ? 'Use a whole number.' : Math.abs(n * 100 - Math.round(n * 100)) > 1e-6 ? 'Use at most 2 decimals.' : '';
+    FormAssist.validation.show(input, message);
+  });
+}
 $('voidSend').onclick = async () => {
   if (salesRequestBusy || !voidId) return;
   const id = voidId, code = $('voidReason').value, details = $('voidDetails').value.trim();
@@ -1299,10 +1328,10 @@ connectCashier();
   }, 20000);
 })();
 </script>
-<script src="cash-shift-ui.js?v=10"></script>
+<script src="cash-shift-ui.js?v=11"></script>
 <script src="notification-center.js?v=8"></script>
 <script src="page-memory.js?v=2"></script>
-<script src="cashier-orders.js?v=10"></script>
+<script src="cashier-orders.js?v=11"></script>
 <script src="table-pagination.js"></script>
 </body>
 </html>

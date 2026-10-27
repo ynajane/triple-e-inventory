@@ -353,7 +353,9 @@
     if (!box && !message) return;
     if (!box) {
       box = document.createElement('div'); box.className = 'fa-error';
-      input.insertAdjacentElement('afterend', box);
+      var quantity = input.closest('.qty, .pd-qty'), shell = input.closest('.input-shell, .cs-money');
+      if (quantity) (quantity.closest('.ctl, .line, .pd-buy') || quantity.parentElement).appendChild(box);
+      else (shell || input).insertAdjacentElement('afterend', box);
       if (state) state.box = box;
     }
     feedbackBoxes.set(input, box);
@@ -387,6 +389,81 @@
     });
     return state.check;
   }
+
+  // Native constraints need inline feedback too, including controls created after
+  // startup and controls outside a <form>. Business rules supplied with bind()
+  // take precedence. Optional empty fields and inactive controls stay optional.
+  var nativeFeedback = new WeakSet();
+  function nativeProblem(input) {
+    var value = input.value || '', validity = input.validity;
+    if (!validity) return '';
+    if (validity.badInput) return 'Enter a valid ' + (/date|time/.test(input.type) ? 'date or time.' : 'number.');
+    if (validity.valueMissing || (input.required && !/checkbox|radio|file/.test(input.type) && !value.trim())) return 'This field is required.';
+    if (!value) return '';
+    if (validity.typeMismatch) return input.type === 'email' ? 'Enter a valid email address, e.g. name@example.com.' : 'Enter a valid web address.';
+    if (input.minLength > 0 && value.length < input.minLength) return 'Use at least ' + input.minLength + ' characters.';
+    if (input.maxLength >= 0 && value.length > input.maxLength) return 'Use at most ' + input.maxLength + ' characters.';
+    if (validity.patternMismatch) return input.title || 'Use the requested format.';
+    if (validity.rangeUnderflow) return /date|time/.test(input.type) ? 'Choose ' + input.min + ' or later.' : 'Enter a value of at least ' + input.min + '.';
+    if (validity.rangeOverflow) return /date|time/.test(input.type) ? 'Choose ' + input.max + ' or earlier.' : 'Enter a value no greater than ' + input.max + '.';
+    if (validity.stepMismatch) return 'Use increments of ' + (input.step || '1') + '.';
+    return '';
+  }
+  function checkNative(input) {
+    if (!input || !input.matches || !input.matches('input, select, textarea') || validations.has(input) || input.dataset.faOff) return;
+    if (/^(hidden|button|submit|reset|search|range|color)$/.test(input.type)) return;
+    if (feedbackBoxes.has(input) && !nativeFeedback.has(input)) return;
+    var active = !input.disabled && !input.readOnly && input.getClientRects().length > 0;
+    var message = active ? nativeProblem(input) : '';
+    // A form may already be showing a more specific business-rule message.
+    var host = input.closest('.form-group, .q-field, .field, .acct-group, .cs-field, label') || input.parentElement;
+    var custom = host && host.querySelector('.err-text, .field-error, .field-msg, .pe-msg, .cs-err, .acct-msg');
+    if (custom && custom.textContent.trim()) message = '';
+    if (message) nativeFeedback.add(input);
+    if (nativeFeedback.has(input)) {
+      fieldFeedback(input, message);
+      if (!message && input.matches('.is-bad, .field-invalid, .pe-bad')) input.setAttribute('aria-invalid', 'true');
+    }
+  }
+  ['input', 'change', 'focusout'].forEach(function (type) {
+    document.addEventListener(type, function (e) { checkNative(e.target); });
+  });
+  document.addEventListener('invalid', function (e) { checkNative(e.target); }, true);
+  document.addEventListener('reset', function (e) {
+    e.target.querySelectorAll('input, select, textarea').forEach(function (input) {
+      if (nativeFeedback.has(input)) fieldFeedback(input, '');
+    });
+  });
+  function showValidation(input, message, box) {
+    nativeFeedback.delete(input);
+    fieldFeedback(input, message, box);
+  }
+  function resetValidation(root) {
+    if (!root) return;
+    root.querySelectorAll('input, select, textarea').forEach(function (input) {
+      var state = validations.get(input); if (state) state.touched = false;
+      fieldFeedback(input, ''); nativeFeedback.delete(input);
+    });
+  }
+  function askReason(options) {
+    var dialog = document.createElement('dialog'); dialog.className = 'safeguard-dialog';
+    var id = 'faReason' + (++errorSerial);
+    dialog.setAttribute('aria-labelledby', id);
+    dialog.innerHTML = '<form novalidate><h2 id="' + id + '">' + esc(options.title) + '</h2><label>' + esc(options.label || 'Reason') +
+      '<textarea required minlength="' + (options.min || 5) + '" maxlength="' + (options.max || 300) + '"></textarea></label>' +
+      '<div class="modal-actions"><button type="button" class="btn-secondary">Back</button><button type="submit" class="btn-primary">' + esc(options.confirm || 'Save') + '</button></div></form>';
+    document.body.appendChild(dialog); dialog.showModal();
+    var input = dialog.querySelector('textarea'), check = bindValidation(input, function (value) {
+      return value.trim().length < (options.min || 5) ? 'Write at least ' + (options.min || 5) + ' characters.' : nativeProblem(input);
+    });
+    return new Promise(function (resolve) {
+      var answer = null;
+      dialog.addEventListener('close', function () { dialog.remove(); resolve(answer); });
+      dialog.querySelector('[type=button]').onclick = function () { dialog.close(); };
+      dialog.querySelector('form').onsubmit = function (event) { event.preventDefault(); if (check(true)) { input.focus(); return; } answer = input.value.trim(); dialog.close(); };
+      input.focus();
+    });
+  }
   var validationStyle = document.createElement('style');
   validationStyle.textContent = '.fa-error{display:block;color:var(--red,#c0392b);font-size:12.5px;line-height:1.45;margin-top:5px}' +
     '.fa-invalid{border-color:var(--red,#c0392b)!important}';
@@ -403,11 +480,11 @@
   });
 
   window.FormAssist = {
-    validation: { bind: bindValidation, show: fieldFeedback },
+    validation: { bind: bindValidation, show: showValidation, reset: resetValidation, nativeProblem: nativeProblem },
     phone: { format: formatPhone, bind: bindPhone },
     email: { suggest: suggestEmail, bind: bindEmail },
     similar: similar, note: note, setValue: setValue,
-    guard: guard, markClean: markClean, isDirty: isDirty,
+    guard: guard, markClean: markClean, isDirty: isDirty, askReason: askReason,
     keyboard: keyboard, draft: draft,
     zipFill: zipFill, lookupZip: lookupZip, bestName: bestName, waitFor: waitFor
   };
