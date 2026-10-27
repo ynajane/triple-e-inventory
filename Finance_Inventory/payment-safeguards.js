@@ -72,15 +72,23 @@
     try {
       const [data, debt, quotes] = await Promise.all([api('/finance/balance-overdue'), api('/finance/receivables'), api('/finance/quotes')]);
       const orders = debt.orders;
-      box.innerHTML = '<h3>Balance decisions</h3><p>Overdue grace period: ' + Number(data.graceDays) + ' days. Single Finance credit limit: ₱' + Number(debt.creditLimit).toLocaleString() + '.</p>' +
-        orders.map((o) => '<div style="padding:12px;border-top:1px solid #ccc"><b>' + esc(o.no) + '</b> — ' + esc(o.status) + ' — balance ₱' + Number(o.outstanding).toLocaleString() +
-          '<div class="safeguard-actions">' + (o.creditPending ? 'Pending second approval: ' + esc(o.creditPending.note) + '<button data-act="approve">Approve as second Finance user</button>' : '<button data-act="extend">Extend due date</button> <button data-act="grant">Grant credit exception</button>') +
-          ' <button data-act="revoke">Revoke credit request / exception</button>' + (o.status === 'On Hold' ? ' <button data-act="cancel">Cancel</button>' : '') + '</div></div>').join('');
-      const production = document.createElement('div');
-      production.innerHTML = '<h3>Production payment overrides</h3>' + quotes.filter((q) => ['accepted','preparing'].includes(q.status) && !q.convertedOrder).map((q) => '<p>' + esc(q.id) + (q.productionOverride ? ' — override by ' + esc(q.productionOverride.by) + ': ' + esc(q.productionOverride.note) : '') + ' <button data-production-override="' + esc(q.id) + '" data-action="' + (q.productionOverride ? 'revoke' : 'grant') + '">' + (q.productionOverride ? 'Revoke override' : 'Record Finance override') + '</button></p>').join('');
-      box.append(production);
+      const head = (title, sub) => '<div class="panel-head"><div><div class="panel-title">' + title + '</div><div class="panel-sub">' + sub + '</div></div></div>';
+      const empty = (cols, text) => '<tr><td colspan="' + cols + '" class="faint">' + text + '</td></tr>';
+      const overrides = quotes.filter((q) => ['accepted','preparing'].includes(q.status) && !q.convertedOrder);
+      box.style.marginBottom = '18px';
+      box.innerHTML = head('Balance decisions', 'Overdue grace period: ' + Number(data.graceDays) + ' days. Single Finance credit limit: ₱' + Number(debt.creditLimit).toLocaleString() + '.') +
+        '<div class="table-wrapper"><table><thead><tr><th>Order</th><th>Status</th><th>Balance</th><th>Actions</th></tr></thead><tbody>' +
+        (orders.length ? orders.map((o, i) => '<tr data-i="' + i + '"><td><b>' + esc(o.no) + '</b></td><td>' + esc(o.status) + '</td><td>₱' + Number(o.outstanding).toLocaleString() + '</td>' +
+          '<td><div class="safeguard-actions">' + (o.creditPending ? '<span class="faint">Pending second approval: ' + esc(o.creditPending.note) + '</span><button data-act="approve">Approve as second Finance user</button>' : '<button data-act="extend">Extend due date</button><button data-act="grant">Grant credit exception</button>') +
+          '<button data-act="revoke">Revoke credit request / exception</button>' + (o.status === 'On Hold' ? '<button data-act="cancel">Cancel</button>' : '') + '</div></td></tr>').join('') : empty(4, 'No balances need a decision.')) +
+        '</tbody></table></div>' +
+        '<div class="panel-head" style="margin-top:18px"><div><div class="panel-title">Production payment overrides</div><div class="panel-sub">Let an unpaid accepted quotation go into production. Your name and reason are logged.</div></div></div>' +
+        '<div class="table-wrapper"><table><thead><tr><th>Quotation</th><th>Override</th><th>Actions</th></tr></thead><tbody>' +
+        (overrides.length ? overrides.map((q) => '<tr><td><b>' + esc(q.id) + '</b></td><td>' + (q.productionOverride ? 'By ' + esc(q.productionOverride.by) + ': ' + esc(q.productionOverride.note) : '<span class="faint">None</span>') + '</td>' +
+          '<td><div class="safeguard-actions"><button data-production-override="' + esc(q.id) + '" data-action="' + (q.productionOverride ? 'revoke' : 'grant') + '">' + (q.productionOverride ? 'Revoke override' : 'Record Finance override') + '</button></div></td></tr>').join('') : empty(3, 'No quotations are waiting on a production override.')) +
+        '</tbody></table></div>';
       [...box.querySelectorAll('[data-act]')].forEach((button) => {
-        const row = button.parentElement.parentElement, index = [...box.children].indexOf(row) - 2, o = orders[index];
+        const o = orders[Number(button.closest('tr').dataset.i)];
         button.onclick = async () => {
           const action = button.dataset.act;
           if (action === 'cancel') await window.PaymentSafeguards.cancel(o.no, false);
@@ -88,7 +96,7 @@
           loading = false; render();
         };
       });
-      box.querySelectorAll('button').forEach(button => button.classList.add('btn-secondary'));
+      box.querySelectorAll('button').forEach(button => button.classList.add('btn-secondary', 'btn-sm'));
     } catch (err) { box.textContent = err.message; }
     finally { loading = false; }
   }
