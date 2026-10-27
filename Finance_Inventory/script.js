@@ -1758,7 +1758,7 @@ function renderProductTable(items) {
             <tr class="no-results-row">
                 <td colspan="8" class="pr-empty">
                     ${archivedView
-                        ? "No archived products. Archive a product from its details and it will be kept here."
+                        ? "No deleted products. A product you delete from its details is kept here and can be restored."
                         : "No products match your search or category."}
                 </td>
             </tr>
@@ -1799,7 +1799,7 @@ function renderProductTable(items) {
                 <td class="dim">${renderProductSuppliers(item)}</td>
                 <td>
                     ${archivedView
-                        ? `<span class="status-pill archived">Archived</span>`
+                        ? `<span class="status-pill archived" title="${escapeHTML(item.deleteReason || "")}">Deleted</span>`
                         : `<span class="status-pill ${item.status}">${getStockStatusLabel(item.status)}</span>`}
                 </td>
             </tr>
@@ -1842,7 +1842,7 @@ function renderProductSuppliers(item) {
                     ? ` <em class="prod-tag">Primary</em>`
                     : "")
                 + (archived
-                    ? ` <em class="prod-tag muted">Archived</em>`
+                    ? ` <em class="prod-tag muted">Deleted</em>`
                     : "")
                 + `</span>`;
 
@@ -1898,7 +1898,7 @@ function syncCatalogViewToggle() {
         if (c) c.textContent = counts[b.dataset.view];
     });
     const title = document.querySelector("#products .panel-title");
-    if (title) title.textContent = catalogView === "archived" ? "Archived Products" : "Product Catalog";
+    if (title) title.textContent = catalogView === "archived" ? "Deleted Products" : "Product Catalog";
     const btn = document.getElementById("newProductBtn");
     if (btn) btn.hidden = catalogView === "archived";
 }
@@ -1968,7 +1968,7 @@ function openProductDetails(sku) {
     productDetailSku = sku;
     const archived = !!p.archived || archivedProductData.some(x => x.sku === sku);
     const sells = p.department === "Finished Goods";
-    const stockLabel = archived ? "Archived" : getStockStatusLabel(p.status);
+    const stockLabel = archived ? "Deleted" : getStockStatusLabel(p.status);
     const stockClass = archived ? "archived" : p.status;
     const row = (label, value) =>
         `<div class="pd-row"><dt>${label}</dt><dd>${value}</dd></div>`;
@@ -1981,7 +1981,7 @@ function openProductDetails(sku) {
                 <div class="pd-sub"><span class="mono">${escapeHTML(p.sku)}</span> <span class="status-pill ${stockClass}">${stockLabel}</span></div>
             </div>
         </div>
-        ${archived ? `<div class="pd-note">This product is archived. It is hidden from stock lists, the shop, POS and production. Restore it to use it again.</div>` : ""}
+        ${archived ? `<div class="pd-note">This product is deleted. It is hidden from stock lists, the shop, POS and production. Restore it to use it again.${p.deleteReason ? `<br><b>Reason:</b> ${escapeHTML(p.deleteReason)}` : ""}</div>` : ""}
         <dl class="pd-grid">
             ${row("Category", escapeHTML(p.category || "Uncategorized"))}
             ${row("Department", escapeHTML(p.department || "\u2014"))}
@@ -1999,7 +1999,7 @@ function openProductDetails(sku) {
             <button type="button" class="btn-secondary" data-pd="close">Close</button>
             ${archived
                 ? `<button type="button" class="btn-primary" data-pd="restore">${PD_ICONS.restore} Restore product</button>`
-                : `<button type="button" class="btn-secondary pd-archive" data-pd="archive">${PD_ICONS.archive} Archive</button>
+                : `<button type="button" class="btn-secondary pd-archive" data-pd="archive">${PD_ICONS.archive} Delete</button>
                    <button type="button" class="btn-primary" data-pd="edit">${PD_ICONS.edit} Edit</button>`}
         </div>`;
     overlay.classList.add("open");
@@ -2036,8 +2036,9 @@ async function archiveProduct(sku) {
     const p = findCatalogProduct(sku);
     if (!p) return;
     const stock = p.available > 0 ? ` It still has ${formatNumber(p.available)} ${p.unit} in stock.` : "";
-    if (!(await uiConfirm({ title: `Archive ${p.name}?`, message: `${p.sku} will be hidden from stock lists, the shop, POS and production.${stock} You can restore it from the Archived tab.`, confirm: "Archive", danger: true }))) return;
-    productAction("/products/" + encodeURIComponent(sku), { method: "DELETE" }, "Product archived");
+    const reason = await uiConfirm({ title: `Delete ${p.name}?`, message: `${p.sku} will be hidden from stock lists, the shop, POS and production.${stock} It is kept, not erased: you can restore it from the Deleted tab.`, confirm: "Delete", danger: true, reason: { label: "Reason for deleting" } });
+    if (!reason) return;
+    productAction("/products/" + encodeURIComponent(sku), { method: "DELETE", body: JSON.stringify({ reason }) }, "Product deleted");
 }
 
 async function restoreProduct(sku) {
@@ -2433,7 +2434,7 @@ let editingSupplierId = null;
 function getSupplierStatusLabel(status) {
 
     return status === "archived"
-        ? "Archived"
+        ? "Deleted"
         : "Active";
 
 }
@@ -2473,7 +2474,7 @@ const SUPPLIER_PILLS = [
     { key: "Raw Materials", label: "Raw Materials" },
     { key: "Finishing Supplies", label: "Finishing Supplies" },
     { key: "Finished Goods", label: "Finished Goods" },
-    { key: "archived", label: "Archived" }
+    { key: "archived", label: "Deleted" }
 ];
 
 let activeSupplierPill = "all";
@@ -2617,12 +2618,12 @@ function applySupplierFilters() {
         supplierMatchesSearch(s, term));
 
     if (countEl) {
-        const label = activeSupplierPill === "archived" ? "archived supplier" : "supplier";
+        const label = activeSupplierPill === "archived" ? "deleted supplier" : "supplier";
         countEl.textContent = `${filtered.length} ${label}${filtered.length === 1 ? "" : "s"}`;
     }
 
     const title = document.querySelector("#suppliers .panel-title");
-    if (title) title.textContent = activeSupplierPill === "archived" ? "Archived Suppliers" : "Supplier List";
+    if (title) title.textContent = activeSupplierPill === "archived" ? "Deleted Suppliers" : "Supplier List";
 
     renderSupplierTable(filtered);
 }
@@ -2687,7 +2688,7 @@ function openSupplierDetails(id) {
                 <div class="pd-sub"><span class="status-pill ${archived ? "archived" : s.status}">${getSupplierStatusLabel(s.status)}</span></div>
             </div>
         </div>
-        ${archived ? `<div class="pd-note">This supplier is archived. It is hidden from Stock In and the product supplier lists. Restore it to use it again.</div>` : ""}
+        ${archived ? `<div class="pd-note">This supplier is deleted. It is hidden from Stock In and the product supplier lists. Restore it to use it again.${s.deleteReason ? `<br><b>Reason:</b> ${escapeHTML(s.deleteReason)}` : ""}</div>` : ""}
         <dl class="pd-grid">
             ${row("Contact person", dash(s.contactPerson))}
             ${row("Phone", dash(s.phone))}
@@ -2700,7 +2701,7 @@ function openSupplierDetails(id) {
             <button type="button" class="btn-secondary" data-sd="close">Close</button>
             ${archived
                 ? `<button type="button" class="btn-primary" data-sd="restore">${PD_ICONS.restore} Restore supplier</button>`
-                : `<button type="button" class="btn-secondary pd-archive" data-sd="archive">${PD_ICONS.archive} Archive</button>
+                : `<button type="button" class="btn-secondary pd-archive" data-sd="archive">${PD_ICONS.archive} Delete</button>
                    <button type="button" class="btn-primary" data-sd="edit">${PD_ICONS.edit} Edit</button>`}
         </div>`;
     overlay.classList.add("open");
@@ -2723,13 +2724,15 @@ async function setSupplierStatus(id, next) {
     const s = supplierData.find(x => x.id === id);
     const bridge = window.TripleEBridge;
     if (!s || !bridge) return;
-    if (!(await uiConfirm({ title: (next === "archived" ? "Archive " : "Restore ") + s.name + "?", message: next === "archived" ? "The supplier is hidden from new purchase records. You can restore it later." : "The supplier can be used again.", confirm: next === "archived" ? "Archive" : "Restore", danger: next === "archived" }))) return;
+    const del = next === "archived";
+    const reason = await uiConfirm({ title: (del ? "Delete " : "Restore ") + s.name + "?", message: del ? "The supplier is hidden from new purchase records. It is kept, not erased: you can restore it from the Deleted tab." : "The supplier can be used again.", confirm: del ? "Delete" : "Restore", danger: del, reason: del ? { label: "Reason for deleting" } : undefined });
+    if (!reason) return;
     try {
         await bridge.api("/suppliers/" + encodeURIComponent(id) + "/status",
-            { method: "PATCH", body: JSON.stringify({ status: next }) });
+            { method: "PATCH", body: JSON.stringify(del ? { status: next, reason } : { status: next }) });
         closeSupplierDetails();
         await bridge.reload();
-        bridge.toast("Supplier " + (next === "archived" ? "archived" : "restored"));
+        bridge.toast("Supplier " + (del ? "deleted" : "restored"));
     } catch (e) {
         bridge.toast(e.message || "Something went wrong", "error");
     }

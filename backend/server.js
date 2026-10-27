@@ -1061,7 +1061,9 @@ app.get('/api/products', auth('finance'), wrap(async (req, res) => {
   if (app.locals.recipeCosting) await app.locals.recipeCosting.ready;   // cost_mode / cost_note columns
   const archivedOnly = String(req.query.archived || '') === '1';
   const { rows } = await pool.query(archivedOnly ? productSelectFull.replace('WHERE NOT v.is_archived', 'WHERE v.is_archived') : productSelectFull);
-  res.json(rows.map(r => ({ archived: !!r.is_archived, sku: r.sku, name: r.name, department: r.department, category: r.category || 'Uncategorized',
+  const why = {};
+  if (archivedOnly) { await softDeleteReady; (await pool.query('SELECT sku, delete_reason, deleted_at FROM products WHERE is_archived')).rows.forEach(w => { why[w.sku] = w; }); }
+  res.json(rows.map(r => ({ archived: !!r.is_archived, deleteReason: why[r.sku] ? why[r.sku].delete_reason || undefined : undefined, deletedAt: why[r.sku] && why[r.sku].deleted_at ? +new Date(why[r.sku].deleted_at) : undefined, sku: r.sku, name: r.name, department: r.department, category: r.category || 'Uncategorized',
     grade: r.grade || '', form: r.form || '', unit: r.unit, costUnit: r.unit, status: r.stock_status, available: +r.on_hand,
     reorderLevel: +r.reorder_level, reorderAuto: !!r.reorder_auto, reorderBasis: r.reorder_basis || '',
     weightKg: r.weight_kg == null ? null : +r.weight_kg, stdCost: +r.unit_cost, listPrice: +r.selling_price, priceAuto: r.department === 'Finished Goods' ? r.price_auto !== false : undefined, location: r.location,
@@ -1190,10 +1192,26 @@ app.put('/api/products/:sku', auth('finance'), wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// Products and suppliers are never removed: "delete" hides them (soft delete) and keeps who/when/why for the Deleted tab.
+const softDeleteReady = (async () => {
+  for (const t of ['products', 'suppliers']) {
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS delete_reason TEXT`);
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+  }
+})().catch(e => console.error('[soft delete] schema setup failed:', e.message));
+function deleteReason(body) {
+  const reason = str(body && body.reason);
+  if (reason.length < 5) throw new ValidationError({ reason: 'Give a reason for deleting this (at least 5 characters).' });
+  if (reason.length > 300) throw new ValidationError({ reason: 'Keep the reason within 300 characters.' });
+  return reason;
+}
+
 app.delete('/api/products/:sku', auth('finance'), wrap(async (req, res) => {
-  const r = await pool.query('UPDATE products SET is_archived = TRUE WHERE sku = $1 AND NOT is_archived', [str(req.params.sku).toUpperCase()]);
+  await softDeleteReady;
+  const reason = deleteReason(req.body);
+  const r = await pool.query('UPDATE products SET is_archived = TRUE, delete_reason = $2, deleted_at = now() WHERE sku = $1 AND NOT is_archived', [str(req.params.sku).toUpperCase(), reason]);
   if (!r.rowCount) return res.status(404).json({ error: 'Product not found' });
-  await audit(pool, req.user, 'Record edited', `Archived product ${req.params.sku}`);
+  await audit(pool, req.user, 'Record edited', `Deleted product ${req.params.sku}: ${reason}`);
   res.json({ ok: true });
 }));
 
@@ -1204,7 +1222,8 @@ app.post('/api/products/:sku/restore', auth('finance'), wrap(async (req, res) =>
   // an active product may already use this name (names are unique among active products)
   const dup = await pool.query(`SELECT sku FROM products WHERE lower(btrim(name)) = lower(btrim($1)) AND NOT is_archived AND sku <> $2 LIMIT 1`, [p.rows[0].name, sku]);
   if (dup.rowCount) return res.status(409).json({ error: `Cannot restore: an active product named "${p.rows[0].name}" already exists (SKU ${dup.rows[0].sku}). Rename that one first.` });
-  await pool.query('UPDATE products SET is_archived = FALSE WHERE sku = $1', [sku]);
+  await softDeleteReady;
+  await pool.query('UPDATE products SET is_archived = FALSE, delete_reason = NULL, deleted_at = NULL WHERE sku = $1', [sku]);
   await audit(pool, req.user, 'Record edited', `Restored product ${sku}`);
   res.json({ ok: true });
 }));
@@ -1264,6 +1283,7 @@ require('./form-assist')({ app, pool, auth, wrap, str, loadZipRows, REGIONS, TZ 
 const initials = n => n.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 
 app.get('/api/suppliers', auth('finance'), wrap(async (req, res) => {
+  await softDeleteReady;
   const { rows } = await pool.query(`
     SELECT s.*, COALESCE((
         SELECT json_agg(json_build_object('sku', p.sku, 'name', p.name, 'primary', ps.is_primary) ORDER BY p.name)
@@ -1271,6 +1291,7 @@ app.get('/api/suppliers', auth('finance'), wrap(async (req, res) => {
          WHERE ps.supplier_id = s.supplier_id AND NOT p.is_archived), '[]'::json) AS products
       FROM suppliers s ORDER BY s.name`);
   res.json(rows.map(s => ({ id: s.code, name: s.name, initials: initials(s.name), status: s.status,
+    deleteReason: s.status === 'archived' ? s.delete_reason || undefined : undefined, deletedAt: s.status === 'archived' && s.deleted_at ? +new Date(s.deleted_at) : undefined,
     ...supplierFields(s),
     supplies: s.products.length ? s.products.map(p => p.name).join(', ') : (s.supplies || ''),
     products: s.products })));
@@ -1375,9 +1396,11 @@ app.put('/api/suppliers/:code', auth('finance'), wrap(async (req, res) => {
 app.patch('/api/suppliers/:code/status', auth('finance'), wrap(async (req, res) => {
   const status = str(req.body && req.body.status);
   if (!['active', 'archived'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
-  const r = await pool.query('UPDATE suppliers SET status = $2 WHERE code = $1', [req.params.code, status]);
+  await softDeleteReady;
+  const reason = status === 'archived' ? deleteReason(req.body) : null;
+  const r = await pool.query('UPDATE suppliers SET status = $2::text, delete_reason = $3::text, deleted_at = CASE WHEN $3::text IS NULL THEN NULL ELSE now() END WHERE code = $1', [req.params.code, status, reason]);
   if (!r.rowCount) return res.status(404).json({ error: 'Supplier not found' });
-  await audit(pool, req.user, 'Record edited', `Supplier ${req.params.code} to ${status}`);
+  await audit(pool, req.user, 'Record edited', status === 'archived' ? `Deleted supplier ${req.params.code}: ${reason}` : `Restored supplier ${req.params.code}`);
   res.json({ ok: true });
 }));
 

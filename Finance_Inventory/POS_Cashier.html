@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="quote-fields.css?v=4">
 <link rel="stylesheet" href="customer-pages.css?v=2">
 <link rel="stylesheet" href="table-pagination.css">
-<link rel="stylesheet" href="ui2-pos.css?v=5">
+<link rel="stylesheet" href="ui2-pos.css?v=6">
 <style>
 .fseg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}.fseg-btn{padding:10px 8px;border-radius:10px;border:1px solid var(--border,#2a2f3a);background:transparent;color:inherit;font:inherit;font-weight:600;font-size:13.5px;cursor:pointer;line-height:1.2}.fseg-btn small{display:block;font-weight:500;font-size:11px;opacity:.75;margin-top:2px}.fseg-btn.on{background:var(--accent,#d4a24c);border-color:var(--accent,#d4a24c);color:#111}
 .cust-err{min-height:0;margin-top:4px;font-size:12.5px;color:var(--red,#e35b5b)}.cust-err:empty{display:none}.cust-grid input.is-bad{border-color:var(--red,#e35b5b)!important}
@@ -38,8 +38,10 @@
 /* Delivery mode makes the payment area taller than the screen: let the whole side panel scroll (header stays put) so the address,
    payment and "Complete sale" button can always be reached, instead of being cut off at the bottom. */
 .cartpane{overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
-.cartpane .cart-head{position:sticky;top:0;z-index:3;background:var(--panel)}
-.cartpane .lines{flex:1 0 120px}
+.cartpane .cart-head{position:sticky;top:0;z-index:3;background:var(--panel);flex-wrap:wrap;gap:8px}
+/* The item list keeps a readable height (never squeezed by the payment area) and scrolls on its own when many products are added. */
+.cartpane .lines{flex:0 0 auto;min-height:190px;max-height:clamp(220px,42vh,460px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.cartpane .lines>.empty{min-height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center}
 #complete{white-space:normal;line-height:1.25;letter-spacing:.4px;font-size:13.5px;min-height:48px;overflow-wrap:anywhere}
 </style>
 <link rel="stylesheet" href="form-layout.css?v=1">
@@ -927,12 +929,20 @@ function renderPayments() {
     const id = esc(p.paymentId), pending = !terminalPayment(p);
     const label = p.status === 'paid' ? 'Payment verified — invoice recorded' : p.status === 'review' ? 'Payment needs Finance review. Do not collect again.' : p.status === 'expired' ? 'Checkout expired' : p.status === 'error' ? 'Checkout failed' : 'Waiting for verified payment';
     let url = ''; try { const u = new URL(p.checkoutUrl); if (['https:','http:'].includes(u.protocol)) url = u.href; } catch (_) {}
-    return `<article class="pos-payment"><strong>Payment #${id} · ${peso(p.amount)}</strong><p>${label}</p>
-      ${pending ? '<p>Do not collect a second payment while this is unresolved.</p>' : ''}
-      ${url && p.status === 'pending' ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open secure checkout</a><div data-payment-qr="${id}"></div>` : ''}
-      <button type="button" class="btn-secondary btn-sm" data-check-payment="${id}">Check payment</button>
-      ${p.needsCartReview ? '<p>This payment belongs to another basket. Review the current sale before continuing.</p>' : ''}
-      ${terminalPayment(p) ? `<button type="button" class="btn-secondary btn-sm" data-dismiss-payment="${id}">${p.needsCartReview ? 'Keep current cart and dismiss result' : 'Dismiss result'}</button>` : ''}</article>`;
+    const tone = p.status === 'paid' ? 'ok' : p.status === 'expired' || p.status === 'error' ? 'bad' : 'wait';
+    return `<article class="pos-payment">
+      <div class="pos-payment-main">
+        <div class="pos-payment-head"><strong>Payment #${id}</strong><span class="pos-payment-amt">${peso(p.amount)}</span></div>
+        <span class="pos-payment-state ${tone}">${label}</span>
+        ${pending ? '<p class="pos-payment-warn">Do not collect a second payment while this is unresolved.</p>' : ''}
+        ${p.needsCartReview ? '<p class="pos-payment-warn">This payment belongs to another basket. Review the current sale before continuing.</p>' : ''}
+        <div class="pos-payment-actions">
+          ${url && p.status === 'pending' ? `<a class="btn-primary btn-sm" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open secure checkout</a>` : ''}
+          <button type="button" class="btn-secondary btn-sm" data-check-payment="${id}">Check payment</button>
+          ${terminalPayment(p) ? `<button type="button" class="btn-secondary btn-sm" data-dismiss-payment="${id}">${p.needsCartReview ? 'Keep current cart and dismiss result' : 'Dismiss result'}</button>` : ''}
+        </div>
+      </div>
+      ${url && p.status === 'pending' ? `<div class="pos-payment-qr"><div data-payment-qr="${id}"></div><small>Scan to pay</small></div>` : ''}</article>`;
   }).join('') + (paymentDraft && !payments.some(p => p.requestId === paymentDraft.requestId) ? '<p>Recovering a checkout request. Keep this sale until its status is confirmed.</p><button type="button" class="btn-secondary btn-sm" id="retryCheckout">Retry original checkout</button>' : '');
   if (window.QRCode) document.querySelectorAll('[data-payment-qr]').forEach(el => {
     const p = payments.find(p => String(p.paymentId) === el.dataset.paymentQr);

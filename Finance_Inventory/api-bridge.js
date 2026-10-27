@@ -695,7 +695,7 @@
     box.innerHTML = linked.length
       ? linked.map((s) => '<div>' + esc(s.name) +
           (s.primary && linked.length > 1 ? ' <em class="prod-tag">Primary</em>' : '') +
-          (s.status === 'archived' ? ' <em class="prod-tag muted">Archived</em>' : '') + '</div>').join('')
+          (s.status === 'archived' ? ' <em class="prod-tag muted">Deleted</em>' : '') + '</div>').join('')
       : (needs
         ? '<div class="sup-empty warn">No supplier yet. Link one in Supplier Management.</div>'
         : '<div class="sup-empty">In-house production — made by the company, so no supplier is needed.</div>');
@@ -1162,7 +1162,7 @@
     const archive = $('archiveSupplierBtn');
     if (archive) {
       archive.style.display = supplier ? '' : 'none';
-      if (supplier) archive.textContent = supplier.status === 'archived' ? 'RESTORE SUPPLIER' : 'ARCHIVE SUPPLIER';
+      if (supplier) archive.textContent = supplier.status === 'archived' ? 'RESTORE SUPPLIER' : 'DELETE SUPPLIER';
     }
   }
 
@@ -1747,10 +1747,12 @@
       const supplier = id && supplierData.find((s) => s.id === id);
       if (!supplier) return;
       const next = supplier.status === 'archived' ? 'active' : 'archived';
-      if (!(await uiConfirm({ title: (next === 'archived' ? 'Archive ' : 'Restore ') + supplier.name + '?', message: next === 'archived' ? 'The supplier is hidden from new purchase records. You can restore it later.' : 'The supplier can be used again.', confirm: next === 'archived' ? 'Archive' : 'Restore', danger: next === 'archived' }))) return;
+      const del = next === 'archived';
+      const reason = await uiConfirm({ title: (del ? 'Delete ' : 'Restore ') + supplier.name + '?', message: del ? 'The supplier is hidden from new purchase records. It is kept, not erased: you can restore it from the Deleted tab.' : 'The supplier can be used again.', confirm: del ? 'Delete' : 'Restore', danger: del, reason: del ? { label: 'Reason for deleting' } : undefined });
+      if (!reason) return;
       try {
-        await api('/suppliers/' + encodeURIComponent(id) + '/status', { method: 'PATCH', body: JSON.stringify({ status: next }) });
-        toast('Supplier ' + (next === 'archived' ? 'archived' : 'restored'));
+        await api('/suppliers/' + encodeURIComponent(id) + '/status', { method: 'PATCH', body: JSON.stringify(del ? { status: next, reason } : { status: next }) });
+        toast('Supplier ' + (del ? 'deleted' : 'restored'));
         closeNewSupplierModal();
         await load();
       } catch (err) { toast(err.message, 'error'); }

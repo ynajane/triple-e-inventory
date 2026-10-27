@@ -1135,7 +1135,7 @@
 
                     <div class="ui2-chip">
                         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V6a3 3 0 0 1 6 0v5"/><path d="M5 11h14l-1 9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z"/></svg>
-                        <span>Click a row for details, BOM recipe, edit or archive</span>
+                        <span>Click a row for details, BOM recipe, edit or delete</span>
                     </div>
 
                 </div>
@@ -1166,7 +1166,7 @@
                         <div class="prod-toolbar-left">
                             <div class="prod-view-toggle" id="prodViewToggle" role="group" aria-label="Show active or archived products">
                                 <button type="button" class="pill-btn active" data-view="active" aria-pressed="true">Active<span class="count">0</span></button>
-                                <button type="button" class="pill-btn" data-view="archived" aria-pressed="false">Archived<span class="count">0</span></button>
+                                <button type="button" class="pill-btn" data-view="archived" aria-pressed="false">Deleted<span class="count">0</span></button>
                             </div>
                             <div
                                 class="category-pills"
@@ -1238,7 +1238,7 @@
                     </div>
                     <div class="ui2-chip">
                         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V6a3 3 0 0 1 6 0v5"/><path d="M5 11h14l-1 9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z"/></svg>
-                        <span>Click a row for details, linked materials, edit or archive</span>
+                        <span>Click a row for details, linked materials, edit or delete</span>
                     </div>
                 </div>
 
@@ -2978,7 +2978,7 @@
 
                     <div class="modal-footer">
                         <button type="button" class="btn-secondary" id="newSupplierCancelBtn">Cancel</button>
-                        <button type="button" class="btn-danger" id="archiveSupplierBtn">ARCHIVE SUPPLIER</button>
+                        <button type="button" class="btn-danger" id="archiveSupplierBtn">DELETE SUPPLIER</button>
                         <button type="submit" class="btn-primary" id="newSupplierSaveBtn">Save Supplier</button>
                     </div>
                 </div>
@@ -3631,10 +3631,10 @@
     <!-- JAVASCRIPT -->
     <script src="input-rules.js?v=1"></script>
     <script src="password-change.js?v=2"></script>
-    <script src="ui-confirm.js?v=1"></script>
+    <script src="ui-confirm.js?v=2"></script>
     <script src="form-assist.js?v=3"></script>
-    <script src="script.js?v=35"></script>
-    <script src="api-bridge.js?v=40"></script>
+    <script src="script.js?v=36"></script>
+    <script src="api-bridge.js?v=41"></script>
     <script src="sales-orders.js?v=17"></script>
     <link rel="stylesheet" href="sales-admin.css?v=10">
     <link rel="stylesheet" href="reports-sales.css?v=13">
