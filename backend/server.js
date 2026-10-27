@@ -770,6 +770,17 @@ app.locals.completeLogin = async (res, u, how) => {
   startSession(res, user, tv, sid);
   return user;
 };
+/* Strict: a browser that already holds a live session cannot sign in again (that would swap the account under its other tabs).
+   Sign out first. An expired / revoked session does not count, so this never locks anyone out. */
+app.post(['/api/auth/login', '/api/auth/login-otp/send', '/api/auth/login-otp/verify'], (req, res, next) => {
+  let live = false;
+  const stale = { clearCookie() {}, cookie() {}, status() { return { json() { if (!live) next(); } }; } };
+  auth()(req, stale, (err) => {
+    if (err) return next(err);
+    live = true;
+    res.status(409).json({ code: 'ALREADY_SIGNED_IN', error: 'This browser is already signed in as ' + req.user.name + '. Sign out first, then sign in again.', role: req.user.role });
+  });
+});
 require('./login-otp')({ app, pool, wrap, tx, audit, str });
 app.post('/api/auth/login', wrap(async (req, res) => {
   const email = str(req.body && req.body.email).toLowerCase();

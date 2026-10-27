@@ -841,6 +841,13 @@
       </div>
 
       <!-- ===== FORGOT PASSWORD: email -> choose email or text message -> code + new password ===== -->
+      <div class="screen" id="alreadyScreen">
+        <h1>You are already signed in</h1>
+        <p class="sub" id="alreadyText">This browser is signed in. Sign in only once per browser, so two tabs never act as different people.</p>
+        <button type="button" class="submit" id="alreadyContinue">Continue</button>
+        <button type="button" class="submit alt-btn" id="alreadyLogout" style="margin-top:10px">Sign out first</button>
+      </div>
+
       <div class="screen" id="forgotScreen">
         <div class="brand-mark">
           <div class="mark">3<span class="cursive-e">E</span></div>
@@ -1150,6 +1157,17 @@
     $('wrap').classList.toggle('wide', id === 'signupScreen');
     window.scrollTo(0, 0);
   }
+  /* Already signed in (this tab or another one of this browser)? Do not show the form: signing in again would replace the
+     session the other tab is using. Offer to continue, or to sign out first. */
+  function showAlready(who){
+    const home = HOME_BY_ROLE[who.role];
+    $('alreadyText').textContent = 'This browser is already signed in as ' + (who.name || 'an account') + (who.roleLabel ? ' (' + who.roleLabel + ')' : '') + '. Signing in again would replace that session in your other tabs.';
+    $('alreadyContinue').hidden = !home;
+    $('alreadyContinue').onclick = () => { if (home) window.location.replace(home); };
+    $('alreadyLogout').onclick = async () => { $('alreadyLogout').disabled = true; await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {}); window.location.reload(); };
+    showScreen('alreadyScreen');
+  }
+  fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(who => { if (who && who.id != null) showAlready(who); }).catch(() => {});
   async function api(method, url, body){
     const res = await fetch(url, {
       method, credentials: 'same-origin',
