@@ -735,6 +735,10 @@
     if (guided) h += '<div class="sx-box" id="sxWhy"><b>Why the system suggests this</b><span class="faint">Loading\u2026</span></div>';
     h += '<div class="sx-box sx-log" id="sxLog"><b>Decision log</b><span class="faint">Loading\u2026</span></div>';
     $('sxBody').innerHTML = h;
+    if ($('sxNote') && window.FormAssist) FormAssist.validation.bind($('sxNote'), function (value) {
+      var note = value.trim();
+      return note && note.length < 5 ? 'Write at least 5 characters, or leave the message empty.' : '';
+    });
     prefillPayment(x);
     if ($('sxReady')) loadGuide(x);
     if ($('sxJob')) loadJob(x);
@@ -804,6 +808,9 @@
         box.hidden = !f.length;
         box.innerHTML = f.length ? '<b>Please explain the change</b>' + f.map(function (t) { return '\u2022 ' + esc(t); }).join('\n') + '<textarea id="sxReason" class="form-input" maxlength="500" rows="2" style="margin-top:8px" placeholder="Why? This is saved in the decision log.">' + esc(had) + '</textarea>' : '';
       }
+      if ($('sxReason') && window.FormAssist) FormAssist.validation.bind($('sxReason'), function (value) {
+        return value.trim().length < 10 ? 'Please explain the change (at least 10 characters).' : '';
+      });
       if (auto && note.value === auto) { auto = msgFor(); note.value = auto; }
     }
     [amt, rd, vd].forEach(function (el) { el.addEventListener('input', refresh); el.addEventListener('change', refresh); });
@@ -1104,6 +1111,7 @@
       '<p class="faint" style="margin:0 0 6px">Customers will no longer see it, and it stops counting toward the star rating. You can restore it any time.</p>' +
       '<div class="sx-form"><label for="sxReason">Reason (kept in the audit log)</label><input type="text" class="form-input" id="sxReason" maxlength="300" placeholder="e.g. Abusive language">' +
       '<div class="sx-err" id="sxErr" role="alert"></div><div class="sx-actions"><button type="button" class="btn-danger" id="sxHide">Hide review</button><button type="button" class="btn-secondary" id="sxCancel">Cancel</button></div></div>';
+    if (window.FormAssist) FormAssist.validation.bind($('sxReason'), function (value) { return value.trim().length < 3 ? 'Write a short reason (at least 3 characters).' : ''; }, $('sxErr'));
     overlay.classList.add('open'); $('sxReason').focus();
     $('sxCancel').addEventListener('click', closeModal);
     $('sxHide').addEventListener('click', function () {

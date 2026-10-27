@@ -219,6 +219,22 @@
       $('codLimit').value = RULES.codLimit; $('codShows').value = RULES.maxNoShows; $('codHold').value = RULES.pickupHoldDays;
       $('copDeposit').value = RULES.copDeposit != null ? RULES.copDeposit : 200; $('copHours').value = RULES.copHoldHours != null ? RULES.copHoldHours : 48;
       $('codDeposit').value = RULES.codDeposit != null ? RULES.codDeposit : 200;
+      if (window.FormAssist) {
+        var rules = {
+          codLimit: function (v) { return /^\d{1,9}(\.\d{1,2})?$/.test(v.replace(/[,₱\s]/g, '')) ? '' : 'Enter the limit in pesos, e.g. 10000 (0 = no limit)'; },
+          codShows: function (v) { return Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 10 ? '' : 'Enter a whole number from 0 (off) to 10'; },
+          codHold: function (v) { return Number.isInteger(Number(v)) && Number(v) >= 2 && Number(v) <= 60 ? '' : 'Enter a whole number of days from 2 to 60'; },
+          copHours: function (v) { return Number.isInteger(Number(v)) && Number(v) >= 6 && Number(v) <= 336 ? '' : 'Enter a whole number of hours from 6 to 336'; }
+        };
+        ['copDeposit', 'codDeposit'].forEach(function (id) { rules[id] = function (v) {
+          var raw = v.replace(/[,₱\s]/g, '');
+          return /^\d{1,6}(\.\d{1,2})?$/.test(raw) && Number(raw) <= 100000 ? '' : 'Enter the down payment in pesos, from 0 to 100,000';
+        }; });
+        Object.keys(rules).forEach(function (id) {
+          FormAssist.validation.bind($(id), rules[id], document.querySelector('[data-coderr="' + id + '"]'));
+          FormAssist.validation.show($(id), '');
+        });
+      }
       $('codStatus').textContent = RULES.updatedBy ? 'Last changed by ' + RULES.updatedBy + ' \u00B7 ' + when(RULES.updatedAt) : 'Default rules (not changed yet)';
     }
   }
@@ -314,6 +330,16 @@
     renderPolicyStatus();
     body.innerHTML = POLICY.map(policyRow).join('');
     if (cards) cards.innerHTML = POLICY.map(policyCard).join('');
+    if (window.FormAssist) document.querySelectorAll('[data-term] input[data-f]').forEach(function (input) {
+      var field = input.dataset.f;
+      if (['percent', 'fixedAmount', 'autoApproveLimit'].indexOf(field) < 0) return;
+      FormAssist.validation.bind(input, function (value) {
+        var raw = value.replace(field === 'percent' ? /[,\s%]/g : /[,₱\s]/g, '');
+        if (field === 'autoApproveLimit' && (raw === '' || /^0+(\.0+)?$/.test(raw))) return '';
+        if (field === 'percent') return /^\d{1,3}(\.\d{1,2})?$/.test(raw) && Number(raw) > 0 && Number(raw) < 100 ? '' : 'Enter a percentage greater than 0 and less than 100.';
+        return /^\d{1,9}(\.\d{1,2})?$/.test(raw) && Number(raw) > 0 ? '' : 'Enter an amount greater than zero, with at most 2 decimal places.';
+      });
+    });
   }
   function renderPolicyStatus() {
     var offered = POLICY.filter(function (t) { return t.enabled && (t.key === 'full' || t.retailAllowed || t.madeToOrderAllowed); });

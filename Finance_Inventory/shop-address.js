@@ -33,8 +33,8 @@
   const val = (id) => clean(($(id) || {}).value);
   const setErr = (field, msg) => {
     const el = $('ae_' + field), box = $('aeErr_' + field);
-    if (el) el.classList.toggle('is-bad', !!msg);
-    if (box) box.textContent = msg || '';
+    if (el) { el.classList.toggle('is-bad', !!msg); el.setAttribute('aria-invalid', msg ? 'true' : 'false'); if (box) el.setAttribute('aria-describedby', box.id); }
+    if (box) { box.textContent = msg || ''; box.setAttribute('aria-live', 'polite'); }
   };
   const clearErrs = () => F.forEach((f) => setErr(f, ''));
   const fullOf = (a) => [a.addressLine, a.barangay && (/^(brgy|barangay)/i.test(a.barangay) ? a.barangay : 'Brgy. ' + a.barangay), a.city, a.province, a.zip].filter(Boolean).join(', ');
@@ -115,7 +115,7 @@
       if (d.length === 4) checkZip();
     });
     $('ae_phone').addEventListener('input', () => { const p = $('ae_phone'); const d = p.value.replace(/[^\d+\s]/g, ''); if (d !== p.value) p.value = d; });
-    F.forEach((f) => { const el = $('ae_' + f); if (el) el.addEventListener('input', () => setErr(f, '')); });
+    F.forEach((f) => { const el = $('ae_' + f); if (el) ['input', 'change', 'blur'].forEach((type) => el.addEventListener(type, () => validateForm(read(), f))); });
     loadRegions();
     // Task 9: typing the ZIP first fills Region > Province > City (> Barangay) from the ZIP list (form-assist.js)
     if (window.FormAssist) window.FormAssist.zipFill({ before: $('ae_region').closest('.field-grid'), region: $('ae_region'), province: $('ae_province'),
@@ -252,9 +252,9 @@
       barangay: val('ae_barangay'), zip: val('ae_zip'), addressLine: val('ae_line'), landmark: val('ae_landmark') };
   }
   // client-side check; returns true when every field is fine, otherwise marks them and focuses the first bad one
-  function validateForm(s) {
-    clearErrs(); const bad = [];
-    const need = (f, ok, msg) => { if (!ok) { setErr(f, msg); bad.push(f); } };
+  function validateForm(s, only) {
+    if (only) setErr(only, ''); else F.forEach((f) => setErr(f, '')); const bad = [];
+    const need = (f, ok, msg) => { if ((!only || only === f) && !ok) { setErr(f, msg); bad.push(f); } };
     need('recipient', s.recipient.length >= 2 && s.recipient.length <= 50 && /^[\p{L}][\p{L}\p{M} .'’-]*$/u.test(s.recipient), 'Enter the recipient’s full name (2–50 characters: letters, spaces, . \' and -)');
     need('phone', /^(\+63|0)9\d{9}$/.test(s.phone), 'Enter a valid mobile number, e.g. 0917 123 4567');
     need('region', !!s.region, 'Choose a region');
@@ -263,8 +263,8 @@
     need('barangay', !!s.barangay && (!barangays.length || !!codeOf(barangays, s.barangay)), s.barangay ? 'Pick your barangay from the list' : 'Choose a barangay');
     need('line', s.addressLine.length >= 5 && /\p{L}/u.test(s.addressLine), 'Enter your house / unit no. and street, e.g. Blk 5 Lot 12 Sampaguita St.');
     need('zip', /^\d{4}$/.test(s.zip), 'Enter the 4-digit ZIP code');
-    if (!bad.includes('zip') && zipState.ok === false && zipState.key === [s.zip, s.city, s.province, s.barangay].join('|')) { setErr('zip', $('aeErr_zip').textContent || 'ZIP code does not match this city'); bad.push('zip'); }
-    if (bad.length) { const el = $('ae_' + bad[0]); if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); } }
+    if ((!only || only === 'zip') && !bad.includes('zip') && zipState.ok === false && zipState.key === [s.zip, s.city, s.province, s.barangay].join('|')) { setErr('zip', $('aeErr_zip').textContent || 'ZIP code does not match this city'); bad.push('zip'); }
+    if (!only && bad.length) { const el = $('ae_' + bad[0]); if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); } }
     return !bad.length;
   }
   const label = () => (document.querySelector('input[name="aeLabel"]:checked') || {}).value || 'Home';

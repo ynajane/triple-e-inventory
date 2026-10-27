@@ -204,6 +204,11 @@
       }).join('') : '<tr><td colspan="8" class="sc-empty">No stock counts yet.</td></tr>') +
       '</tbody></table></div></div>';
     $('scBody').innerHTML = html;
+    if (window.FormAssist) {
+      FormAssist.validation.bind($('scReason'), function (value) { return value ? '' : 'Select a reason for the manual count.'; });
+      var checkNote = FormAssist.validation.bind($('scNote'), function (value) { return $('scReason').value.indexOf('Other') === 0 && !value.trim() ? 'Describe the reason for the manual count.' : ''; });
+      if ($('scReason')) $('scReason').addEventListener('change', function () { checkNote(false); });
+    }
   }
 
   // difference for one line: only when a quantity was typed
@@ -337,6 +342,8 @@
 
   async function save(quiet) {
     if (!cur || !isActive(cur.status)) return true;
+    var invalid = document.querySelector('#stockcount [data-in].field-invalid');
+    if (invalid) { showErr('Fix the highlighted counted quantity before saving.'); invalid.focus(); return false; }
     // Send every line (so cleared boxes are saved as "not counted" too)
     var lines = cur.items.map(function (i) { return { sku: i.sku, countedQty: i.countedQty, note: i.note }; });
     try { await api('/stock-counts/' + encodeURIComponent(cur.id) + '/lines', { method: 'PUT', body: JSON.stringify({ lines: lines }) }); dirty = false; if (!quiet) toast('Progress saved'); return true; }
@@ -349,8 +356,9 @@
     var it = cur.items.filter(function (i) { return i.sku === (sku || nsku); })[0]; if (!it) return;
     if (sku) {
       var raw = t.value.trim();
-      if (raw === '') it.countedQty = null;
-      else { var n = Number(raw); if (!isFinite(n) || n < 0) { t.classList.add('field-invalid'); return; } t.classList.remove('field-invalid'); it.countedQty = round2(n); }
+      if (raw === '') { it.countedQty = null; t.classList.remove('field-invalid'); }
+      else { var n = Number(raw); if (!isFinite(n) || n < 0) { t.classList.add('field-invalid'); if (window.FormAssist) FormAssist.validation.show(t, 'Enter a quantity of zero or more.'); return; } t.classList.remove('field-invalid'); it.countedQty = round2(n); }
+      if (window.FormAssist) FormAssist.validation.show(t, '');
       var row = t.closest('tr'), d = diffOf(it), v = d === null ? null : d * it.unitCost;
       row.classList.toggle('sc-row-diff', !!d);
       row.classList.toggle('sc-row-over', overOf(it) && !(blind && (cur.status === 'open' || cur.status === 'recount')));

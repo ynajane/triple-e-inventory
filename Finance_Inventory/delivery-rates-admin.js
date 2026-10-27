@@ -139,6 +139,14 @@
         <td><input class="inv-search" type="text" data-money inputmode="decimal" autocomplete="off" data-i="${i}" data-f="fee" value="${esc(window.MoneyInput ? MoneyInput.fmt(r.fee) : r.fee)}" style="width:120px" ${r.available === false ? 'disabled' : ''}></td>
         <td>${r.scope === 'default' ? '' : `<button type="button" class="btn-secondary btn-sm" data-del="${i}">Remove</button>`}</td></tr>`;
     }).join('');
+    if (window.FormAssist) $('drBody').querySelectorAll('[data-f="name"], [data-f="fee"]').forEach((input) => {
+      FormAssist.validation.bind(input, (value) => {
+        const row = rows[+input.dataset.i];
+        if (input.dataset.f === 'name') return row.scope !== 'default' && value.trim().length < 2 ? 'Enter the province name (at least 2 characters).' : '';
+        const raw = window.MoneyInput ? MoneyInput.raw(value) : value, fee = Number(raw);
+        return row.available !== false && (raw === '' || !Number.isFinite(fee) || fee < 0) ? 'Enter a fee of 0 or more.' : '';
+      });
+    });
   }
 
   // Toggle edit/view
@@ -239,6 +247,8 @@
     </div>`;
   function mountPanels() {
     if (panel.isConnected) return true;
+    const policies = document.getElementById('payment-terms');
+    if (policies && policies.dataset.built !== '1') return false;
     const target = document.getElementById('ptrCodBox') || document.getElementById('ptrPolicyBox') || document.querySelector('#payment-terms .panel') || document.getElementById('payment-terms');
     if (!target) return false;
     if (target.id === 'payment-terms') {
@@ -264,7 +274,7 @@
   }
 
   function renderSettingsCards(d) {
-    const c = $('dsViewCards');
+    const c = $s('dsViewCards');
     if (!c) return;
     const s = Object.assign({}, DEFAULT_SETTINGS, d || {});
     const freeKg = Number(s.freeWeightKg) || 20;
@@ -320,10 +330,10 @@
   }
 
   // Toggle edit/view for settings
-  const dsToggle = $('dsToggleEdit');
+  const dsToggle = $s('dsToggleEdit');
   if (dsToggle) {
     dsToggle.addEventListener('click', () => {
-      const v = $('dsViewCards'), e = $('dsEditWrapper');
+      const v = $s('dsViewCards'), e = $s('dsEditWrapper');
       if (!v || !e) return;
       const showEdit = e.hidden;
       e.hidden = !showEdit;
@@ -340,6 +350,14 @@
     $s('dsExample').innerHTML = per > 0 ? 'Example: a ' + kg + ' kg order pays the area rate + <b>' + extra + ' kg \u00D7 \u20B1' + per.toLocaleString('en-PH') + ' = ' + peso(extra * per) + '</b>.' : 'Weight charge is off: the fee is just the area rate.';
   }
   sp.addEventListener('input', () => { $s('dsMsg').textContent = ''; example(); });
+  if (window.FormAssist) FIELDS.forEach(([key]) => {
+    const max = { freeWeightKg: 100000, perKgFee: 10000, freeOverAmount: 10000000, packDays: 30, transitMetro: 60, transitOther: 60, rangeDays: 30 }[key];
+    const whole = ['packDays', 'transitMetro', 'transitOther', 'rangeDays'].includes(key);
+    FormAssist.validation.bind($s('ds_' + key), (value) => {
+      const raw = window.MoneyInput ? MoneyInput.raw(value) : value, n = Number(raw);
+      return raw === '' || !Number.isFinite(n) || n < 0 || n > max || (whole && !Number.isInteger(n)) || (!whole && Math.round(n * 100) / 100 !== n) ? 'Enter ' + (whole ? 'a whole number' : 'a number') + ' from 0 to ' + max.toLocaleString('en-US') + '.' : '';
+    });
+  });
 
   function fillS(d) {
     currentSettings = Object.assign({}, DEFAULT_SETTINGS, d || {});
@@ -348,6 +366,7 @@
       const el = $s('ds_' + x[0]);
       if (el) el.value = val != null ? val : '';
     });
+    FIELDS.forEach(([key]) => { if (window.FormAssist) FormAssist.validation.show($s('ds_' + key), ''); });
     example();
     renderSettingsCards(currentSettings);
   }

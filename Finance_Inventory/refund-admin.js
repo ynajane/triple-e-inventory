@@ -175,6 +175,15 @@
     var ap = $('raApprove'), rj = $('raReject');
     if (ap) ap.addEventListener('click', function () { decide(r, true); });
     if (rj) rj.addEventListener('click', function () { decide(r, false); });
+    if (ap && window.FormAssist) {
+      FormAssist.validation.bind($('raAmount'), function (value) {
+        var amount = MoneyInput.parse(value);
+        return !Number.isFinite(amount) || amount <= 0 || amount > r.orderTotal ? 'Enter an amount between ' + peso(0.01) + ' and ' + peso(r.orderTotal) : '';
+      }, $('raAmountErr'));
+      FormAssist.validation.bind($('raNote'), function (value) {
+        return $('raNote').dataset.declining && value.trim().length < 5 ? 'Tell the customer why (at least 5 characters)' : '';
+      }, $('raNoteErr'));
+    }
   }
 
   function showErr(msg) { var b = $('raErr'); if (b) { b.textContent = msg; b.classList.add('show'); } }
@@ -183,6 +192,7 @@
     if (busy) return;
     var amountEl = $('raAmount'), noteEl = $('raNote');
     $('raAmountErr').textContent = ''; $('raNoteErr').textContent = ''; $('raErr').classList.remove('show');
+    if (approve) delete noteEl.dataset.declining; else noteEl.dataset.declining = '1';
     var note = noteEl.value.trim(), amount = MoneyInput.parse(amountEl.value);
     if (approve && (!Number.isFinite(amount) || amount <= 0 || amount > r.orderTotal)) { $('raAmountErr').textContent = 'Enter an amount between ' + peso(0.01) + ' and ' + peso(r.orderTotal); amountEl.focus(); return; }
     if (!approve && note.length < 5) { $('raNoteErr').textContent = 'Tell the customer why (at least 5 characters)'; noteEl.focus(); return; }

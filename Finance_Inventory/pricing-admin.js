@@ -100,7 +100,20 @@
         'Cost = each quantity × the item’s current unit cost (materials only, the same formula as a finished good’s recipe); price = cost × (1 + markup). ' +
         'Fields marked <em class="pr-est">estimate</em> are first guesses: the cashier or Finance can correct the recipe on each quote.' +
         (data.updatedAt ? ' Last changed ' + esc(new Date(data.updatedAt).toLocaleString('en-PH')) + (data.updatedBy ? ' by ' + esc(data.updatedBy) : '') + '.' : '') + '</p>';
+    if (window.FormAssist) {
+      $('prBody').querySelectorAll('input[name]').forEach((input) => {
+        FormAssist.validation.bind(input, (value) => pricingProblem(input.name, value));
+      });
+    }
     preview();
+  }
+  function pricingProblem(name, value) {
+    const n = Number(value), part = name.split('.')[1];
+    const max = !name.startsWith('rates.') ? 500 : part === 'fillFactor' ? 1 : part === 'scrapPct' ? 100 : part === 'finishUsePerKg' ? 10 : 1e7;
+    if (value === '' || !Number.isFinite(n)) return 'Enter a number.';
+    if (n < 0 || n > max) return 'Enter a number from 0 to ' + max.toLocaleString('en-US') + '.';
+    if (['fillFactor', 'thicknessRefMm', 'density'].includes(part) && Math.round(n * 10000) / 10000 <= 0) return 'Enter a number greater than zero.';
+    return '';
   }
   function preview() {
     const f = $('prForm'), m = Number(f.elements.fgMarkupPct && f.elements.fgMarkupPct.value), h = $('prFgHint'); if (!h) return;
@@ -114,6 +127,12 @@
   }
   async function save(close) {
     const f = $('prForm'), err = $('prErr'), btn = $('prSave');
+    const invalid = Array.from(f.querySelectorAll('input[name]')).filter((input) => {
+      const message = pricingProblem(input.name, input.value);
+      if (window.FormAssist) FormAssist.validation.show(input, message);
+      return !!message;
+    });
+    if (invalid.length) { invalid[0].focus(); return; }
     const body = { fgMarkupPct: f.elements.fgMarkupPct.value, quoteMarkupPct: f.elements.quoteMarkupPct.value, rates: {} };
     [].forEach.call(f.querySelectorAll('input[name^="rates."]'), (i) => {
       const parts = i.name.split('.'); if (parts.length === 2) body.rates[parts[1]] = i.value;
@@ -128,6 +147,9 @@
     } catch (e) {
       const first = e.fields && Object.keys(e.fields)[0];
       err.textContent = first ? e.fields[first] : e.message; err.classList.add('show');
+      Object.keys(e.fields || {}).forEach((name) => {
+        if (f.elements[name] && window.FormAssist) FormAssist.validation.show(f.elements[name], e.fields[name]);
+      });
       if (first && f.elements[first]) f.elements[first].focus();
     } finally { btn.disabled = false; }
   }

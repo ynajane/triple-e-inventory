@@ -1,5 +1,7 @@
 /* form-assist.js — Task 9: small helpers every form uses the same way (Finance, POS, online shop, sign-up).
 
+   FormAssist.validation.bind(input, rule, errorBox)   live field feedback; rule returns a message or ''
+   FormAssist.validation.show(input, message)          display a server or submit error beside the field
    FormAssist.phone.format(raw)          '0917-123-4567' -> '+63 917 123 4567'  (the one stored format; '' when it is not a PH number)
    FormAssist.phone.bind(input)          rewrites the box in that format when the person leaves it
    FormAssist.email.suggest(email)       'juan@gmial.com' -> 'juan@gmail.com'   ('' when nothing looks mistyped)
@@ -341,6 +343,55 @@
     return { input: box, apply: apply };
   }
 
+  /* Field feedback for dialogs drawn after page load. Rules are supplied by the
+     owning form so conditional and optional fields keep their existing contract. */
+  var validations = new WeakMap(), feedbackBoxes = new WeakMap(), errorSerial = 0;
+  function fieldFeedback(input, message, box) {
+    if (!input) return;
+    var state = validations.get(input);
+    box = box || (state && state.box) || feedbackBoxes.get(input);
+    if (!box && !message) return;
+    if (!box) {
+      box = document.createElement('div'); box.className = 'fa-error';
+      input.insertAdjacentElement('afterend', box);
+      if (state) state.box = box;
+    }
+    feedbackBoxes.set(input, box);
+    if (!box.id) box.id = 'faError' + (++errorSerial);
+    box.setAttribute('aria-live', 'polite');
+    box.textContent = message || '';
+    input.classList.toggle('fa-invalid', !!message);
+    input.setAttribute('aria-invalid', message ? 'true' : 'false');
+    var ids = (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+    if (ids.indexOf(box.id) < 0) { ids.push(box.id); input.setAttribute('aria-describedby', ids.join(' ')); }
+  }
+  function bindValidation(input, rule, box) {
+    if (!input) return function () { return ''; };
+    var state = validations.get(input);
+    if (state) { state.rule = rule; return state.check; }
+    state = { rule: rule, box: box, touched: false };
+    validations.set(input, state);
+    state.check = function (force) {
+      if (force) state.touched = true;
+      if (!state.touched) return '';
+      var active = !input.disabled && !input.readOnly && input.getClientRects().length > 0;
+      var message = active ? state.rule(input.value, input) || '' : '';
+      fieldFeedback(input, message, state.box);
+      return message;
+    };
+    ['input', 'change', 'blur'].forEach(function (type) {
+      input.addEventListener(type, function () { state.check(true); });
+    });
+    if (input.form) input.form.addEventListener('reset', function () {
+      state.touched = false; fieldFeedback(input, '', state.box);
+    });
+    return state.check;
+  }
+  var validationStyle = document.createElement('style');
+  validationStyle.textContent = '.fa-error{display:block;color:var(--red,#c0392b);font-size:12.5px;line-height:1.45;margin-top:5px}' +
+    '.fa-invalid{border-color:var(--red,#c0392b)!important}';
+  document.head.appendChild(validationStyle);
+
   // every phone / email box on the page gets the same treatment, including boxes drawn later (modals, address forms)
   var PHONE_SEL = 'input[type="tel"], input[inputmode="tel"], input[autocomplete="tel"]';
   var EMAIL_SEL = 'input[type="email"], input[inputmode="email"], input[autocomplete="email"]';
@@ -352,6 +403,7 @@
   });
 
   window.FormAssist = {
+    validation: { bind: bindValidation, show: fieldFeedback },
     phone: { format: formatPhone, bind: bindPhone },
     email: { suggest: suggestEmail, bind: bindEmail },
     similar: similar, note: note, setValue: setValue,

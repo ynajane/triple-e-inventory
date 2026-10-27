@@ -29,7 +29,7 @@
   const F = ['region', 'province', 'city', 'barangay', 'line', 'zip', 'landmark'];
 
   const codeOf = (list, name) => { const n = clean(name).toLowerCase(); const m = list.find((x) => x.name.toLowerCase() === n); return m ? m.code : null; };
-  const setErr = (f, msg) => { const el = $('pd_' + f), box = $('pdErr_' + f); if (el) el.classList.toggle('is-bad', !!msg); if (box) box.textContent = msg || ''; };
+  const setErr = (f, msg) => { const el = $('pd_' + f), box = $('pdErr_' + f); if (el) { el.classList.toggle('is-bad', !!msg); el.setAttribute('aria-invalid', msg ? 'true' : 'false'); if (box) el.setAttribute('aria-describedby', box.id); } if (box) { box.textContent = msg || ''; box.setAttribute('aria-live', 'polite'); } };
   const zipHint = (t, ok) => { const h = $('pdZipHint'); if (h) { h.textContent = t; h.classList.toggle('tick', !!ok); } };
   const geo = async (path) => { try { return await cfg.api(path); } catch (e) { if (e instanceof TypeError) throw new Error('No connection to the server'); throw e; } };
   // same wording as the shop: "line, Brgy. X, City, Province, ZIP"
@@ -68,6 +68,7 @@
     });
     ['line', 'landmark'].forEach((f) => $('pd_' + f).addEventListener('input', () => { setErr(f, ''); preview(); }));
     $('pdZipChips').addEventListener('click', (e) => { const b = e.target.closest('.zip-chip'); if (!b) return; $('pd_zip').value = b.dataset.zip; setErr('zip', ''); preview(); checkZip(); });
+    F.forEach((f) => ['input', 'change', 'blur'].forEach((type) => $('pd_' + f).addEventListener(type, () => validate(read(), f))));
     loadRegions();
     // Task 9: typing the ZIP first fills Region > Province > City (> Barangay) from the ZIP list (form-assist.js)
     if (window.FormAssist) window.FormAssist.zipFill({ before: $('pd_region').closest('.dlv-grid'), region: $('pd_region'), province: $('pd_province'),
@@ -197,17 +198,17 @@
   function read() {
     return { region: val('pd_region'), province: val('pd_province'), city: val('pd_city'), barangay: val('pd_barangay'), zip: val('pd_zip'), addressLine: val('pd_line'), landmark: val('pd_landmark') };
   }
-  function validate(s) {
-    F.forEach((f) => setErr(f, '')); const bad = [];
-    const need = (f, ok, msg) => { if (!ok) { setErr(f, msg); bad.push(f); } };
+  function validate(s, only) {
+    if (only) setErr(only, ''); else F.forEach((f) => setErr(f, '')); const bad = [];
+    const need = (f, ok, msg) => { if ((!only || only === f) && !ok) { setErr(f, msg); bad.push(f); } };
     need('region', !!s.region, 'Choose a region');
     need('province', !!s.province, 'Choose a province');
     need('city', !!s.city && (!cities.length || !!codeOf(cities, s.city)), s.city ? 'Pick the city / municipality from the list' : 'Choose a city / municipality');
     need('barangay', !!s.barangay && (!barangays.length || !!codeOf(barangays, s.barangay)), s.barangay ? 'Pick the barangay from the list' : 'Choose a barangay');
     need('line', s.addressLine.length >= 5 && /\p{L}/u.test(s.addressLine), 'Enter the house / unit no. and street, e.g. Blk 5 Lot 12 Sampaguita St.');
     need('zip', /^\d{4}$/.test(s.zip), 'Enter the 4-digit ZIP code');
-    if (!bad.includes('zip') && zipState.ok === false && zipState.key === [s.zip, s.city, s.province, s.barangay].join('|')) { setErr('zip', $('pdErr_zip').textContent || 'ZIP code does not match this city'); bad.push('zip'); }
-    if (bad.length) { const el = $('pd_' + bad[0]); if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); } }
+    if ((!only || only === 'zip') && !bad.includes('zip') && zipState.ok === false && zipState.key === [s.zip, s.city, s.province, s.barangay].join('|')) { setErr('zip', $('pdErr_zip').textContent || 'ZIP code does not match this city'); bad.push('zip'); }
+    if (!only && bad.length) { const el = $('pd_' + bad[0]); if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); } }
     return !bad.length;
   }
   function collect() {

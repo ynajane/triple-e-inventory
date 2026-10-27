@@ -151,6 +151,23 @@
     $('qsReason').onchange = sync; $('qsQty').oninput = sync; $('qsSupplier').onchange = clearErr;
     $('qsInvoice').oninput = clearErr; $('qsNote').oninput = clearErr;
     $('qsForm').onsubmit = (e) => { e.preventDefault(); toConfirm(); };
+    if (window.FormAssist) {
+      const rules = {
+        qsQty: () => {
+          const v = read();
+          if (!$('qsQty').value || !isFinite(v.qty) || v.qty <= 0) return 'Enter a quantity greater than zero.';
+          if (v.produced && !prodQtyOk(v.qty)) return 'Quantity produced can have at most 2 decimals.';
+          return type === 'out' && v.qty > item.onHand ? 'Only ' + num(item.onHand) + ' ' + item.unit + ' on hand — cannot take out ' + num(v.qty) + '.' : '';
+        },
+        qsReason: () => $('qsReason').value ? '' : type === 'out' ? 'Choose why this stock is going out.' : 'Choose why this stock is coming in.',
+        qsSupplier: () => type === 'in' && $('qsReason').value === 'supplier_receipt' && !$('qsSupplier').value ? 'Choose the supplier this delivery came from.' : '',
+        qsNote: () => B().noteRequired($('qsReason').value) && read().note.length < 3 ? 'Please explain this entry in the note.' : '',
+        qsInvoice: () => $('qsInvoice').value.trim().length > 40 ? 'Invoice / delivery no. must be at most 40 characters.' : ''
+      };
+      const checks = Object.fromEntries(Object.keys(rules).map((id) => [id, FormAssist.validation.bind($(id), rules[id])]));
+      $('qsReason').addEventListener('change', () => Object.values(checks).forEach((check) => check(false)));
+      $('qsForm').addEventListener('submit', () => Object.values(checks).forEach((check) => check(true)), true);
+    }
 
     const suggestBar = $('qsSuggestBar');
     if (suggestBar) {
@@ -162,6 +179,7 @@
           const inp = $('qsQty');
           inp.value = val;
           sync();
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
           inp.focus();
           inp.select();
         }

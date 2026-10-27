@@ -199,6 +199,7 @@ async function openReview(id, hideNow) {
       if (rv.status === 'hidden') return setVisibility(rv, false, '', el('cmHideBox'), el('cmAct'));
       el('cmHideBox').innerHTML = '<h3>Reason for hiding</h3><input id="cmReason" class="cm-reason" maxlength="300" placeholder="e.g. Abusive language (kept in the audit log)"><div class="cm-err" id="cmErr" role="alert"></div>' +
         '<div class="cm-actions" style="margin-top:8px"><button type="button" class="cm-danger" id="cmHideGo">Confirm hide</button></div>';
+      if (window.FormAssist) FormAssist.validation.bind(el('cmReason'), (value) => value.trim().length < 3 ? 'Enter a reason (at least 3 characters).' : '', el('cmErr'));
       el('cmReason').focus();
       el('cmHideGo').onclick = () => { const r = el('cmReason').value.trim(); if (r.length < 3) { el('cmErr').textContent = 'Enter a reason (at least 3 characters).'; return; } setVisibility(rv, true, r, el('cmErr'), el('cmHideGo')); };
     };
