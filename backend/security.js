@@ -98,6 +98,28 @@ function originGuard(extraHosts) {
   };
 }
 
+/* ---------- one browser, one cookie: refuse changes made from a page that belongs to a different sign-in ----------
+   The session cookie is shared by every tab. If a Finance tab is open and someone signs in as a customer in another tab, the Finance tab
+   would silently start acting as that customer. Pages send X-Session-User (the id they were opened for); a mismatch is refused with 409. */
+function sessionGuard() {
+  const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
+  const refuse = (res, why) => res.status(409).json({ code: 'SESSION_CHANGED', error: why });
+  const STREAMS = /^\/notifications\/stream\/?$/i;   // EventSource cannot send headers
+  return (req, res, next) => {
+    if (/^\/auth(\/|$)/i.test(req.path) || STREAMS.test(req.path)) return next();
+    const m = /(?:^|;\s*)session=([^;]+)/.exec(req.headers.cookie || '');
+    if (!m) return next();                           // no session: the route's own auth answers 401
+    const claimed = req.get('x-session-user');
+    const fromBrowser = !!req.get('sec-fetch-site');  // scripts, tests and server callbacks do not send this
+    // Strict: a browser change request signed in as someone MUST say which account its page was opened for.
+    if (!claimed) return !SAFE.has(req.method) && fromBrowser ? refuse(res, 'This page did not say which account it belongs to. Nothing was saved. Reload the page.') : next();
+    let id = null;
+    try { id = require('jsonwebtoken').verify(decodeURIComponent(m[1]), process.env.JWT_SECRET).id; } catch (_) { return next(); }
+    if (String(id) === String(claimed)) return next();
+    refuse(res, 'You signed in as a different account in another tab. Nothing was saved. Reload this page.');
+  };
+}
+
 /* ---------- rate limiting (in memory, per IP) ---------- */
 function rateLimiter({ windowMs, max, message }) {
   const hits = new Map();
@@ -168,6 +190,7 @@ function mount({ app, pool, limits } = {}) {
   app.use(securityHeaders());
   app.use('/api', (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
   app.use('/api', originGuard((process.env.ALLOWED_ORIGINS || '').split(',')));
+  app.use('/api', sessionGuard());
   app.use('/api', general);
   app.use('/api', (req, res, next) => {
     if (req.method !== 'POST') return next();
@@ -178,4 +201,4 @@ function mount({ app, pool, limits } = {}) {
   if (pool) ensureAuditAppendOnly(pool).catch(() => {});
 }
 
-module.exports = { mount, cookieSecure, securityHeaders, originGuard, rateLimiter, buildCSP, safeEqual, AUDIT_SQL };
+module.exports = { mount, cookieSecure, securityHeaders, originGuard, sessionGuard, rateLimiter, buildCSP, safeEqual, AUDIT_SQL };
