@@ -197,7 +197,7 @@
         : '<span class="dim">' + esc(unitTxt) + '</span>';
       return '<tr>' +
         '<td><select class="prod-in np-bom-mat" data-bm="' + i + '" aria-label="Material ' + (i + 1) + '">' + options(r) + '</select>' +
-          (r.archived ? '<div class="prod-bad np-bom-flag">Archived — remove it or choose another</div>' : '') +
+          (r.archived ? '<div class="prod-bad np-bom-flag">Deleted — remove it or choose another</div>' : '') +
           (r.unitProblem ? '<div class="prod-bad np-bom-flag">' + esc(r.unitProblem) + '</div>' : '') +
           (r.unitNote ? '<div class="dim np-bom-flag">' + esc(r.unitNote) + '</div>' : '') +
           (m && nu(r.entryUnit || m.unit) !== nu(m.unit) && q > 0 ? '<div class="dim np-bom-flag">= ' + esc(fmt(q)) + ' ' + esc(m.unit) + ' (converted)</div>' : '') + '</td>' +
@@ -274,7 +274,7 @@
       if (seen.has(r.sku)) return label + 'each material can only be listed once.';
       seen.add(r.sku);
       const m = material(r.sku);
-      if (!m) return label + (r.name || r.sku) + ' is archived or no longer in the catalog. Remove it or choose another.';
+      if (!m) return label + (r.name || r.sku) + ' is deleted or no longer in the catalog. Remove it or choose another.';
       if (MATERIAL_DEPTS.indexOf(m.department) < 0) return label + m.name + ' is not a Raw Material or Finishing Supply.';
       if (String(r.qty).trim() === '' || !Number.isFinite(n) || n <= 0) return label + 'enter how much of ' + m.name + ' one unit needs (more than 0).';
       if (n > 1e6) return label + 'the quantity is too large.';
@@ -316,7 +316,7 @@
       } else {
         const r = await B().api('/production/where-used/' + encodeURIComponent(p.sku));
         html = r.usedIn.length
-          ? '<ul class="pd-mats-list">' + r.usedIn.map((u) => '<li>' + esc(u.name) + ' <span class="dim">· ' + esc(fmt(u.qtyPerUnit)) + ' ' + esc(r.unit) + ' per ' + esc(u.unit) + (u.archived ? ' · archived' : '') + '</span></li>').join('') + '</ul>'
+          ? '<ul class="pd-mats-list">' + r.usedIn.map((u) => '<li>' + esc(u.name) + ' <span class="dim">· ' + esc(fmt(u.qtyPerUnit)) + ' ' + esc(r.unit) + ' per ' + esc(u.unit) + (u.archived ? ' · deleted' : '') + '</span></li>').join('') + '</ul>'
           : '<div class="dim">Not used by any finished good yet.</div>';
       }
       if (box.isConnected) box.innerHTML = '<div class="pd-mats"><div class="pd-mats-title">' + (fg ? 'Materials needed' : 'Used to make') + '</div>' + html + '</div>';

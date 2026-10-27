@@ -133,7 +133,7 @@
       if (!inp || !cell) return;
       const raw = inp.value, n = Number(raw);
       let msg = '', cls = 'prod-ok';
-      if (m.archived) { msg = 'Archived material'; cls = 'prod-bad'; bad = true; }
+      if (m.archived) { msg = 'Deleted material'; cls = 'prod-bad'; bad = true; }
       else if (m.unitChanged) { msg = 'Unit changed — save the product\'s materials again'; cls = 'prod-bad'; bad = true; }
       else if (raw === '' || !Number.isFinite(n) || n < 0) { msg = 'Enter 0 or more'; cls = 'prod-bad'; bad = true; }
       else if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) { msg = 'Max 2 decimals'; cls = 'prod-bad'; bad = true; }

@@ -1880,7 +1880,7 @@ function applyCatalogFilters() {
     const sub = document.getElementById("productListSub");
     if (sub) {
         sub.textContent =
-            `${filtered.length} ${catalogView === "archived" ? "archived " : ""}product${filtered.length === 1 ? "" : "s"}`;
+            `${filtered.length} ${catalogView === "archived" ? "deleted " : ""}product${filtered.length === 1 ? "" : "s"}`;
     }
     renderProductTable(filtered);
 }

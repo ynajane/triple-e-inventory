@@ -68,10 +68,10 @@
     if (S.q.trim()) p.push('q=' + encodeURIComponent(S.q.trim()));
     return desk('?' + p.join('&'));
   }
-  async function loadDesk() {
+  async function loadDesk(silent) {
     if (S.busy) return;
     S.busy = true; S.error = '';
-    renderList();
+    if (silent !== true) renderList();
     try {
       const r = await call(listUrl());
       S.rows = r.rows || []; S.total = r.total || 0; S.pageCount = r.pageCount || 1; S.page = r.page || 1; S.pageSize = r.pageSize || 20;
@@ -81,14 +81,22 @@
       el('navQuoteCount').title = ready + ' quote(s) ready to tell the customer';
       el('pqRequestCount').textContent = (S.counts.open || 0) + (S.counts.approval || 0);
     } catch (e) {
+      if (silent === true) { S.busy = false; return; }   // a failed background refresh keeps what is on screen
       S.rows = []; S.error = e instanceof TypeError ? 'No connection to the server. Check your network and try again.' : fieldErr(e);
     }
     S.busy = false;
     renderList(); renderPager();
   }
+  // New requests show up by themselves: refresh the list (newest first) while this page is on screen and nothing is being edited.
+  setInterval(function () {
+    var body = el('qdBody');
+    if (document.hidden || S.busy || S.detail || !body || !body.offsetParent || S.page !== 1 || S.sort !== 'created' || S.dir !== 'desc') return;
+    var typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if (!typing) loadDesk(true);
+  }, 30000);
   function tableHeads() {
     const cols = [['ref', 'Reference', 'reference'], ['customer', 'Customer', 'customer'], ['product', 'Product', 'product'],
-      ['qty', 'Quantity', null], ['needed', 'Needed by', 'needed'], ['amount', 'Quoted amount', 'amount'],
+      ['qty', 'Quantity', null], ['needed', 'Needed by', 'needed'],
       ['requested', 'Requested', 'created'], ['status', 'Status', 'status'], ['source', 'Source', null], ['act', '', null]];
     return '<tr>' + cols.map(([k, label, sort]) => {
       const on = sort && S.sort === sort;
@@ -97,26 +105,22 @@
     }).join('') + '</tr>';
   }
   function rowCells(r) {
-    const amt = money(r.amount);
     return '<td><span class="qd-ref">' + esc(r.id) + '</span></td>' +
       '<td><div class="qd-who"><b>' + esc(r.customer || '—') + '</b><small>' + esc(r.phone || '') + (r.company ? ' · ' + esc(r.company) : '') + '</small></div></td>' +
       '<td><div class="qd-what"><b>' + esc(r.product || 'Custom item') + '</b><small>' + (r.sku ? esc(r.sku) + ' · catalog' : 'custom specification') + '</small></div></td>' +
       '<td class="qd-num">' + esc(r.quantity || '—') + '</td>' +
       '<td>' + neededText(r) + '</td>' +
-      '<td class="qd-num">' + (amt || (r.proposedAmount != null ? 'proposed ' + money(r.proposedAmount) : '—')) + '</td>' +
       '<td>' + day(r.requestDate) + '</td>' +
       '<td><span class="qd-pill ' + pillClass(r) + '">' + esc(r.statusLabel || r.status) + '</span>' + (r.financeNote && r.status === 'new' ? '<small class="qd-back">Sent back by Finance</small>' : '') + '</td>' +
       '<td><span class="qd-src ' + (r.source === 'pos' ? 'pos' : '') + '">' + (r.source === 'pos' ? 'Walk-in' : 'Online') + '</span></td>' +
       '<td class="is-right"><button type="button" class="qd-open" data-open="' + esc(r.id) + '">Open</button></td>';
   }
   function cardRow(r) {
-    const amt = money(r.amount);
     return '<div class="qd-qcard" data-open="' + esc(r.id) + '" tabindex="0" role="button" aria-label="Open quotation ' + esc(r.id) + '">' +
       '<div class="qd-line"><span class="qd-ref">' + esc(r.id) + '</span><span class="qd-pill ' + pillClass(r) + '">' + esc(r.statusLabel || r.status) + '</span></div>' +
       '<div class="qd-who"><b>' + esc(r.customer || '—') + '</b><small>' + esc(r.phone || '') + '</small></div>' +
       '<div class="qd-what"><b>' + esc(r.product || 'Custom item') + '</b><small>' + esc(r.quantity || '') + ' · needed ' + neededText(r) + '</small></div>' +
-      '<div class="qd-line"><span class="qd-mut">' + (r.source === 'pos' ? 'Walk-in' : 'Online') + ' · ' + day(r.requestDate) + '</span>' +
-      '<span class="qd-num">' + (amt || (r.proposedAmount != null ? 'proposed ' + money(r.proposedAmount) : '—')) + '</span></div></div>';
+      '<div class="qd-line"><span class="qd-mut">' + (r.source === 'pos' ? 'Walk-in' : 'Online') + ' · ' + day(r.requestDate) + '</span></div></div>';
   }
   function renderList() {
     const bar = el('qdChips');
