@@ -12,7 +12,7 @@
  const MAX = 10000000, AMOUNT_RE = /^\d{1,10}(\.\d{1,2})?$/;
  // notes & coins; value in centavos so the total never has floating point errors
  const DENOMS = [['1000', 100000], ['500', 50000], ['200', 20000], ['100', 10000], ['50', 5000], ['20', 2000], ['10', 1000], ['5', 500], ['1', 100], ['0.25', 25], ['0.05', 5]];
- let current = null, ticker = null;
+ let current = null, ticker = null, hours = null;   // hours: {open, close, openError, minutesToClose} from the server clock
 
  async function request(url, options = {}) {
   const r = await fetch(url, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...options });
@@ -58,12 +58,14 @@
  function render() {
   const app = $('csApp'); if (!app) return;
   badge();
+  const hoursText = hours ? 'Shift hours: open from ' + esc(hours.open) + ', close before ' + esc(hours.close) + '.' : '';
   if (!current) {
-   app.innerHTML = `<div class="cs-hero closed"><div><div class="cs-state"><span class="cs-dot"></span>No open shift</div><div class="cs-meta">Count the cash in your drawer, then enter it below to start selling.</div></div></div>
+   app.innerHTML = `<div class="cs-hero closed"><div><div class="cs-state"><span class="cs-dot"></span>No open shift</div><div class="cs-meta">Count the cash in your drawer, then enter it below to start selling. ${hoursText}</div></div></div>
+   ${hours && hours.openError ? '<div class="cs-warn"><b>' + esc(hours.openError) + '</b></div>' : ''}
    <div class="cs-grid cs-startgrid"><div class="panel cs-card cs-start"><h3>Start your shift</h3><p>Enter the starting cash (change fund) you put in the drawer.</p>
     <div class="cs-field"><label for="csOpening">Starting cash</label><div class="cs-money"><span>₱</span><input id="csOpening" data-money inputmode="decimal" autocomplete="off" placeholder="0.00"></div><div class="cs-err" id="csOpeningErr"></div>
      <div class="cs-chips" title="Each tap adds that amount">${[100, 500, 1000, 2000, 5000].map(v => '<button type="button" class="cs-chip" data-fill="' + v + '">+' + fmt(v).replace('.00', '') + '</button>').join('')}<button type="button" class="cs-chip" data-fill="clear">Clear</button></div></div>
-    <button class="btn-primary cs-btn" id="csOpenBtn">Open cash shift</button></div>
+    <button class="btn-primary cs-btn" id="csOpenBtn"${hours && hours.openError ? ' disabled' : ''}>Open cash shift</button></div>
     <div class="panel cs-card cs-tips"><h3>Before you open</h3><p>A quick check keeps your end-of-shift count accurate.</p>
      <ol class="cs-steps"><li><b>Count the drawer</b><span>Count every bill and coin currently in the cash drawer.</span></li><li><b>Enter the change fund</b><span>Type the total, or tap the amounts: each tap adds up (e.g. +₱1,000 twice = ₱2,000).</span></li><li><b>Start selling</b><span>Cash sales are tracked automatically and compared to your count when you close.</span></li></ol></div></div>`;
    return;
@@ -72,6 +74,8 @@
   app.innerHTML = `<div class="cs-hero open"><div><div class="cs-state"><span class="cs-dot"></span>Shift #${esc(c.id)} is open</div>
     <div class="cs-meta">${esc(c.cashierName)} · opened ${esc(timeOnly(c.openedAt))} · open for <b id="csElapsed">${dur(c.openedAt)}</b></div></div>
     <button class="btn-primary" id="csCloseBtn">Count &amp; close shift</button></div>
+   ${c.pastClosing ? '<div class="cs-warn"><b>It is past the ' + esc(hours ? hours.close : '5:00 PM') + ' closing time.</b> Sales and cash movements are stopped. Count and close this shift now.</div>'
+     : hours && hours.minutesToClose <= 30 ? '<div class="cs-warn"><b>Closing in ' + hours.minutesToClose + ' min.</b> Close your shift before ' + esc(hours.close) + '.</div>' : ''}
    ${c.pendingVoids ? '<div class="cs-warn"><b>' + c.pendingVoids + ' void request(s) waiting for Finance.</b> Your expected cash may change once they are decided.</div>' : ''}
    ${c.pendingReturns ? '<div class="cs-warn"><b>' + c.pendingReturns + ' return(s) waiting for Finance.</b> Once approved, the cash refund is taken off the cash that should be in your drawer.</div>' : ''}
    <div class="cs-expected"><div class="lab">Cash that should be in your drawer</div><div class="big">${fmt(c.expectedCash)}</div>
@@ -98,12 +102,14 @@
 
  /* ---------- data ---------- */
  async function refresh() {
-  try { current = await request('/api/pos/cash-shifts/current'); }
+  try { [current, hours] = await Promise.all([request('/api/pos/cash-shifts/current'), request('/api/pos/cash-shifts/hours').catch(() => hours)]); }
   catch (e) { const a = $('csApp'); if (a) a.innerHTML = '<div class="panel cs-loading">Could not load your shift: ' + esc(e.message) + ' <button class="btn-secondary btn-sm" id="csRetry">Try again</button></div>'; return; }
   const typing = document.activeElement && $('csApp') && $('csApp').contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
   if (!typing) render(); else badge();   // do not wipe what the cashier is typing when a sale refreshes the shift
   clearInterval(ticker);
   if (current) ticker = setInterval(() => { const e = $('csElapsed'); if (e && current) e.textContent = dur(current.openedAt); }, 30000);
+  // re-check the hours every minute so the 5:00 PM warning / 8:00 AM open button appear without a reload
+  clearInterval(refresh.clock); refresh.clock = setInterval(() => { if (!document.hidden) refresh(); }, 60000);
  }
  async function history() {
   const body = $('shiftHistory'); if (!body) return;

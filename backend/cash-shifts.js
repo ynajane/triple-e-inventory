@@ -14,6 +14,31 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
  // Cash shift events go into the audit log (Finance > Audit Log, action "Cash shift"). Never let a logging problem block the till.
  const log = (client,user,detail) => audit ? audit(client,user,'Cash shift',detail) : Promise.resolve();
 
+ /* ---------- shift hours: open from 8:00 AM, close before 5:00 PM (store time) ---------- */
+ const OPEN_HOUR = Number(process.env.CASH_SHIFT_OPEN_HOUR || 8), CLOSE_HOUR = Number(process.env.CASH_SHIFT_CLOSE_HOUR || 17);
+ const clockFmt = new Intl.DateTimeFormat('en-US',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+ const local = d => { const p={}; clockFmt.formatToParts(new Date(d)).forEach(x=>p[x.type]=x.value); return {day:`${p.year}-${p.month}-${p.day}`, min:Number(p.hour)%24*60+Number(p.minute)}; };
+ const hourLabel = h => (h%12||12)+':00 '+(h<12?'AM':'PM');
+ const hours = {
+  open:hourLabel(OPEN_HOUR), close:hourLabel(CLOSE_HOUR),
+  // why a shift cannot be opened right now, or null
+  openError(now=new Date()){
+   const m=local(now).min;
+   if(m<OPEN_HOUR*60) return `Cash shifts open at ${hourLabel(OPEN_HOUR)}. Please wait until then.`;
+   if(m>=CLOSE_HOUR*60) return `Cash shifts close at ${hourLabel(CLOSE_HOUR)}. You can open a new shift tomorrow from ${hourLabel(OPEN_HOUR)}.`;
+   return null;
+  },
+  // a shift is past closing at 5:00 PM on the day it was opened (or any later day)
+  pastClosing(openedAt,now=new Date()){ const o=local(openedAt), n=local(now); return n.day!==o.day || n.min>=CLOSE_HOUR*60; },
+  // used by every route that puts cash into or takes cash out of a drawer
+  lateError(openedAt,now=new Date()){
+   if(openedAt==null) return null;
+   return hours.pastClosing(openedAt,now) ? `It is past the ${hourLabel(CLOSE_HOUR)} closing time for this cash shift. Count and close your Cash Shift first.` : null;
+  },
+  minutesToClose(now=new Date()){ return Math.max(0, CLOSE_HOUR*60-local(now).min); }
+ };
+ app.locals.cashShiftHours = hours;
+
  /* ---------- schema (self-healing: the movements table was never in a migration) ---------- */
  const ready = (async()=>{
   try {
@@ -73,7 +98,9 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
  const flagged = s => {            // review flags used by the Finance monitor
   const flags = [];
   if (s.difference != null && Math.abs(s.difference) >= VARIANCE_ALERT) flags.push(s.difference < 0 ? 'Large shortage' : 'Large overage');
-  if (!s.closedAt && Date.now() - new Date(s.openedAt).getTime() > STALE_HOURS*3600000) flags.push('Open too long');
+  if (!s.closedAt && hours.pastClosing(s.openedAt)) flags.push('Not closed by '+hours.close);
+  else if (!s.closedAt && Date.now() - new Date(s.openedAt).getTime() > STALE_HOURS*3600000) flags.push('Open too long');
+  if (s.closedAt && hours.pastClosing(s.openedAt, s.closedAt)) flags.push('Closed after '+hours.close);
   if (s.pendingVoids) flags.push(s.pendingVoids + ' void pending');
   if (s.pendingReturns) flags.push(s.pendingReturns + ' return pending');
   return flags;
@@ -90,12 +117,20 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
   const r=await pool.query(`SELECT * FROM (${summarySql}) x WHERE "cashierId"=$1 AND "closedAt" IS NULL LIMIT 1`,[req.user.id]);
   const s=r.rows[0]; if(!s) return res.json(null);
   s.movements=(await movementsFor([s.id])).get(String(s.id))||[];
+  s.pastClosing=hours.pastClosing(s.openedAt);
   res.json(s);
  }));
+
+ // the till page uses this to show the hours and to enable/disable "Open cash shift"
+ app.get('/api/pos/cash-shifts/hours',auth('cashier','finance'),(req,res)=>{
+  res.json({open:hours.open,close:hours.close,openError:hours.openError(),minutesToClose:hours.minutesToClose()});
+ });
 
  app.post('/api/pos/cash-shifts/open',auth('cashier'),wrap(async(req,res)=>{
   const amount=req.body?.openingCash;
   if(!money(amount))return fail(res,400,'Enter a valid opening cash amount (0 or more, up to 2 decimals).','openingCash');
+  const closedHours=hours.openError();
+  if(closedHours)return fail(res,409,closedHours);
   const result=await tx(async client=>{
    await client.query('SELECT pg_advisory_xact_lock($1,$2)',[73001,req.user.id]);
    const old=await client.query('SELECT shift_id FROM pos_cash_shifts WHERE cashier_id=$1 AND closed_at IS NULL',[req.user.id]);
@@ -145,8 +180,10 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
   if(typeof reason!=='string'||reason.trim().length<5||reason.trim().length>300)return fail(res,400,'Write a reason (5–300 characters).','reason');
   const result=await tx(async client=>{
     await client.query('SELECT pg_advisory_xact_lock($1,$2)',[73001,req.user.id]);
-    const shift=await client.query('SELECT shift_id FROM pos_cash_shifts WHERE cashier_id=$1 AND closed_at IS NULL FOR UPDATE',[req.user.id]);
+    const shift=await client.query('SELECT shift_id,opened_at FROM pos_cash_shifts WHERE cashier_id=$1 AND closed_at IS NULL FOR UPDATE',[req.user.id]);
     if(!shift.rowCount)return {error:'Open a cash shift first.'};
+    const late=hours.lateError(shift.rows[0].opened_at);
+    if(late)return {error:late};
     const id=shift.rows[0].shift_id;
     if(kind==='cash_out'){   // the drawer cannot go below zero
      const cur=(await client.query(`SELECT "expectedCash" FROM (${summarySql}) x WHERE id=$1`,[id])).rows[0];

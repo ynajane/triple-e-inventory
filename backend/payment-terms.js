@@ -769,8 +769,11 @@ module.exports = function mountPaymentTerms({ app, pool, auth, wrap, tx, audit, 
         throw bad('payment', 'An online payment link is still open for this order. Tap Check payment first; collect at the counter only if it was not paid');
       let shiftId = null;
       if (method === 'Cash') {
-        const shift = (await client.query('SELECT shift_id FROM pos_cash_shifts WHERE cashier_id = $1 AND closed_at IS NULL FOR UPDATE', [req.user.id])).rows[0];
+        const shift = (await client.query('SELECT shift_id, opened_at FROM pos_cash_shifts WHERE cashier_id = $1 AND closed_at IS NULL FOR UPDATE', [req.user.id])).rows[0];
         if (!shift) throw bad('method', 'Open your Cash Shift before taking cash for this order');
+        // no cash goes into a drawer after the 5:00 PM closing time (rule lives in cash-shifts.js)
+        const late = app.locals.cashShiftHours && app.locals.cashShiftHours.lateError(shift.opened_at);
+        if (late) throw bad('method', late);
         shiftId = Number(shift.shift_id);
       }
       const paid = await applyPayment(client, {

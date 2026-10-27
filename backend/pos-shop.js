@@ -617,6 +617,8 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     } catch (err) { console.warn('[db] could not prepare the POS return tables:', err.message); }
   })();
   app.locals.posReturnsReady = posReturnsReady;   // cash-shifts.js waits for this before it reads the tables
+  // no cash goes into a drawer after the 5:00 PM closing time (rule lives in cash-shifts.js, mounted later)
+  const shiftLate = (shift) => (app.locals.cashShiftHours ? app.locals.cashShiftHours.lateError(shift.opened_at) : null);
 
   // Structured delivery address on orders + each customer's saved addresses (safe to run every time the server starts).
   async function ensureAddressSchema() {
@@ -919,8 +921,10 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
         const it = await client.query('SELECT * FROM pos_sale_items WHERE sale_id=$1 ORDER BY item_id', [prior.rows[0].sale_id]);
         return saleJson(prior.rows[0], it.rows);
       }
-      const shiftResult = await client.query('SELECT shift_id FROM pos_cash_shifts WHERE cashier_id=$1 AND closed_at IS NULL FOR UPDATE', [req.user.id]);
+      const shiftResult = await client.query('SELECT shift_id, opened_at FROM pos_cash_shifts WHERE cashier_id=$1 AND closed_at IS NULL FOR UPDATE', [req.user.id]);
       if (!shiftResult.rowCount) throw bad('cashShift', 'Open your Cash Shift before completing a sale.');
+      const lateSale = shiftLate(shiftResult.rows[0]);
+      if (lateSale) throw bad('cashShift', lateSale);
       const cashShiftId = shiftResult.rows[0].shift_id;
       const items = await loadSellable(client, lines, { lock: true });
       if (app.locals.shopExtras) await app.locals.shopExtras.checkMinimums(client, items);     // minimum order; the maximum is the stock, checked in loadSellable
@@ -1105,8 +1109,10 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       if (pend.rowCount) throw bad('id', 'This sale already has a return waiting for Finance. Wait for the decision before sending another');
       let shiftId = null;
       if (sale.method === 'Cash') {               // a cash refund comes out of this cashier's drawer, so a shift must be open
-        const sh = await client.query('SELECT shift_id FROM pos_cash_shifts WHERE cashier_id = $1 AND closed_at IS NULL', [req.user.id]);
+        const sh = await client.query('SELECT shift_id, opened_at FROM pos_cash_shifts WHERE cashier_id = $1 AND closed_at IS NULL', [req.user.id]);
         if (!sh.rowCount) throw bad('cashShift', 'Open your Cash Shift first. A cash refund is paid from your drawer.');
+        const lateReturn = shiftLate(sh.rows[0]);
+        if (lateReturn) throw bad('cashShift', lateReturn);
         shiftId = sh.rows[0].shift_id;
       }
       const { rows: lines } = await client.query('SELECT item_id, product_id, sku, name, unit, qty, price FROM pos_sale_items WHERE sale_id = $1 ORDER BY item_id', [sale.sale_id]);
@@ -1866,8 +1872,10 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
           cashReceived = Number(b.cashReceived);
           if (!Number.isFinite(cashReceived) || !/^\d+(?:\.\d{1,2})?$/.test(String(b.cashReceived)) || cashReceived < collect || cashReceived > collect + 100000)
             throw bad('cashReceived', `Enter the cash received; it must cover the ${peso(collect)} balance`);
-          const shift = await client.query('SELECT shift_id FROM pos_cash_shifts WHERE cashier_id = $1 AND closed_at IS NULL FOR UPDATE', [req.user.id]);
+          const shift = await client.query('SELECT shift_id, opened_at FROM pos_cash_shifts WHERE cashier_id = $1 AND closed_at IS NULL FOR UPDATE', [req.user.id]);
           if (!shift.rowCount) throw bad('cashReceived', 'Open your Cash Shift before collecting payment');
+          const lateCash = shiftLate(shift.rows[0]);
+          if (lateCash) throw bad('cashReceived', lateCash);
           shiftId = shift.rows[0].shift_id;
         }
       }
