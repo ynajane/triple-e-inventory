@@ -49,11 +49,24 @@ function addStyles() {
 #cmModal .cm-tabs{display:flex;gap:6px;margin:14px 0 4px;border-bottom:1px solid var(--border)}
 #cmModal .cm-tab{border:0;background:transparent;color:var(--text-dim);padding:8px 12px;cursor:pointer;font:inherit;border-bottom:2px solid transparent;margin-bottom:-1px}
 #cmModal .cm-tab.active{color:var(--text);border-bottom-color:var(--blue-bright);font-weight:600}
-#cmModal h3{margin:20px 0 8px;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:var(--text-faint)}
-#cmModal .cm-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px}
+#cmModal h3{margin:0 0 12px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:500;letter-spacing:1.4px;text-transform:uppercase;color:var(--blue-bright)}
+#cmModal .cm-sec{margin-top:14px;padding:16px 18px;border:1px solid var(--border);border-radius:12px;background:var(--card)}
+#cmModal .cm-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px}
 @media(max-width:520px){#cmModal .cm-grid{grid-template-columns:1fr}}
-#cmModal .cm-f span{display:block;font-size:11.5px;color:var(--text-faint);margin-bottom:1px}
-#cmModal .cm-f strong{font-weight:500;overflow-wrap:anywhere}#cmModal .cm-f.is-empty strong{color:var(--text-faint);font-weight:400}
+#cmModal .cm-f{min-width:0}
+#cmModal .cm-f span{display:block;font-size:12px;color:var(--text-faint);margin-bottom:3px}
+#cmModal .cm-f strong{display:block;font-size:14.5px;line-height:1.35;font-weight:500;overflow-wrap:anywhere}#cmModal .cm-f.is-empty strong{color:var(--text-faint);font-weight:400;font-size:14px}
+#cmModal .cm-flag{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12.5px;font-weight:600;border:1px solid currentColor}
+#cmModal .cm-flag.yes{color:var(--green,#15803d)}#cmModal .cm-flag.no{color:var(--amber,#b7791f)}
+#cmModal .cm-av{width:56px;height:56px;font-size:18px;background:var(--u-chip-bg,var(--inset));color:var(--blue-bright)}
+#cmModal .cm-top{padding-bottom:4px;flex-wrap:nowrap}
+#cmModal .cm-rev-main{padding:16px 18px;border-radius:12px}
+#cmModal .cm-rev-main strong{font-size:16px}
+#cmModal .cm-rev-side{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+#cmModal .cm-quote{margin:12px 0 0;padding:10px 14px;border-left:3px solid var(--blue-bright);background:var(--inset,transparent);border-radius:0 8px 8px 0;font-size:15px;line-height:1.5;overflow-wrap:anywhere}
+#cmModal .cm-sec .cm-top{margin:0}
+#cmModal .cm-actions{justify-content:flex-end;padding-top:14px;border-top:1px solid var(--border)}
+#cmModal .cm-tabs{gap:4px;margin-top:12px}
 #cmModal .cm-rev{padding:12px 14px;border:1px solid var(--border);border-radius:10px;margin-top:10px;background:var(--card)}
 #cmModal .cm-rev header{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
 #cmModal .cm-rev p{margin:8px 0 0;white-space:pre-line;overflow-wrap:anywhere;line-height:1.5}
@@ -76,8 +89,9 @@ function ensureModal() {
 }
 function openModal(title) { ensureModal(); lastFocus = document.activeElement; el('cmTitle').textContent = title; el('cmModal').hidden = false; el('cmModal').querySelector('.cm-x').focus(); }
 function closeModal() { token++; const m = el('cmModal'); if (m) m.hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
-const field = (l, v) => '<div class="cm-f' + (v == null || String(v).trim() === '' ? ' is-empty' : '') + '"><span>' + esc(l) + '</span><strong>' + shown(v) + '</strong></div>';
-const section = (t, items) => '<h3>' + esc(t) + '</h3><div class="cm-grid">' + items.map(i => field(i[0], i[1])).join('') + '</div>';
+const field = (l, v, raw) => '<div class="cm-f' + (!raw && (v == null || String(v).trim() === '') ? ' is-empty' : '') + '"><span>' + esc(l) + '</span><strong>' + (raw || shown(v)) + '</strong></div>';
+const section = (t, items) => '<section class="cm-sec"><h3>' + esc(t) + '</h3><div class="cm-grid">' + items.map(i => field(i[0], i[1], i[2])).join('') + '</div></section>';
+const flag = (ok, yes, no) => '<span class="cm-flag ' + (ok ? 'yes' : 'no') + '">' + (ok ? yes : no) + '</span>';
 const loadReviewList = () => request('/api/finance/reviews');
 
 /* ---------- customers ---------- */
@@ -127,7 +141,7 @@ async function openProfile(id) {
       '<div class="cm-tabs" role="tablist"><button type="button" role="tab" class="cm-tab active" data-cm-tab="profile">Profile</button><button type="button" role="tab" class="cm-tab" data-cm-tab="reviews">Reviews <b id="cmRevCount">\u2026</b></button></div>' +
       '<div data-cm-pane="profile">' +
         section('Personal information', [['First name', d.firstName], ['Middle name', d.middleName], ['Last name', d.lastName], ['Suffix', d.suffix], ['Birthdate', d.birthdate], ['Gender', d.gender]]) +
-        section('Contact & account', [['Email', d.email], ['Phone', d.phone], ['Username', d.username], ['Email verified', d.emailVerified ? 'Yes' : 'No'], ['Joined', d.joined], ['Last login', d.lastLogin]]) +
+        section('Contact & account', [['Email', d.email], ['Phone', d.phone], ['Username', d.username], ['Email verified', '', flag(d.emailVerified, 'Verified', 'Not verified')], ['Joined', d.joined], ['Last login', d.lastLogin]]) +
         section('Company', [['Company', d.companyName], ['Position', d.companyPosition]]) + '</div>' +
       '<div data-cm-pane="reviews" hidden><p class="cm-note">Loading reviews\u2026</p></div>';
     loadReviewList().then(all => { if (tok !== token) return; const mine = all.filter(r => String(r.userId) === String(id)); el('cmRevCount').textContent = mine.length; el('cmBody').querySelector('[data-cm-pane="reviews"]').innerHTML = reviewsHtml(mine); })
@@ -188,17 +202,19 @@ async function openReview(id, hideNow) {
   const tok = ++token; openModal('Review details');
   function paint(d, note) {
     if (tok !== token) return; d = d || {};
-    el('cmBody').innerHTML = '<div class="cm-rev" style="margin-top:0"><header><strong>' + esc(rv.product) + '</strong>' + stars(rv.rating) + '</header>' +
-      '<small>' + esc(rv.sku) + (rv.orderNo ? ' \u00B7 Order ' + esc(rv.orderNo) : '') + ' \u00B7 ' + esc(day(rv.createdAt)) + ' \u00B7 ' + (rv.status === 'hidden' ? 'Hidden' : 'Visible') + '</small>' +
-      '<p>' + (rv.body ? esc(rv.body) : '<em>No comment</em>') + '</p>' +
-      (rv.status === 'hidden' && rv.hiddenReason ? '<small>Hidden: ' + esc(rv.hiddenReason) + (rv.hiddenBy ? ' (' + esc(rv.hiddenBy) + ')' : '') + '</small>' : '') + '</div>' +
-      '<h3>Customer</h3><div class="cm-top"><span class="cm-av" aria-hidden="true">' + esc(initials(d.name || rv.customer)) + '</span><div><strong>' + shown(d.name || rv.customer) + '</strong><span class="dim">' + shown(d.email || rv.email) + '</span></div></div>' +
-      (note ? '<p class="cm-note">' + esc(note) + '</p>' : '<div class="cm-grid" style="margin-top:10px">' + field('Phone', d.phone) + field('Birthdate', d.birthdate) + field('Gender', d.gender) + field('Email verified', d.emailVerified ? 'Yes' : 'No') + field('Joined', d.joined) + field('Last login', d.lastLogin) + field('Company', d.companyName) + field('Position', d.companyPosition) + '</div>') +
+    const hidden = rv.status === 'hidden';
+    el('cmBody').innerHTML = '<div class="cm-rev cm-rev-main" style="margin-top:0"><header><div><strong>' + esc(rv.product) + '</strong><br><small>' + esc(rv.sku) + (rv.orderNo ? ' \u00B7 Order ' + esc(rv.orderNo) : '') + ' \u00B7 ' + esc(day(rv.createdAt)) + '</small></div>' +
+        '<div class="cm-rev-side">' + stars(rv.rating) + '<span class="cm-flag ' + (hidden ? 'no' : 'yes') + '">' + (hidden ? 'Hidden' : 'Visible') + '</span></div></header>' +
+      '<blockquote class="cm-quote">' + (rv.body ? esc(rv.body) : '<em>No comment</em>') + '</blockquote>' +
+      (hidden && rv.hiddenReason ? '<small>Hidden: ' + esc(rv.hiddenReason) + (rv.hiddenBy ? ' (' + esc(rv.hiddenBy) + ')' : '') + '</small>' : '') + '</div>' +
+      '<section class="cm-sec"><h3>Customer</h3><div class="cm-top"><span class="cm-av" aria-hidden="true">' + esc(initials(d.name || rv.customer)) + '</span><div><strong>' + shown(d.name || rv.customer) + '</strong><span class="dim">' + shown(d.email || rv.email) + '</span></div></div>' +
+      (note ? '<p class="cm-note">' + esc(note) + '</p>' : '<div class="cm-grid" style="margin-top:12px">' + field('Phone', d.phone) + field('Birthdate', d.birthdate) + field('Gender', d.gender) + field('Email verified', '', flag(d.emailVerified, 'Verified', 'Not verified')) + field('Joined', d.joined) + field('Last login', d.lastLogin) + field('Company', d.companyName) + field('Position', d.companyPosition) + '</div>') + '</section>' +
       '<div id="cmHideBox"></div><div class="cm-actions"><button type="button" class="' + (rv.status === 'hidden' ? 'btn-secondary' : 'cm-danger') + '" id="cmAct">' + (rv.status === 'hidden' ? 'Restore review' : 'Hide review') + '</button><button type="button" class="btn-secondary" data-cm-close>Close</button></div>';
     el('cmAct').onclick = () => {
       if (rv.status === 'hidden') return setVisibility(rv, false, '', el('cmHideBox'), el('cmAct'));
       el('cmHideBox').innerHTML = '<h3>Reason for hiding</h3><input id="cmReason" class="cm-reason" maxlength="300" placeholder="e.g. Abusive language (kept in the audit log)"><div class="cm-err" id="cmErr" role="alert"></div>' +
         '<div class="cm-actions" style="margin-top:8px"><button type="button" class="cm-danger" id="cmHideGo">Confirm hide</button></div>';
+      if (window.FormAssist) FormAssist.validation.bind(el('cmReason'), (value) => value.trim().length < 3 ? 'Enter a reason (at least 3 characters).' : '', el('cmErr'));
       el('cmReason').focus();
       el('cmHideGo').onclick = () => { const r = el('cmReason').value.trim(); if (r.length < 3) { el('cmErr').textContent = 'Enter a reason (at least 3 characters).'; return; } setVisibility(rv, true, r, el('cmErr'), el('cmHideGo')); };
     };

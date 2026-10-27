@@ -10,6 +10,7 @@
    if these tables could not be created, the shop and the POS keep working without the extras. */
 const mailer = require('./mailer');
 const makeOrderMail = require('./order-mail');
+const decimalNumber = require('./numeric-input');
 const { escapeHtml: esc } = mailer;
 
 const FINAL_STATUS = ['Delivered', 'Picked Up'];
@@ -17,6 +18,38 @@ const MOBILE_RE = /^(\+63|0)9\d{9}$/;
 const NAME_RE = /^[\p{L}][\p{L}\p{M}\s.,'\u2019-]*$/u;
 const MAX_OPEN_QUOTES = 5;           // a customer can have this many un-answered requests at once
 const BACK_IN_STOCK_DAYS = 7;        // how long the "Back in stock" tag shows for a customer who asked to be told
+
+/* ---------------- pure: who must be reminded about money still owed on an accepted quote, and when ----------------
+   Nobody keys a payment in from Finance. Online money arrives by itself (Xendit); money taken on pickup / delivery is taken by the
+   cashier at the counter. So the automation reminds the people who can actually move the money:
+     customer  online payment not made   6 h after accepting, then every 24 h, at most 3 times
+     Finance   online payment still not made after 72 h (once): chase the customer or close the quote
+     cashier   the order is ready / out for delivery and a balance is still owed: at once, then every 48 h
+     customer  same, every 48 h (the first "your order is ready" message already went out), at most 3 times
+     Finance   ready but still unpaid after 7 days (once)
+   Each action has a key; the notifications table (dedupeKey) is what stops the same reminder going out twice.
+   q: { status, pay_method, quoted_amount, paid_amount, accepted_at (ms), ready_at (ms), has_account }  now: ms */
+const HOUR = 3600000;
+function paymentReminderPlan(q, now, cfg) {
+  const c = Object.assign({ onlineFirstH: 6, onlineEveryH: 24, onlineMax: 3, onlineFinanceH: 72, readyEveryH: 48, readyMax: 3, readyFinanceH: 168 }, cfg || {});
+  const owed = Math.round((Number(q.quoted_amount) - (Number(q.paid_amount) || 0)) * 100) / 100, out = [];
+  if (!(owed > 0.004)) return out;
+  if (q.status === 'accepted' && q.pay_method === 'Xendit' && !(Number(q.paid_amount) > 0) && q.accepted_at) {
+    const h = (now - q.accepted_at) / HOUR;
+    if (h >= c.onlineFirstH && q.has_account) {
+      const n = Math.min(c.onlineMax, Math.floor((h - c.onlineFirstH) / c.onlineEveryH) + 1);
+      out.push({ to: 'customer', kind: 'online', n, key: 'qpay_online:' + n, owed });
+    }
+    if (h >= c.onlineFinanceH) out.push({ to: 'finance', kind: 'online_stale', n: 1, key: 'qpay_online_stale', owed });
+  }
+  if (q.status === 'ready' && q.ready_at) {
+    const h = (now - q.ready_at) / HOUR, n = Math.floor(h / c.readyEveryH);
+    out.push({ to: 'cashier', kind: 'collect', n, key: 'qpay_collect:' + n, owed });
+    if (n >= 1 && q.has_account && n <= c.readyMax) out.push({ to: 'customer', kind: 'pickup', n, key: 'qpay_pickup:' + n, owed });
+    if (h >= c.readyFinanceH) out.push({ to: 'finance', kind: 'ready_stale', n: 1, key: 'qpay_ready_stale', owed });
+  }
+  return out;
+}
 
 module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, ValidationError, str }) {
   const bad = (field, msg) => new ValidationError({ [field]: msg });
@@ -73,11 +106,17 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS proposed_amount NUMERIC(14,2)');
       await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS proposed_lead_time TEXT');
       await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS proposed_valid_days INT');
+      await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS ready_by DATE');          // the date Finance promised in the guided quote form
       // who sent the price to Finance, when, and Finance's note when it sends the price back to the cashier
       await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS proposed_by INT REFERENCES users(user_id)');
       await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS proposed_at TIMESTAMPTZ');
       await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS finance_note TEXT');
-      await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS close_reason TEXT');          // why Finance closed the request (CLOSE_REASONS)
+      await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS close_reason TEXT');
+      // the system price (pricing.js) saved next to the cashier's price, and the computed cost behind it
+      await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS suggested_amount NUMERIC(14,2)');
+      await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS cost_stale_at TIMESTAMPTZ');            // set by recipe-costing.js when a material cost moved after this quote was priced
+      await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS cost_stale_note TEXT');
+      await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS suggested_cost NUMERIC(14,2)');          // why Finance closed the request (CLOSE_REASONS)
       // a closed request ALWAYS has a reason, even if something skips the API. Requests closed before reasons existed are marked "other".
       await pool.query(`DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'quote_closed_needs_reason') THEN
@@ -89,7 +128,8 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS created_by INT REFERENCES users(user_id)');
       // quote flow: needed-by date (older rows may have needed_months), dropdown choices, reply details, customer answer
       for (const c of ['needed_months INT CHECK (needed_months BETWEEN 1 AND 24)', 'specs JSONB', 'lead_time TEXT', 'valid_until DATE', 'responded_at TIMESTAMPTZ', 'response_note TEXT',
-                       'paid_amount NUMERIC(14,2) NOT NULL DEFAULT 0', "payments JSONB NOT NULL DEFAULT '[]'::jsonb", "progress JSONB NOT NULL DEFAULT '[]'::jsonb", 'received_by TEXT', 'pay_method TEXT', 'xendit_invoice_id TEXT', 'xendit_external_id TEXT'])
+                       'paid_amount NUMERIC(14,2) NOT NULL DEFAULT 0', "payments JSONB NOT NULL DEFAULT '[]'::jsonb", "progress JSONB NOT NULL DEFAULT '[]'::jsonb", 'received_by TEXT', 'pay_method TEXT', 'xendit_invoice_id TEXT', 'xendit_external_id TEXT',
+                       'expiry_reminded_at TIMESTAMPTZ'])
         await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS ' + c);
       await pool.query(`DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'quote_requests_status_check' AND pg_get_constraintdef(oid) LIKE '%awaiting_details%') THEN
@@ -206,9 +246,9 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
   QUOTE_OPTIONS.processWords = ['forged', 'forging', 'forge', 'cast', 'casting'];
   QUOTE_OPTIONS.itemRules = {
     'Die-cast part':   { materials: ALU, sizes: PART_SIZES, typed: 'part', thickness: 'optional', finish: FINISH_ALU, wall: WALL_ALU, units: ['pcs', 'sets'], unit: 'pcs',
-                         services: ['None (as is)', 'Deburring', 'Drilling / tapping', 'CNC machining'], label: 'a die-cast part', note: 'Aluminum, cast to order. Pick a size range, or type the exact dimensions.' },
+                         services: ['None (as is)', 'Deburring', 'Drilling / tapping', 'CNC machining'], label: 'a die-cast part', note: 'Aluminum, cast to order. Pick a size range, or type the exact dimensions.', thicknessFor2D: true },
     'Forged part':     { materials: BRASS, sizes: PART_SIZES, typed: 'part', thickness: 'optional', finish: FINISH_BRASS, wall: WALL_BRASS, units: ['pcs', 'sets'], unit: 'pcs',
-                         services: SERVICE, label: 'a forged part', note: 'Brass, forged to order. Pick a size range, or type the exact dimensions.' },
+                         services: SERVICE, label: 'a forged part', note: 'Brass, forged to order. Pick a size range, or type the exact dimensions.', thicknessFor2D: true },
     'Fitting / valve': { materials: BRASS, sizes: PIPE_SIZES, typed: 'pipe', thickness: 'none', finish: FINISH_BRASS, wall: [], units: ['pcs', 'sets', 'boxes'], unit: 'pcs',
                          services: ['None (as is)', 'Deburring', 'Drilling / tapping', 'Threading (BSP / NPT)'], label: 'a fitting or valve', note: 'Forged brass, standard pipe sizes up to 2".' }
   };
@@ -259,9 +299,38 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
   const listText = (a) => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' or ' + a[a.length - 1];
 
   // the form needs today's earliest / latest "needed by" date too (Philippine time), so the options are built per request
-  // 0 / unset means "no cashier ceiling was set", and then every counter price goes to Finance.
-  const cashierLimitNow = () => { const n = Number(process.env.CASHIER_QUOTE_LIMIT_PHP || 0); return Number.isFinite(n) && n > 0 ? n : 0; };
   const quoteOptionsNow = () => ({ ...QUOTE_OPTIONS, neededMin: addDays(todayPH(), 1), neededMax: addMonthsISO(todayPH(), QUOTE_OPTIONS.neededMaxMonths) });
+  // The same options, cut down to what the stock records can supply (Products > Raw Materials / Finishing Supplies).
+  // A material with no raw-material item, or a finish whose supply is not in stock records, is not offered, so a quote can never ask for
+  // something we cannot make. Add the item under Products and it appears here by itself. Falls back to the full list if the check fails.
+  function fitOptions(base, inv) {
+    const o = JSON.parse(JSON.stringify(base));
+    const okM = (m) => m === NOT_SURE || m === '' || !!inv.materials[m], okF = (f) => !!inv.finishes[f];
+    o.material = o.material.filter(okM); o.finish = o.finish.filter(okF);
+    o.families.forEach((f) => { f.materials = f.materials.filter(okM); });
+    Object.keys(o.rules).forEach((m) => { if (!okM(m)) delete o.rules[m]; else o.rules[m].finish = o.rules[m].finish.filter(okF); });
+    Object.keys(o.itemRules).forEach((t) => { const r = o.itemRules[t]; r.materials = r.materials.filter(okM); r.finish = r.finish.filter(okF); });
+    Object.keys(o.matrix).forEach((t) => Object.keys(o.matrix[t]).forEach((m) => {
+      if (!okM(m)) { delete o.matrix[t][m]; return; }
+      o.matrix[t][m].finish = o.matrix[t][m].finish.filter(okF);
+    }));
+    o.itemTypes = o.itemTypes.filter((t) => o.itemRules[t].materials.length);               // no stock record for any of its materials: not offered
+    o.inventory = inv;
+    return o;
+  }
+  async function stockFit(db) {
+    const A = app.locals.quoteAutomation; if (!A || !A.inventoryFit) return null;
+    try { await A.ready; return await A.inventoryFit(db || pool, QUOTE_OPTIONS.material.filter((m) => m !== NOT_SURE), QUOTE_OPTIONS.finish); }
+    catch (e) { console.warn('[quote] stock records check failed:', e.message); return null; }
+  }
+  async function quoteOptionsFor(db) { const base = quoteOptionsNow(), inv = await stockFit(db); return inv ? fitOptions(base, inv) : base; }
+  // the server-side twin of the form's filter: a custom item cannot ask for a material / finish that has no stock record
+  async function assertInStockRecords(specs) {
+    const inv = await stockFit(pool); if (!inv) return;
+    const m = specs.material, f = specs.finish;
+    if (m && m !== NOT_SURE && inv.materials[m] === null) throw bad('material', m + ' is not in our stock records right now. Choose another material, or call us so we can source it');
+    if (f && inv.finishes[f] === null) throw bad('finish', f + ' is not available right now (we have no supply for it on record). Choose another finish, or call us');
+  }
   // Walk-in (cashier) quotes are paid when the order is picked up / delivered, so accepting one sets this automatically.
   const payOnLabel = (f) => (f === 'Delivery' ? 'Pay on delivery' : 'Pay on pickup');
   const SPEC_LABEL = { material: 'Material', size: 'Size', thickness: 'Thickness', finish: 'Finish', service: 'Machining / secondary work' };
@@ -291,6 +360,7 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
   const readyBy = (leadTime, startIso) => { const n = leadWorkdaysOf(leadTime); return n && startIso ? addWorkdays(startIso, n) : undefined; };
   const quoteReadyBy = (q) => {
     if (!q || !q.lead_time || ['declined', 'closed', 'new', 'pending_approval', 'awaiting_details'].includes(q.status)) return undefined;
+    if (q.ready_by) return dateStr(q.ready_by);                         // a date was promised in the quote: it does not move when the customer accepts
     const started = ['accepted', 'preparing', 'ready', 'completed'].includes(q.status) && q.responded_at;
     return readyBy(q.lead_time, started ? phDay(q.responded_at) : todayPH());
   };
@@ -315,12 +385,15 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       neededBy: dateStr(q.needed_by), neededMonths: q.needed_months || undefined,          // new requests have a date (neededBy); neededMonths only exists on requests made while the form asked for months
       flexibleDate: q.flexible_date === true || undefined, contactEmail: q.contact_email || undefined, company: q.company_name || undefined,
       fulfillment: q.fulfillment || undefined, area: q.area || undefined,
-      payMethod: q.pay_method || undefined, payLater: /^Pay on /.test(q.pay_method || '') || undefined, payOnline: q.pay_method === 'Xendit' || undefined,
+      payMethod: q.pay_method || undefined, payLater: /^Pay on /.test(q.pay_method || '') || undefined, payOnline: q.pay_method === 'Xendit' || undefined, payNow: ['accepted', 'preparing', 'ready'].includes(q.status) && q.quoted_amount != null && owedOn(q) > 0 ? owedOn(q) : undefined,
       proposedAmount: q.proposed_amount == null ? undefined : +q.proposed_amount, approvalReason: q.approval_reason || undefined,
       proposedLeadTime: q.proposed_lead_time || undefined, proposedValidDays: q.proposed_valid_days || undefined,
       proposedBy: q.proposed_by_name || undefined, proposedAt: ms(q.proposed_at) || undefined, financeNote: q.finance_note || undefined,
+      suggestedAmount: q.suggested_amount == null ? undefined : +q.suggested_amount, suggestedCost: q.suggested_cost == null ? undefined : +q.suggested_cost,
+      costStale: q.cost_stale_note || undefined,
+      approvalCheck: q.approval_check || undefined, acceptCheck: q.accept_check || undefined, recipeEdited: Array.isArray(q.recipe) || undefined,
       closeReason: q.close_reason ? (CLOSE_REASON_LABEL[q.close_reason] || q.close_reason) : undefined, quotedAmount: total == null ? undefined : total, replyNote: q.reply_note || undefined,
-      leadTime: q.lead_time || undefined, validUntil,
+      leadTime: q.lead_time || undefined, readyBy: dateStr(q.ready_by) || undefined, validUntil,
       estimatedReady: quoteReadyBy(q), readyFromAcceptance: ['accepted', 'preparing', 'ready', 'completed'].includes(q.status) || undefined,
       lateForNeededBy: (() => { const r = quoteReadyBy(q), n = dateStr(q.needed_by); return !!(r && n && r > n) || undefined; })(),
       expired: q.status === 'quoted' && !!validUntil && validUntil < todayPH(),
@@ -348,11 +421,16 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
   };
   const pingFinance = (n) => (nc() ? nc().notifyRole('finance', n) : null);
   const pingUser = (id, n, role) => (nc() && id ? nc().notifyUser(id, n, role) : null);
+  // what only staff may see (costs, the system price, why a price went to Finance) never goes to the customer
+  const INTERNAL = ['suggestedAmount', 'suggestedCost', 'approvalCheck', 'acceptCheck', 'approvalReason', 'proposedAmount', 'proposedBy', 'proposedAt',
+    'proposedLeadTime', 'proposedValidDays', 'financeNote', 'costStale', 'recipeEdited'];
+  const customerJson = (q) => { const j = quoteJson(q); INTERNAL.forEach((k) => { delete j[k]; }); return j; };
 
-  app.get('/api/shop/quote-options', auth('customer'), (req, res) => res.json(quoteOptionsNow()));
-  // the cashier screen also needs the pricing ceiling, so it can say before saving whether a price goes to Finance
-  app.get('/api/pos/quote-options', auth('cashier'), (req, res) => res.json({ ...quoteOptionsNow(), cashierQuoteLimit: cashierLimitNow() }));
-  app.get('/api/finance/quote-options', auth('finance'), (req, res) => res.json(quoteOptionsNow()));
+  app.get('/api/shop/quote-options', auth('customer'), wrap(async (req, res) => res.json(await quoteOptionsFor())));
+  // the cashier screen also needs Finance's approval rules, so it can say before confirming where a price will go
+  app.get('/api/pos/quote-options', auth('cashier'), wrap(async (req, res) => res.json({ ...(await quoteOptionsFor()),
+    approvalRules: app.locals.quoteAutomation ? await app.locals.quoteAutomation.settings() : null })));
+  app.get('/api/finance/quote-options', auth('finance'), wrap(async (req, res) => res.json(await quoteOptionsFor())));
 
   // Checks a quote request body (shop customer or POS walk-in) and returns the clean values, or throws a field error.
   // Size and details that the product's own database record already states (Finance fills them in under the product's
@@ -389,24 +467,6 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
     if (!cover || (!place.region && !place.province)) return;
     const q = await cover(place);
     if (q && q.available === false) throw bad(field, `Sorry, we do not deliver to ${place.province || place.region} yet. Choose another area, or switch to Pickup`);
-  }
-  // one detail a catalog product's record leaves out: required, and it must fit the product (its list, or a typed size / thickness of the right shape)
-  function catalogSpec(key, v, mat, ctype, productName) {
-    const label = SPEC_LABEL[key].toLowerCase(), rule = ctype && QUOTE_OPTIONS.itemRules[ctype];
-    if (!v || /^not specified$/i.test(v)) throw bad(key, productName + ' has no ' + label + ' on record. Choose the ' + label);
-    if (allowedFor(key, mat, ctype).includes(v)) return v;
-    if (key === 'size' && rule) {
-      const why = v.length < 2 || v.length > 40 || !CUSTOM_RE.test(v) ? 'Type ' + QUOTE_OPTIONS.typedSizes[rule.typed].hint : typedSizeProblem(rule.typed, v);
-      if (why) throw bad(key, why);
-      return v;
-    }
-    if (key === 'thickness' && rule && rule.thickness !== 'none') {
-      const lim = QUOTE_OPTIONS.thicknessLimits[mat] || QUOTE_OPTIONS.thicknessLimits[''], tm = /^(\d+(?:\.\d+)?)\s*mm$/i.exec(v);
-      if (!tm) throw bad(key, 'Type the thickness in mm, e.g. 2.5 mm');
-      if (+tm[1] < lim.min || +tm[1] > lim.max) throw bad(key, 'Type a thickness from ' + lim.min + ' to ' + lim.max + ' mm');
-      return v;
-    }
-    throw bad(key, 'Choose the ' + label + ' from the list');
   }
   async function readQuote(b, { fallbackName, userId }) {
     const contactName = str(b.contactName) || fallbackName;
@@ -473,13 +533,11 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       if (fromProduct[key]) { specs[key] = fromProduct[key]; continue; }   // the product record decides; whatever the browser sent is ignored
       // A catalog product is a ready-made finished good: nothing is chosen or customised. Anything its record does not state is saved as
       // "Not specified" (the material is read from the product name when it names one), and it is always sold as is. Same rule as the locked form.
-      // A catalog product is a ready-made finished good: what its record states is locked, and it is sold as is. A detail the record
-      // does NOT state is no longer saved as "Not specified": the customer / cashier must choose it, from the choices that fit the product.
       if (sku) {
         if (key === 'service') { specs[key] = 'None (as is)'; continue; }
         const named = key === 'material' && materialFromName(productName);
         if (named) { specs[key] = named; continue; }
-        specs[key] = catalogSpec(key, str(inSpecs[key]), specs.material, itemTypeFromName(productName), productName);
+        specs[key] = 'Not specified';
         continue;
       }
       const v = str(inSpecs[key]);
@@ -510,6 +568,11 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       }
       specs[key] = v;
     }
+    if (!sku) await assertInStockRecords(specs);                          // the material and finish must exist in the stock records
+    // every detail the item type needs to be priced is required here, so the cashier never has to send the request back for it
+    if (itemRule && itemRule.thicknessFor2D && !itemRule.sizes.includes(specs.size) && !/^[\u00D8\u00F8\u2300]/.test(specs.size) &&
+        sizeNumbersMm(specs.size).length === 2 && !/^\d+(\.\d+)?\s*mm$/i.test(specs.thickness))
+      throw bad('thickness', 'A size with only length and width needs the wall thickness too. Choose it, or type it in mm (e.g. 3 mm)');
     const notes = str(b.notes);
     if (notes.length > 1000) throw bad('notes', 'Please keep the extra notes under 1,000 characters');
     if (notes) specs.notes = notes;
@@ -569,7 +632,7 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       await audit(client, req.user, 'Record added', `Quote request ${r.rows[0].quote_no}${v.productName ? ' \u2014 ' + v.productName : ''} (${v.quantity})`);
       return r.rows[0];
     });
-    res.status(201).json(quoteJson(row));
+    res.status(201).json(customerJson(row));
 
     // email: a copy to the customer and a heads-up to Finance (fire-and-forget)
     (async () => {
@@ -588,7 +651,7 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
 
   app.get('/api/shop/quotes', auth('customer'), wrap(async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM quote_requests WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50', [req.user.id]);
-    res.json((await latestClarifications(rows)).map(quoteJson));
+    res.json((await latestClarifications(rows)).map(customerJson));
   }));
 
   /* After Finance replies, the customer (or the cashier for a walk-in) answers the quote:
@@ -609,6 +672,10 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       if (cur.status !== 'quoted') throw bad('status', cur.status === 'new' ? 'This request has not been answered yet' : 'This quote was already answered or closed');
       const vu = dateStr(cur.valid_until);
       if (action === 'accept' && vu && vu < todayPH()) throw bad('status', 'This quote has expired. Ask for a new quote instead');
+      if (action === 'accept' && !autoPay && chosen === 'cod' && app.locals.paymentTerms) {
+        const due = app.locals.paymentTerms.approvedDueOf(cur);          // an approved down payment is paid online first; only the balance is paid on delivery / pickup
+        if (due && +due.amount > 0) throw bad('payMethod', 'Your payment terms need ' + peso(due.amount) + ' paid first. Choose Pay online for that amount; the balance of ' + peso(round2(+cur.quoted_amount - +due.amount)) + ' is paid on ' + (cur.fulfillment === 'Delivery' ? 'delivery' : 'pickup') + '.');
+      }
       const payMethod = action === 'accept' ? (autoPay || chosen === 'cod' ? payOnLabel(cur.fulfillment) : 'Xendit') : null;
       const r = await client.query(
         `UPDATE quote_requests SET status = $2, responded_at = now(), response_note = $3, pay_method = COALESCE($4, pay_method), updated_at = now() WHERE quote_id = $1 RETURNING *`,
@@ -616,13 +683,18 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       // Accepting covers the payment terms printed on the quote, so they are stamped as seen with the acceptance.
       if (action === 'accept' && app.locals.paymentTerms) await app.locals.paymentTerms.markTermsSeen(client, cur.quote_id);
       await audit(client, req.user, 'Record edited', `Quote request ${cur.quote_no} ${action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'sent back for a new quote'} by ${who}`);
-      return r.rows[0];
+      // on acceptance the cost and stock are checked again at today's prices, the job order draft and any purchase suggestions are made
+      const check = action === 'accept' && app.locals.quoteAutomation ? await app.locals.quoteAutomation.onAccept(client, r.rows[0], req.user) : null;
+      return Object.assign(r.rows[0], { check });
     });
+    const check = q.check; delete q.check;
     let checkoutUrl, payError;
     if (action === 'accept' && q.pay_method === 'Xendit') {                // start the online payment right away; if it cannot start, the customer can tap Pay now later
       try { checkoutUrl = await quoteCheckoutUrl(q); } catch (e) { payError = 'Online payment could not be started right now. Tap Pay now on your quote to try again.'; console.warn('[xendit] quote checkout failed:', e.message); }
     }
     res.json({ ok: true, status: q.status, checkoutUrl, payError });
+    if (action === 'accept' && app.locals.quoteAutomation) app.locals.quoteAutomation.afterAccept(q, check);
+    if (action === 'accept' && checkoutUrl) sendPayLink(q, checkoutUrl);
     Promise.resolve(pingFinance({ category: 'orders', title: action === 'accept' ? 'Quote accepted' : action === 'decline' ? 'Quote declined' : 'New quote requested',
       body: `${q.contact_name} ${action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'asked for a new quote on'} ${q.quote_no}` + (q.quoted_amount != null ? ' (' + peso(q.quoted_amount) + ')' : '') + (action === 'accept' && q.pay_method ? '. Payment: ' + q.pay_method : '') + '.',
       link: 'Finance_Inventory.html#quotes', entityType: 'quote', entityId: q.quote_no })).catch(() => {});
@@ -778,9 +850,12 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
 
   app.post('/api/pos/quotes/:no/respond', auth('cashier'), wrap((req, res) => respondToQuote(req, res, { where: `source = 'pos'`, params: [], autoPay: true, who: 'the cashier (walk-in customer)' })));
 
-  // Cashier prices routine requests. Custom manufacturing and exceptions require Finance review.
-  // The monetary ceiling is intentionally configurable; no unapproved company policy is assumed.
-  const cashierQuoteLimit = cashierLimitNow;
+  /* The cashier confirms a price; WHERE it goes is decided by quote-automation.js (routeQuote), never by the cashier:
+       fully costed, within the tolerance band of the system price, at or above the minimum margin (never below cost), under the
+       order-value limit, stock covers the quantity and no partial-payment terms waiting  ->  'quoted' straight away;
+       anything else -> 'pending_approval' with the reason written by the system. Without the automatic checks it always goes to Finance.
+     The limits are Finance's settings (Approval rules), not numbers in this file. */
+  const TERM_NAMES = { full: 'Full Payment', half: 'Half Payment', down: 'Down Payment', custom: 'Custom partial payment' };
   const readPrice = (b) => {
     const raw = String(b.amount ?? '').trim();
     if (!/^(?:\d{1,9})(?:\.\d{1,2})?$/.test(raw)) throw bad('amount', 'Enter a positive peso amount with up to two decimal places');
@@ -794,54 +869,154 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
     return { amount, leadTime, days, note };
   };
   app.post('/api/pos/quotes/:no/price', auth('cashier'), wrap(async (req, res) => {
-    const b = req.body || {}, v = readPrice(b);
-    const reason = str(b.reason);
-    const q = await tx(async client => {
-      const cur = (await client.query('SELECT * FROM quote_requests WHERE quote_no=$1 FOR UPDATE', [req.params.no])).rows[0];
+    const b = req.body || {}, v = readPrice(b), qa = app.locals.quoteAutomation;
+    const termKey = str(b.termKey);
+    if (termKey && !TERM_NAMES[termKey]) throw bad('termKey', 'Choose a payment term');
+    if (qa) await qa.ready;
+    const priced = await tx(async client => {
+      let cur = (await client.query('SELECT * FROM quote_requests WHERE quote_no=$1 FOR UPDATE', [req.params.no])).rows[0];
       if (!cur) throw bad('id', 'Quotation not found');
       if (!['new','pending_approval'].includes(cur.status)) throw bad('status', 'Only new or pending quotations can be priced');
-      // Two separate routes to Finance. The cashier ticking "custom manufacturing / needs approval" is their own call,
-      // so they must say why. Going over the pricing ceiling is automatic: the system writes the reason itself and
-      // the cashier is never asked to justify a rule they did not choose.
-      const flagged = b.customManufacturing === true || b.exception === true;
-      const limit = cashierQuoteLimit();
-      const overLimit = limit <= 0 || v.amount > limit;
-      if (flagged && reason.length < 10) throw bad('reason', 'Explain why Finance approval is required (at least 10 characters)');
-      const exceptional = flagged || overLimit;
-      const autoReason = limit <= 0 ? 'No cashier pricing limit is set, so every counter price is approved by Finance'
-        : 'Above the cashier pricing limit of PHP ' + limit.toLocaleString('en-PH', { minimumFractionDigits: 2 });
-      const approvalReason = flagged ? reason : (reason.length >= 10 ? reason + ' (' + autoReason + ')' : autoReason);
+      // the recipe lines the cashier adjusted belong to this price: they are saved first, so the checks below use them
+      if (qa && !cur.product_sku && b.recipe !== undefined) cur = await qa.saveRecipe(client, cur, b.recipe, req.user);
+      // partial-payment terms go to Finance only when the system cannot sign them (payment-terms.js autoTermsCheck:
+      // within Finance's automatic limit, allowed for this order type, customer owes nothing elsewhere); signed terms never do
+      const pt = app.locals.paymentTerms;
+      let partialKey = termKey ? (termKey !== 'full' ? termKey : null) : (cur.terms_key && cur.terms_key !== 'full' && cur.terms_state !== 'approved' ? cur.terms_key : null);
+      if (partialKey && pt && pt.autoTermsCheck && (await pt.autoTermsCheck(client, cur, partialKey, v.amount)).ok) partialKey = null;
+      let decision, draft = null;
+      if (qa) {
+        draft = await qa.draftForQuote(client, cur);
+        decision = qa.route({ amount: v.amount, draft, settings: await qa.settings(client), terms: partialKey ? { key: partialKey, label: TERM_NAMES[partialKey] || partialKey } : null });
+      } else decision = { route: 'pending_approval', rules: ['checks_unavailable'], key: 'checks_unavailable', numbers: { cashierTotal: v.amount },
+        reasons: ['The automatic price checks are not available, so Finance approves this price'], summary: 'The automatic price checks are not available' };
+      const toFinance = decision.route === 'pending_approval';
       const result = await client.query(`UPDATE quote_requests SET status=$2, proposed_amount=$3, proposed_lead_time=$4, proposed_valid_days=$5,
         approval_reason=$6, quoted_amount=CASE WHEN $2='quoted' THEN $3 ELSE quoted_amount END,
         lead_time=CASE WHEN $2='quoted' THEN $4 ELSE lead_time END,
         valid_until=CASE WHEN $2='quoted' THEN $7::date ELSE valid_until END,
         reply_note=CASE WHEN $2='quoted' THEN $8 ELSE reply_note END, handled_by=$9, updated_at=now(),
-        proposed_by=$9, proposed_at=now(), finance_note=NULL
-        WHERE quote_id=$1 RETURNING *`, [cur.quote_id, exceptional?'pending_approval':'quoted', v.amount, v.leadTime, v.days,
-          exceptional?approvalReason:null, addDays(todayPH(),v.days),v.note||null,req.user.id]);
-      await audit(client,req.user,'Record edited',`Cashier ${exceptional?'requested approval for':'priced'} quote ${cur.quote_no}`);
-      return result.rows[0];
+        proposed_by=$9, proposed_at=now(), finance_note=NULL, suggested_amount=$10, suggested_cost=$11,
+        cost_stale_at=NULL, cost_stale_note=NULL, approval_check=$12::jsonb, approval_reminded_at=NULL, approval_escalated_at=NULL, expiry_reminded_at=NULL
+        WHERE quote_id=$1 RETURNING *`, [cur.quote_id, decision.route, v.amount, v.leadTime, v.days,
+          toFinance ? decision.reasons.join('; ') : null, addDays(todayPH(),v.days), v.note||null, req.user.id,
+          draft && draft.ok ? draft.total : null, draft && draft.ok ? draft.costTotal : null, JSON.stringify(decision)]);
+      if (qa) await qa.logDecision(client, { quote: cur, action: toFinance ? 'sent_to_finance' : 'auto_quoted', decision, user: req.user });
+      else await audit(client, req.user, 'Record edited', `Cashier price for quote ${cur.quote_no} sent to Finance: ${decision.reasons[0]}`);
+      // the chosen payment term goes on with the price, so the customer's "your quote is ready" message already carries it
+      let row = result.rows[0], terms = null;
+      if (termKey && pt && pt.attachTerms && termKey !== (row.terms_key || 'full') && !(Number(row.paid_amount) > 0)) {
+        terms = await pt.attachTerms(client, row, { termKey }, req.user);
+        row = terms.out;
+      }
+      return { row, terms, cur };
     });
-    if (q.status === 'pending_approval')
-      Promise.resolve(pingFinance({ category: 'orders', severity: 'warn', title: 'Cashier price waiting for your approval',
-        body: `${req.user.name || 'A cashier'} priced ${q.quote_no} at ${peso(q.proposed_amount)} for ${q.contact_name}. Reason: ${q.approval_reason || 'not given'}.`,
-        link: 'Finance_Inventory.html#quotes', entityType: 'quote', entityId: q.quote_no, dedupeKey: 'qapprove:' + q.quote_no + ':' + Date.now() })).catch(() => {});
-    res.json({ok:true, status:q.status, quote:quoteJson(q)});
+    const q = priced.row;
+    // Finance hears about terms the system could not sign; the customer hears about the terms in the "quote ready" message below
+    if (priced.terms && app.locals.paymentTerms) app.locals.paymentTerms.afterTermsAttached(priced.cur, { ...priced.terms, out: { ...priced.terms.out, customer_id: null } });
+    if (q.status === 'pending_approval') afterSentToFinance(q, req.user); else afterQuoted(q);
+    const d = q.approval_check || {};
+    res.json({ ok: true, status: q.status, quote: quoteJson(q), decision: { route: d.route, rules: d.rules, reasons: d.reasons, numbers: d.numbers, summary: d.summary } });
   }));
+  // after the commit: who has to know
+  function afterSentToFinance(q, user) {
+    Promise.resolve(pingFinance({ category: 'orders', severity: 'warn', title: 'Quote price waiting for your approval',
+      body: `${(user && user.name) || 'A cashier'} priced ${q.quote_no} at ${peso(q.proposed_amount)} for ${q.contact_name}. Reason: ${q.approval_reason || 'not given'}.`,
+      link: 'Finance_Inventory.html#quotes', entityType: 'quote', entityId: q.quote_no, dedupeKey: 'qapprove:' + q.quote_no + ':' + Date.now() })).catch(() => {});
+  }
+  async function mailQuoted(q, intro) {
+    const u = q.customer_id ? (await pool.query('SELECT email FROM users WHERE user_id = $1', [q.customer_id])).rows[0] : null;
+    await send(u && u.email, `Your quote ${q.quote_no} is ready`, [
+      `Hi ${q.contact_name},`, intro || 'Here is our quote for your request.', '',
+      `Item: ${q.product_name || 'See details'} \u00B7 ${q.quantity}`, `Quoted amount: ${peso(q.quoted_amount)}`, q.ready_by ? `Ready by: ${needText(dateStr(q.ready_by))}` : `Ready in: ${q.lead_time}${quoteReadyBy(q) ? ' (about ' + needText(quoteReadyBy(q)) + ' if you accept today)' : ''}`, `Price valid until: ${dateStr(q.valid_until)}`,
+      ...termsLines(q),
+      ...(q.reply_note ? ['', q.reply_note] : []), '',
+      `To go ahead, open Request a Quote in your account and tap Accept${baseUrl() ? ' (' + baseUrl() + '/Shop_Customer.html)' : ''}. Accepting covers these payment terms too. You can also decline it or ask for a new quote there.`, ...signoff()], 'quote-reply');
+  }
+  // the customer hears about a ready price at once (a walk-in has no account: the cashier tells them at the counter or by phone)
+  function afterQuoted(q, { refreshed } = {}) {
+    if (!q.customer_id) return;
+    Promise.resolve(pingUser(q.customer_id, { category: 'orders', title: refreshed ? 'Your quote was updated to today\u2019s prices' : 'Your quote is ready',
+      body: `${q.quote_no}: ${peso(q.quoted_amount)}, valid until ${needText(dateStr(q.valid_until))}.`, link: 'Shop_Customer.html', entityType: 'quote', entityId: q.quote_no }, 'customer')).catch(() => {});
+    mailQuoted(q, refreshed ? 'We refreshed your quote at today\u2019s material prices.' : null).catch((e) => console.error('[mail] quote ready failed:', e.message));
+  }
+  // Finance approves a waiting price (one tap, or in a batch with the same reason). Partial-payment terms that waited with it are signed too.
+  async function approvePrice(client, cur, user, { batch } = {}) {
+    if (cur.status !== 'pending_approval' || !cur.proposed_amount || !cur.proposed_lead_time || !cur.proposed_valid_days) throw bad('status','No pending price proposal');
+    let row = (await client.query(`UPDATE quote_requests SET status='quoted', quoted_amount=proposed_amount,
+      lead_time=proposed_lead_time,valid_until=$2::date,handled_by=$3,updated_at=now(),finance_note=NULL WHERE quote_id=$1 RETURNING *`,
+      [cur.quote_id,addDays(todayPH(),cur.proposed_valid_days),user.id])).rows[0];
+    if (cur.terms_key && cur.terms_key !== 'full' && cur.terms_state === 'proposed') {
+      row = (await client.query('UPDATE quote_requests SET terms_state=$2, terms_decided_by=$3, terms_decided_at=now() WHERE quote_id=$1 RETURNING *', [cur.quote_id, 'approved', user.id])).rows[0] || row;
+      await audit(client, user, 'Record edited', `Quote ${cur.quote_no}: payment terms approved with the price \u2014 ${cur.terms_percent}% now (${peso(cur.terms_amount)}), balance ${peso(cur.terms_balance)}`);
+    }
+    const ck = cur.approval_check || {}, qa = app.locals.quoteAutomation;
+    if (qa) await qa.logDecision(client, { quote: cur, action: batch ? 'batch_approved' : 'approved', rules: ck.rules || [], user,
+      numbers: ck.numbers || { cashierTotal: +cur.proposed_amount }, reason: (batch ? 'Approved in a batch for the same reason: ' : 'Approved by Finance: ') + (cur.approval_reason || 'no reason recorded') });
+    else await audit(client, user, 'Record edited', `Finance approved quotation ${cur.quote_no}`);
+    return row;
+  }
+  function afterApproved(q) {
+    Promise.resolve(pingUser(q.proposed_by, { category: 'orders', title: 'Finance approved your price', body: `${q.quote_no}: ${peso(q.quoted_amount)} is approved. Tell ${q.contact_name} the price.`,
+      link: 'POS_Cashier.html#quotes', entityType: 'quote', entityId: q.quote_no }, 'cashier')).catch(() => {});
+    afterQuoted(q);
+  }
   app.post('/api/finance/quotes/:no/approve-price', auth('finance'), wrap(async (req,res) => {
     const q = await tx(async client => {
       const cur = (await client.query('SELECT * FROM quote_requests WHERE quote_no=$1 FOR UPDATE',[req.params.no])).rows[0];
       if (!cur) throw bad('id','Quotation not found');
-      if (cur.status !== 'pending_approval' || !cur.proposed_amount || !cur.proposed_lead_time || !cur.proposed_valid_days) throw bad('status','No pending price proposal');
-      const r = await client.query(`UPDATE quote_requests SET status='quoted', quoted_amount=proposed_amount,
-        lead_time=proposed_lead_time,valid_until=$2::date,handled_by=$3,updated_at=now(),finance_note=NULL WHERE quote_id=$1 RETURNING *`,
-        [cur.quote_id,addDays(todayPH(),cur.proposed_valid_days),req.user.id]);
-      await audit(client,req.user,'Record edited',`Finance approved quotation ${cur.quote_no}`);
-      return r.rows[0];
+      return approvePrice(client, cur, req.user);
     });
-    Promise.resolve(pingUser(q.proposed_by, { category: 'orders', title: 'Finance approved your price', body: `${q.quote_no}: ${peso(q.quoted_amount)} is approved. Tell ${q.contact_name} the price.`,
-      link: 'POS_Cashier.html#quotes', entityType: 'quote', entityId: q.quote_no }, 'cashier')).catch(() => {});
+    afterApproved(q);
     res.json({ok:true,quote:quoteJson(q)});
+  }));
+  /* Finance discount: a pick from fixed steps (never a typed price), capped by the order quantity AND by the minimum margin.
+     The limit is worked out here, so the screen only shows what the server will accept.
+     DISCOUNT_TIERS / DISCOUNT_STEPS are starting values: change them here to change the policy. */
+  const DISCOUNT_TIERS = [{ min: 500, pct: 10 }, { min: 200, pct: 8 }, { min: 50, pct: 5 }, { min: 1, pct: 3 }];
+  const DISCOUNT_STEPS = [1, 2, 3, 5, 8, 10];
+  const qtyNumber = (t) => { const m = /^\s*([\d,.]+)/.exec(String(t || '')); const n = m ? Number(m[1].replace(/,/g, '')) : NaN; return Number.isFinite(n) && n > 0 ? n : 1; };
+  async function discountOptions(cur) {
+    const base = round2(+cur.proposed_amount), qty = qtyNumber(cur.quantity);
+    const tier = (DISCOUNT_TIERS.find((t) => qty >= t.min) || { pct: 0 }).pct;
+    const S = app.locals.quoteAutomation ? await app.locals.quoteAutomation.settings() : { minMarginPct: 0 };
+    const cost = cur.suggested_cost == null ? null : +cur.suggested_cost;
+    // lowest allowed price = cost plus the minimum margin (so never below cost)
+    const floor = cost == null ? null : round2(cost / (1 - Math.min(+S.minMarginPct || 0, 99) / 100));
+    const floorPct = floor == null ? 0 : Math.max(0, Math.floor((1 - floor / base) * 1000) / 10);
+    const maxPct = Math.min(tier, floorPct);
+    const why = cost == null ? 'This quote has no recorded cost, so a discount cannot be checked.'
+      : maxPct <= 0 ? 'No discount possible: the price is already at the minimum margin (' + (+S.minMarginPct || 0) + '%).'
+      : (floorPct < tier ? 'Limited by the minimum margin' : 'Limit for ' + qty + ' unit' + (qty === 1 ? '' : 's')) + ': up to ' + maxPct + '%.';
+    return { base, qty, tierPct: tier, floorPct, maxPct, steps: DISCOUNT_STEPS.filter((x) => x <= maxPct), why };
+  }
+  const pendingPrice = async (no) => {
+    const cur = (await pool.query('SELECT * FROM quote_requests WHERE quote_no=$1', [no])).rows[0];
+    if (!cur) throw bad('id', 'Quotation not found');
+    if (cur.status !== 'pending_approval' || !cur.proposed_amount) throw bad('status', 'Only a price waiting for approval can be discounted');
+    return cur;
+  };
+  app.get('/api/finance/quotes/:no/discount-options', auth('finance'), wrap(async (req, res) => res.json(await discountOptions(await pendingPrice(req.params.no)))));
+  app.post('/api/finance/quotes/:no/approve-discount', auth('finance'), wrap(async (req, res) => {
+    const pct = Number((req.body || {}).pct);
+    const q = await tx(async (client) => {
+      const cur = (await client.query('SELECT * FROM quote_requests WHERE quote_no=$1 FOR UPDATE', [req.params.no])).rows[0];
+      if (!cur) throw bad('id', 'Quotation not found');
+      if (cur.status !== 'pending_approval' || !cur.proposed_amount) throw bad('status', 'No pending price proposal');
+      const o = await discountOptions(cur);
+      if (!o.steps.includes(pct)) throw bad('pct', o.maxPct > 0 ? 'Choose a discount of up to ' + o.maxPct + '% for this quantity' : o.why);
+      const price = round2(o.base * (1 - pct / 100));
+      // the new price and the part-payment amounts that go with it change together, then the normal approval runs in the same transaction
+      const upd = (await client.query(`UPDATE quote_requests SET proposed_amount = $2::numeric,
+          terms_amount  = CASE WHEN terms_key IS NOT NULL AND terms_key <> 'full' AND terms_percent IS NOT NULL THEN round($2::numeric * terms_percent / 100, 2) ELSE terms_amount END,
+          terms_balance = CASE WHEN terms_key IS NOT NULL AND terms_key <> 'full' AND terms_percent IS NOT NULL THEN $2::numeric - round($2::numeric * terms_percent / 100, 2) ELSE terms_balance END,
+          approval_reason = COALESCE(approval_reason || ' ', '') || $3 WHERE quote_id = $1 RETURNING *`,
+        [cur.quote_id, price, `Finance discount ${pct}% for ${o.qty} unit(s): ${peso(o.base)} to ${peso(price)}.`])).rows[0];
+      await audit(client, req.user, 'Record edited', `Quote ${cur.quote_no}: Finance gave a ${pct}% discount (${peso(o.base)} to ${peso(price)}) on ${o.qty} unit(s)`);
+      return approvePrice(client, upd, req.user);
+    });
+    afterApproved(q);
+    res.json({ ok: true, quote: quoteJson(q) });
   }));
   // Finance does not agree with the cashier's price: it goes back to the cashier with a note (the proposal stays on record)
   app.post('/api/finance/quotes/:no/return-price', auth('finance'), wrap(async (req, res) => {
@@ -854,7 +1029,10 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       if (cur.status !== 'pending_approval') throw bad('status', 'Only a price waiting for approval can be sent back');
       const r = await client.query(`UPDATE quote_requests SET status='new', finance_note=$2, handled_by=$3, updated_at=now() WHERE quote_id=$1 RETURNING *`,
         [cur.quote_id, note, req.user.id]);
-      await audit(client, req.user, 'Record edited', `Finance sent the cashier price of ${cur.quote_no} back: ${note}`);
+      const ck = cur.approval_check || {};
+      if (app.locals.quoteAutomation) await app.locals.quoteAutomation.logDecision(client, { quote: cur, action: 'returned', rules: ck.rules || [], user: req.user,
+        numbers: ck.numbers || { cashierTotal: +cur.proposed_amount }, reason: 'Sent back to the cashier: ' + note });
+      else await audit(client, req.user, 'Record edited', `Finance sent the cashier price of ${cur.quote_no} back: ${note}`);
       return r.rows[0];
     });
     Promise.resolve(pingUser(q.proposed_by, { category: 'orders', severity: 'warn', title: 'Finance sent your price back', body: `${q.quote_no}: ${note}`,
@@ -871,9 +1049,20 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
          LEFT JOIN users d ON d.user_id = q.terms_decided_by
          LEFT JOIN orders conv ON conv.order_id = q.converted_order_id
         ORDER BY (q.status = 'pending_approval') DESC, (q.status IN ('new','accepted','preparing','ready')) DESC, q.created_at DESC LIMIT 300`);
+    // recurring customers: for each price waiting for Finance, what this customer was last quoted for the same product (last-quote.js)
+    let lastOf = () => null;
+    if (rows.some((q) => q.status === 'pending_approval' && q.product_sku)) {
+      try {
+        const h = await pool.query(`SELECT quote_id, quote_no, customer_id, phone, product_sku, quantity, quoted_amount, suggested_cost, status, created_at
+            FROM quote_requests WHERE product_sku IS NOT NULL AND quoted_amount IS NOT NULL AND status NOT IN ('new','awaiting_details','pending_approval')
+            ORDER BY created_at DESC LIMIT 3000`);
+        lastOf = (q) => require('./last-quote').lastQuoteFor(q, h.rows);
+      } catch (err) { console.warn('[quotes] last-quote history skipped:', err.message); }   // the list must never fail because of a hint
+    }
     // convertedOrder tells the Sales report that this quotation's money belongs to an order it already lists (§10)
-    res.json(rows.map((q) => ({ ...quoteJson(q), customer: q.contact_name, phone: q.phone, email: q.customer_email,
-      handledBy: q.handled_by_name || undefined, convertedOrder: q.converted_order_no || undefined })));
+    res.json(rows.map((q) => ({ ...quoteJson(q), productionOverride: q.production_override_by ? { by: q.production_override_name, note: q.production_override_note } : undefined, customer: q.contact_name, phone: q.phone, email: q.customer_email,
+      handledBy: q.handled_by_name || undefined, convertedOrder: q.converted_order_no || undefined,
+      lastQuote: (q.status === 'pending_approval' && lastOf(q)) || undefined })));
   }));
 
   // Finance: send the quote (amount is required), close a request, or reopen it
@@ -897,34 +1086,48 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
     }
     if (note.length > 1500) throw bad('note', 'The note is too long (max 1500 characters)');
     if (note && note.length < 5) throw bad('note', 'Write at least 5 characters, or leave the note empty');
-    let amount = null, leadTime = null, validUntil = null;
+    let amount = null, leadTime = null, validUntil = null, readyBy = null, plan = null;
     if (status === 'quoted') {
       const raw = String(b.amount == null ? '' : b.amount).replace(/[,\u20B1\s]/g, '');
       if (!raw) throw bad('amount', 'Enter the quoted amount');
       amount = Number(raw);
       if (!Number.isFinite(amount) || amount <= 0 || amount > 1e9) throw bad('amount', 'Enter a valid amount greater than 0');
       amount = Math.round(amount * 100) / 100;
-      leadTime = str(b.leadTime);
-      if (!QUOTE_OPTIONS.leadTimes.includes(leadTime)) throw bad('leadTime', 'Choose how long it will take to make or prepare');
-      const days = Number(b.validDays);
-      if (!QUOTE_OPTIONS.validDays.includes(days)) throw bad('validDays', 'Choose how long the price is valid');
-      validUntil = addDays(todayPH(), days);
+      if (b.readyBy || b.validUntil) {                  // the guided form: dates, checked against the system's own guidance (quote-form-guide.js)
+        if (!app.locals.quoteGuide) throw bad('amount', 'The quote guide is not available');
+        plan = await app.locals.quoteGuide.readPlan(pool, req.params.no, { amount, readyBy: str(b.readyBy), validUntil: str(b.validUntil), overrideReason: b.overrideReason });
+        leadTime = plan.leadTime; validUntil = plan.validUntil; readyBy = plan.readyBy;
+      } else {                                          // older screens that still send a wording + number of days
+        leadTime = str(b.leadTime);
+        if (!QUOTE_OPTIONS.leadTimes.includes(leadTime)) throw bad('leadTime', 'Choose how long it will take to make or prepare');
+        const days = Number(b.validDays);
+        if (!QUOTE_OPTIONS.validDays.includes(days)) throw bad('validDays', 'Choose how long the price is valid');
+        validUntil = addDays(todayPH(), days);
+      }
     }
     const q = await tx(async (client) => {
       const cur = (await client.query('SELECT * FROM quote_requests WHERE quote_no = $1 FOR UPDATE', [req.params.no])).rows[0];
       if (!cur) throw bad('id', 'Quote request not found');
       if (cur.status === 'completed') throw bad('status', 'This quote is already completed and cannot be changed');
+      if (status === 'quoted' && cur.status === 'pending_approval' && cur.proposed_amount) {   // a typed price may go up, never below what the discount rules allow
+        const o = await discountOptions(cur), lowest = round2(o.base * (1 - o.maxPct / 100));
+        if (amount < lowest) throw bad('amount', o.maxPct > 0 ? `The lowest price allowed here is ${peso(lowest)} (${o.maxPct}% below the cashier price). ${o.why}` : `This price cannot be lowered. ${o.why}`);
+      }
       const started = ['preparing', 'ready'].includes(cur.status) || (cur.status === 'accepted' && +cur.paid_amount > 0);
       if (started && status !== 'closed') throw bad('status', 'Work or payment has already started on this quote. You can only move it forward or close it');
       if (status === 'closed' && +cur.paid_amount > 0 && note.length < 5) throw bad('note', 'Payments were received. Write a note about the refund or how it was settled');
       const quoting = status === 'quoted';
       const r = await client.query(
         `UPDATE quote_requests SET status = $2, reply_note = $3, quoted_amount = $4, lead_time = $5, valid_until = $6, handled_by = $7,
+                ready_by = CASE WHEN $2 = 'quoted' THEN $9::date ELSE ready_by END,
                 responded_at = CASE WHEN $2 IN ('quoted','new') THEN NULL ELSE responded_at END,
                 response_note = CASE WHEN $2 IN ('quoted','new') THEN NULL ELSE response_note END,
                 close_reason = CASE WHEN $2 = 'closed' THEN $8 ELSE NULL END, updated_at = now() WHERE quote_id = $1 RETURNING *`,
         [cur.quote_id, status, quoting ? (note || null) : (note || cur.reply_note), quoting ? amount : cur.quoted_amount,
-         quoting ? leadTime : cur.lead_time, quoting ? validUntil : cur.valid_until, req.user.id, status === 'closed' ? closeReason : null]);
+         quoting ? leadTime : cur.lead_time, quoting ? validUntil : cur.valid_until, req.user.id, status === 'closed' ? closeReason : null, quoting ? readyBy : null]);
+      if (plan && app.locals.quoteAutomation) await app.locals.quoteAutomation.logDecision(client, { quote: cur, action: 'finance_quoted', user: { id: req.user.id, name: req.user.name, roleLabel: 'Finance' },
+        reason: plan.overrideReason ? 'Changed from the system guidance: ' + plan.overrideReason : 'Followed the system guidance', rules: plan.flags.map((f) => f.code),
+        numbers: { cashierTotal: amount, systemTotal: plan.guide.price.ok ? plan.guide.price.suggested : null, costTotal: plan.guide.price.ok ? plan.guide.price.cost : null, readyBy, validUntil, flags: plan.flags.map((f) => f.text) } });
       await audit(client, req.user, 'Record edited', `Quote request ${cur.quote_no} marked ${status}${quoting ? ' (' + peso(amount) + ')' : ''}` +
         (status === 'closed' ? ` — reason: ${CLOSE_REASONS[closeReason]}${note ? ' (' + note + ')' : ''}` : ''));
       return r.rows[0];
@@ -939,12 +1142,7 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
         return send(u && u.email, `Your quote request ${q.quote_no} was closed`, [`Hi ${q.contact_name},`, `We closed your quote request ${q.quote_no}.`, '',
           'Reason: ' + (CLOSE_REASONS[q.close_reason] || 'closed by our staff'), ...(note ? [note] : []), '', 'You can send a new request any time from Request a Quote.', ...signoff()], 'quote-reply');
       }
-      if (status === 'quoted') await send(u && u.email, `Your quote ${q.quote_no} is ready`, [
-        `Hi ${q.contact_name},`, 'Here is our quote for your request.', '',
-        `Item: ${q.product_name || 'See details'} \u00B7 ${q.quantity}`, `Quoted amount: ${peso(q.quoted_amount)}`, `Ready in: ${q.lead_time}${quoteReadyBy(q) ? ' (about ' + needText(quoteReadyBy(q)) + ' if you accept today)' : ''}`, `Price valid until: ${dateStr(q.valid_until)}`,
-        ...termsLines(q),
-        ...(q.reply_note ? ['', q.reply_note] : []), '',
-        `To go ahead, open Request a Quote in your account and tap Accept${baseUrl() ? ' (' + baseUrl() + '/Shop_Customer.html)' : ''}. Accepting covers these payment terms too. You can also decline it or ask for a new quote there.`, ...signoff()], 'quote-reply');
+      if (status === 'quoted') await mailQuoted(q);
       else await send(u && u.email, `Update on your quote request ${q.quote_no}`, [`Hi ${q.contact_name},`, 'We have an update on your quote request.', '', q.reply_note, ...signoff()], 'quote-reply');
     })().catch((e) => console.error('[mail] quote reply failed:', e.message));
   }));
@@ -960,40 +1158,55 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
     return { title: f === 'Delivery' ? 'Your order was delivered' : 'Your order was picked up', body: `${q.quote_no} is complete. Thank you for ordering from Triple E Metal Products.` };
   };
 
-  app.post('/api/finance/quotes/:no/step', auth('finance'), wrap(async (req, res) => {
-    const b = req.body || {};
-    const target = str(b.status), note = str(b.note), receivedBy = str(b.receivedBy);
-    if (note.length > 200) throw bad('note', 'The note must be 200 characters or fewer');
-    const q = await tx(async (client) => {
-      const cur = (await client.query('SELECT * FROM quote_requests WHERE quote_no = $1 FOR UPDATE', [req.params.no])).rows[0];
-      if (!cur) throw bad('id', 'Quote request not found');
-      const at = QFLOW.indexOf(cur.status);
-      if (at < 0) throw bad('status', 'Only an accepted quote can move to the next step');
-      const next = QFLOW[at + 1];
-      if (!next) throw bad('status', 'This quote is already completed');
-      if (target !== next) throw bad('status', `The next step is "${stepLabel(next, cur.fulfillment)}". Steps cannot be skipped or moved backwards`);
-      // a custom item (no catalog product) is made with a job order: its materials must be issued before it can be ready
-      if (next === 'ready' && !cur.product_sku && app.locals.jobOrders) {
-        await app.locals.jobOrders.ready;
-        if (!(await client.query('SELECT 1 FROM job_orders WHERE quote_id = $1', [cur.quote_id])).rowCount)
-          throw bad('status', 'Issue the raw materials and finishing supplies for this custom item first (Job order), then mark it ready');
-      }
-      if (next === 'preparing' && cur.pay_method === 'Xendit' && round2(+cur.quoted_amount - (+cur.paid_amount || 0)) > 0.004)
-        throw bad('payment', 'The customer chose to pay online and has not paid yet. Wait for the Xendit payment, or record a payment received another way first');
-      if (next === 'completed') {
-        if (receivedBy.length < 2 || receivedBy.length > 80) throw bad('receivedBy', `Enter the name of the person who ${cur.fulfillment === 'Delivery' ? 'received' : 'picked up'} the order (2 to 80 characters)`);
-        const owed = round2(+cur.quoted_amount - (+cur.paid_amount || 0));
-        if (owed > 0.004) throw bad('payment', `The balance of ${peso(owed)} is not paid yet. Record the payment first`);
-      }
-      const entry = { s: next, at: Date.now(), note: [next === 'completed' ? 'Received by ' + receivedBy : '', note].filter(Boolean).join(' - ') || undefined };
-      const r = await client.query(
-        `UPDATE quote_requests SET status = $2, received_by = COALESCE($3, received_by), progress = COALESCE(progress, '[]'::jsonb) || $4::jsonb, handled_by = $5, updated_at = now()
-          WHERE quote_id = $1 RETURNING *`,
-        [cur.quote_id, next, next === 'completed' ? receivedBy : null, JSON.stringify([entry]), req.user.id]);
-      await audit(client, req.user, 'Record edited', `Quote ${cur.quote_no} moved from ${stepLabel(cur.status, cur.fulfillment)} to ${stepLabel(next, cur.fulfillment)}`);
-      return r.rows[0];
-    });
-    res.json({ ok: true, status: q.status });
+  async function advanceQuote(client, cur, target, user, { note = '', receivedBy = '' } = {}) {
+    const at = QFLOW.indexOf(cur.status);
+    if (at < 0) throw bad('status', 'Only an accepted quote can move to the next step');
+    const next = QFLOW[at + 1];
+    if (!next) throw bad('status', 'This quote is already completed');
+    if (target !== next) throw bad('status', `The next step is "${stepLabel(next, cur.fulfillment)}". Steps cannot be skipped or moved backwards`);
+    // a custom item (no catalog product) is made with a job order: its materials must be issued before it can be ready
+    if (next === 'ready' && !cur.product_sku && app.locals.jobOrders) {
+      await app.locals.jobOrders.ready;
+      // a draft job order (made automatically at acceptance) is only a plan: the materials must really be issued
+      if (!(await client.query(`SELECT 1 FROM job_orders WHERE quote_id = $1 AND status <> 'draft'`, [cur.quote_id])).rowCount)
+        throw bad('status', 'Issue the raw materials and finishing supplies for this custom item first (Job order), then mark it ready');
+    }
+    if (next === 'preparing') {
+      const pt = app.locals.paymentTerms;
+      if (!pt) throw bad('payment', 'Payment checks are unavailable. Production cannot start.');
+      await pt.assertProduction(client, cur);
+    }
+    if (next === 'completed') {
+      if (receivedBy.length < 2 || receivedBy.length > 80) throw bad('receivedBy', `Enter the name of the person who ${cur.fulfillment === 'Delivery' ? 'received' : 'picked up'} the order (2 to 80 characters)`);
+      const owed = round2(+cur.quoted_amount - (+cur.paid_amount || 0));
+      if (owed > 0.004) throw bad('payment', `The balance of ${peso(owed)} is not paid yet. Record the payment first`);
+    }
+    const entry = { s: next, at: Date.now(), note: [next === 'completed' ? 'Received by ' + receivedBy : '', note].filter(Boolean).join(' - ') || undefined };
+    const r = await client.query(
+      `UPDATE quote_requests SET status = $2, received_by = COALESCE($3, received_by), progress = COALESCE(progress, '[]'::jsonb) || $4::jsonb, handled_by = $5, updated_at = now()
+        WHERE quote_id = $1 RETURNING *`,
+      [cur.quote_id, next, next === 'completed' ? receivedBy : null, JSON.stringify([entry]), user.id]);
+    await audit(client, user, 'Record edited', `Quote ${cur.quote_no} moved from ${stepLabel(cur.status, cur.fulfillment)} to ${stepLabel(next, cur.fulfillment)}` + (note ? ` (${note})` : ''));
+    return r.rows[0];
+  }
+  // Preparing -> Ready -> Picked up / Delivered is the cashier's work (they hold the goods, the job order and the counter payment).
+  // Finance approves, purchases, follows up money and cancels: it does not move the order along.
+  for (const [base, role] of [['/api/pos', 'cashier']]) {
+    app.post(base + '/quotes/:no/step', auth(role), wrap(async (req, res) => {
+      const b = req.body || {};
+      const target = str(b.status), note = str(b.note), receivedBy = str(b.receivedBy);
+      if (note.length > 200) throw bad('note', 'The note must be 200 characters or fewer');
+      const q = await tx(async (client) => {
+        const cur = (await client.query('SELECT * FROM quote_requests WHERE quote_no = $1 FOR UPDATE', [req.params.no])).rows[0];
+        if (!cur) throw bad('id', 'Quote request not found');
+        return advanceQuote(client, cur, target, req.user, { note, receivedBy });
+      });
+      res.json({ ok: true, status: q.status });
+      afterStep(q);
+    }));
+  }
+  // the customer (and, for a walk-in, the cashier who logged it) hears about every step
+  function afterStep(q) {
     const m = msgFor(q, q.status);
     Promise.resolve(pingUser(q.customer_id, { category: 'delivery', title: m.title, body: m.body, link: 'Shop_Customer.html', entityType: 'quote', entityId: q.quote_no }, 'customer')).catch(() => {});
     if (q.source === 'pos') Promise.resolve(pingUser(q.created_by, { category: 'pos', title: 'Walk-in quote: ' + stepLabel(q.status, q.fulfillment), body: `${q.quote_no} for ${q.contact_name}. ` + (q.status === 'ready' ? 'Tell the customer it is ready.' : ''), link: 'POS_Cashier.html', entityType: 'quote', entityId: q.quote_no }, 'cashier')).catch(() => {});
@@ -1002,16 +1215,31 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
       const u = (await pool.query('SELECT email FROM users WHERE user_id = $1', [q.customer_id])).rows[0];
       await send(u && u.email, `${m.title} (${q.quote_no})`, [`Hi ${q.contact_name},`, m.body, ...signoff()], 'quote-step');
     })().catch((e) => console.error('[mail] quote step failed:', e.message));
-  }));
+  }
+  app.locals.quoteFlow = { approvePrice, afterApproved, afterQuoted, afterSentToFinance, advance: advanceQuote, afterStep, QFLOW };
+
+  // the payment link goes to the customer as soon as they accept (in-app and email), so nobody sends it by hand
+  function sendPayLink(q, url) {
+    const due = owedOn(q), part = due > 0 && due < round2(+q.quoted_amount);
+    const what = part ? 'down payment' : 'payment';
+    Promise.resolve(pingUser(q.customer_id, { category: 'payment', title: `Pay the ${what} for ${q.quote_no}`,
+      body: `${peso(due)} is due now${part ? ' (the balance is paid later, as the payment terms say)' : ''}. Open your quote and tap Pay now, or use the link we emailed you.`,
+      link: 'Shop_Customer.html', entityType: 'quote', entityId: q.quote_no }, 'customer')).catch(() => {});
+    (async () => {
+      const u = (await pool.query('SELECT email FROM users WHERE user_id = $1', [q.customer_id])).rows[0];
+      await send((u && u.email) || q.contact_email, `Payment link for your quote ${q.quote_no}`, [`Hi ${q.contact_name},`,
+        `Thank you for accepting quote ${q.quote_no}. The ${what} due now is ${peso(due)}.`, `Pay online here (GCash, Maya, card or bank): ${url}`,
+        part ? 'The balance is due later, as the payment terms on your quote say.' : '', ...signoff()], 'quote-paylink');
+    })().catch((e) => console.error('[mail] quote payment link failed:', e.message));
+  }
 
   // Finance records cash / transfer received against an accepted quote. The money itself is written to the
   // payment ledger (payment-terms.js), which owns quote_requests.paid_amount and payment_state through a trigger;
   // the payments JSONB array below stays only as the display copy the quotation screens already read.
   app.post('/api/finance/quotes/:no/payment', auth('finance'), wrap(async (req, res) => {
     const b = req.body || {};
-    const raw = String(b.amount == null ? '' : b.amount).replace(/[,\u20B1\s]/g, ''), method = str(b.method), note = str(b.note);
-    if (!raw) throw bad('amount', 'Enter the amount received');
-    let amount = Number(raw);
+    const method = str(b.method), note = str(b.note);
+    let amount = decimalNumber(b.amount, { money: true });
     if (!Number.isFinite(amount) || amount <= 0 || amount > 1e9) throw bad('amount', 'Enter a valid amount greater than 0');
     amount = round2(amount);
     if (!QUOTE_OPTIONS.payMethods.includes(method)) throw bad('method', 'Choose how it was paid');
@@ -1122,7 +1350,8 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
     const q = (await pool.query('SELECT * FROM quote_requests WHERE quote_no = $1 AND customer_id = $2', [req.params.no, req.user.id])).rows[0];
     if (!q) throw bad('id', 'Quote request not found');
     if (!accepting(q)) throw bad('status', 'Only an accepted quote can be paid');
-    if (q.pay_method !== 'Xendit') throw bad('payment', 'This quote is set to ' + String(q.pay_method || 'pay later').toLowerCase());
+    // a customer who chose Pay on delivery / pickup can still pay online early (their choice stays as it is); only a quote with no method chosen cannot
+    if (q.pay_method !== 'Xendit' && !/^Pay on /.test(q.pay_method || '')) throw bad('payment', 'Accept the quote and choose how to pay first');
     if (!(owedOn(q) > 0)) throw bad('payment', 'This quote is already fully paid');
     let url; try { url = await quoteCheckoutUrl(q); } catch (e) { console.warn('[xendit] quote checkout failed:', e.message); throw bad('payment', 'Online payment is not available right now. Please try again later or contact us'); }
     res.json({ checkoutUrl: url });
@@ -1131,7 +1360,7 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
   app.post('/api/shop/quotes/:no/verify-payment', auth('customer'), wrap(async (req, res) => {
     const q = (await pool.query('SELECT * FROM quote_requests WHERE quote_no = $1 AND customer_id = $2', [req.params.no, req.user.id])).rows[0];
     if (!q) throw bad('id', 'Quote request not found');
-    if (q.pay_method === 'Xendit' && q.xendit_invoice_id && owedOn(q) > 0) {
+    if (q.xendit_invoice_id && owedOn(q) > 0) {
       try { const inv = await xenditCall(`${xBase}/v2/invoices/${encodeURIComponent(q.xendit_invoice_id)}`); await applyQuoteInvoice(q, inv, q.xendit_invoice_id); }
       catch (e) { console.warn('[xendit] quote payment check failed:', e.message); }
     }
@@ -1230,18 +1459,22 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
      the same UPDATE that picks it, so two servers never send the same reminder twice. */
   async function remindExpiringQuotes() {
     await pool.query('ALTER TABLE quote_requests ADD COLUMN IF NOT EXISTS expiry_reminded_at TIMESTAMPTZ');
+    const days = app.locals.quoteAutomation ? (await app.locals.quoteAutomation.settings()).expiryReminderDays : 2;
     const { rows } = await pool.query(`
       UPDATE quote_requests q SET expiry_reminded_at = now()
         FROM (SELECT q2.quote_id FROM quote_requests q2
                WHERE q2.status = 'quoted' AND q2.valid_until IS NOT NULL AND q2.expiry_reminded_at IS NULL
                  AND q2.valid_until >= (now() AT TIME ZONE 'Asia/Manila')::date
-                 AND q2.valid_until <= (now() AT TIME ZONE 'Asia/Manila')::date + 2
+                 AND q2.valid_until <= (now() AT TIME ZONE 'Asia/Manila')::date + $1::int
                ORDER BY q2.quote_id LIMIT 100 FOR UPDATE SKIP LOCKED) pick
        WHERE q.quote_id = pick.quote_id
-      RETURNING q.quote_id, q.quote_no, q.customer_id, q.contact_name, q.contact_email, q.product_name, q.quoted_amount,
-                to_char(q.valid_until, 'Mon DD, YYYY') AS until_s, (q.valid_until - (now() AT TIME ZONE 'Asia/Manila')::date) AS days_left`);
+      RETURNING q.quote_id, q.quote_no, q.customer_id, q.contact_name, q.contact_email, q.product_name, q.quoted_amount, q.created_by, q.proposed_by, q.phone,
+                to_char(q.valid_until, 'Mon DD, YYYY') AS until_s, (q.valid_until - (now() AT TIME ZONE 'Asia/Manila')::date) AS days_left`, [days]);
     for (const q of rows) {
       const left = +q.days_left === 0 ? 'today' : +q.days_left === 1 ? 'tomorrow' : 'in ' + q.days_left + ' days';
+      if (!q.customer_id) await pingUser(q.proposed_by || q.created_by, { category: 'orders', severity: 'warn', title: 'Walk-in quote expires ' + left,
+        body: `${q.quote_no} for ${q.contact_name} (${q.phone}, ${peso(q.quoted_amount)}) is valid until ${q.until_s}. Call the customer, or use "Refresh price" if costs changed.`,
+        link: 'POS_Cashier.html#quotes', entityType: 'quote', entityId: q.quote_no, dedupeKey: 'quote_expiry:' + q.quote_no }, 'cashier');
       const u = q.customer_id ? (await pool.query('SELECT email FROM users WHERE user_id = $1', [q.customer_id])).rows[0] : null;
       if (q.customer_id) await pingUser(q.customer_id, { category: 'orders', title: 'Your quote expires ' + left,
         body: `${q.quote_no} for ${q.product_name || 'your request'} (${peso(q.quoted_amount)}) is valid until ${q.until_s}. Accept it in Request a Quote before then to keep this price.`,
@@ -1255,6 +1488,155 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
     return { reminded: rows.length };
   }
   (app.locals.automationJobs = app.locals.automationJobs || []).push({ name: 'quote-expiry', run: remindExpiringQuotes });
+
+  /* ---------- Who records a payment ----------
+     Online (Xendit): nobody. The signed callback, or the server asking Xendit directly, records it.
+     Pay on pickup / cash on delivery: the CASHIER who takes the money records it, and cash goes into that cashier's own open
+     Cash Shift (so the drawer count adds up). Finance does not key payments in: it is told when money arrives and can send the
+     customer or the cashier a reminder (below). If the customer chose online payment, the open Xendit link is checked first
+     and closed before a counter payment is taken, so the same money can never be paid twice. */
+  async function settleOnlineInvoice(q, { close } = {}) {
+    if (!(q.xendit_invoice_id && process.env.XENDIT_SECRET_KEY)) return { state: 'none' };
+    let inv; try { inv = await xenditCall(`${xBase}/v2/invoices/${encodeURIComponent(q.xendit_invoice_id)}`); } catch (e) { console.warn('[xendit] quote payment check failed:', e.message); return { state: 'unavailable' }; }
+    const st = String(inv.status || '').toUpperCase();
+    if (['PAID', 'SETTLED'].includes(st)) { await applyQuoteInvoice(q, inv, q.xendit_invoice_id); return { state: 'paid' }; }
+    if (st === 'PENDING' && close) {
+      try { await xenditCall(`${xBase}/invoices/${encodeURIComponent(q.xendit_invoice_id)}/expire!`, { method: 'POST', body: {} }); return { state: 'closed' }; }
+      catch (e) { console.warn('[xendit] could not close the quote invoice:', e.message); return { state: 'unavailable' }; }
+    }
+    return { state: st === 'PENDING' ? 'pending' : 'expired' };
+  }
+  const quoteByNo = async (no) => (await pool.query('SELECT * FROM quote_requests WHERE quote_no = $1', [no])).rows[0];
+
+  app.post('/api/pos/quotes/:no/payment', auth('cashier'), wrap(async (req, res) => {
+    const b = req.body || {};
+    const method = str(b.method), note = str(b.note);
+    let amount = decimalNumber(b.amount, { money: true });
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1e9) throw bad('amount', 'Enter a valid amount greater than 0');
+    amount = round2(amount);
+    if (!QUOTE_OPTIONS.payMethods.includes(method)) throw bad('method', 'Choose how it was paid');
+    if (note.length > 100) throw bad('note', 'The note must be 100 characters or fewer');
+    const reference = method === 'Cash' ? '' : str(b.reference);
+    if (method !== 'Cash' && (reference.length < 4 || reference.length > 60)) throw bad('reference', 'Enter the reference from the app, receipt or statement (4 to 60 characters)');
+    const pt = app.locals.paymentTerms; if (!pt) throw bad('ledger', 'The payment ledger is not available');
+    const q0 = await quoteByNo(req.params.no);
+    if (!q0) throw bad('id', 'Quote request not found');
+    if (!accepting(q0)) throw bad('status', 'Payments can only be recorded on an accepted quote that is not completed yet');
+    if (q0.pay_method === 'Xendit' && q0.xendit_invoice_id && round2(+q0.quoted_amount - (+q0.paid_amount || 0)) > 0.004) {
+      const r = await settleOnlineInvoice(q0, { close: true });
+      if (r.state === 'unavailable') throw bad('payment', 'The customer chose online payment and the payment link could not be checked right now. Try again in a minute so nobody is charged twice');
+      if (r.state === 'paid') {
+        const again = await quoteByNo(req.params.no);
+        if (!(round2(+again.quoted_amount - (+again.paid_amount || 0)) > 0.004)) throw bad('payment', 'The customer already paid this online. Nothing is left to collect');
+      }
+    }
+    const out = await tx(async (client) => {
+      const cur = (await client.query('SELECT * FROM quote_requests WHERE quote_no = $1 FOR UPDATE', [req.params.no])).rows[0];
+      if (!cur) throw bad('id', 'Quote request not found');
+      if (!accepting(cur)) throw bad('status', 'Payments can only be recorded on an accepted quote that is not completed yet');
+      let shiftId = null;
+      if (method === 'Cash') {
+        const shift = (await client.query('SELECT shift_id FROM pos_cash_shifts WHERE cashier_id = $1 AND closed_at IS NULL FOR UPDATE', [req.user.id])).rows[0];
+        if (!shift) throw bad('method', 'Open your Cash Shift before taking cash for this quote');
+        shiftId = Number(shift.shift_id);
+      }
+      const paid = await pt.applyPayment(client, { kind: 'quote', no: cur.quote_no, amount, method, note, actor: req.user, requestId: str(b.requestId) || undefined,
+        providerRef: reference || undefined, tendered: b.tendered, cashShiftId: shiftId });
+      if (paid.replayed) return { cur, paid };
+      const entry = { id: paid.paymentId, amount, method, note: note || undefined, ref: reference || undefined, by: req.user.name || undefined, at: Date.now() };
+      await client.query('UPDATE quote_requests SET payments = $2::jsonb, updated_at = now() WHERE quote_id = $1',
+        [cur.quote_id, JSON.stringify((Array.isArray(cur.payments) ? cur.payments : []).concat([entry]))]);
+      return { cur, paid };
+    });
+    const parent = out.paid.parent, q = out.cur;
+    res.json({ ok: true, replayed: !!out.paid.replayed, paymentId: out.paid.paymentId, paidAmount: parent.paid, balance: parent.balance, paymentState: parent.state,
+      change: out.paid.change == null ? null : out.paid.change });
+    if (out.paid.replayed) return;
+    const body = `Payment of ${peso(amount)} received for ${q.quote_no} (${method}). ` + (parent.balance > 0 ? `Balance: ${peso(parent.balance)}.` : 'Fully paid. Thank you!');
+    Promise.resolve(pingUser(q.customer_id, { category: 'payment', title: 'Payment received', body, link: 'Shop_Customer.html', entityType: 'quote', entityId: q.quote_no }, 'customer')).catch(() => {});
+    Promise.resolve(pingFinance({ category: 'payment', title: 'Counter payment recorded on a quote', body: `${q.quote_no} — ${peso(amount)} (${method}) taken by ${req.user.name || 'the cashier'}. ` + (parent.balance > 0 ? `Balance ${peso(parent.balance)}.` : 'Fully paid.'),
+      link: 'Finance_Inventory.html#quotes', entityType: 'quote', entityId: q.quote_no, dedupeKey: 'qpos_pay:' + out.paid.paymentId })).catch(() => {});
+    (async () => {
+      if (!q.customer_id) return;
+      const u = (await pool.query('SELECT email FROM users WHERE user_id = $1', [q.customer_id])).rows[0];
+      await send(u && u.email, `Payment received for ${q.quote_no}`, [`Hi ${q.contact_name},`, body, ...signoff()], 'quote-payment');
+    })().catch((e) => console.error('[mail] quote payment failed:', e.message));
+  }));
+
+  // "Check online payment": ask Xendit now instead of waiting for the callback (cashier at the counter, Finance on the quote)
+  for (const [base, role] of [['/api/pos', 'cashier'], ['/api/finance', 'finance']]) {
+    app.post(base + '/quotes/:no/check-payment', auth(role), wrap(async (req, res) => {
+      const q = await quoteByNo(req.params.no);
+      if (!q) throw bad('id', 'Quote request not found');
+      const r = await settleOnlineInvoice(q);
+      const c = await quoteByNo(req.params.no);
+      res.json({ ok: true, online: q.pay_method === 'Xendit', state: r.state, paidAmount: +c.paid_amount, balance: Math.max(0, round2(+c.quoted_amount - (+c.paid_amount || 0))) });
+    }));
+  }
+
+  /* ---------- Payment reminders (automatic, and by hand from Finance) ---------- */
+  const pingCashiers = (n) => (nc() ? nc().notifyRole('cashier', n) : null);
+  const readyAtOf = (q) => { const e = (Array.isArray(q.progress) ? q.progress : []).filter((x) => x && x.s === 'ready').pop(); return e && e.at ? +e.at : (q.updated_at ? new Date(q.updated_at).getTime() : null); };
+  function reminderText(q, a) {
+    const owe = peso(a.owed), where = q.fulfillment === 'Delivery' ? 'on delivery' : 'at pickup';
+    if (a.kind === 'online') return { title: `Please pay for ${q.quote_no}`, severity: 'warn', body: `${owe} is due so we can start on your order. Open Request a Quote and tap Pay now (GCash, Maya, card or bank).` };
+    if (a.kind === 'pickup') return { title: `Your order ${q.quote_no} is waiting`, severity: 'warn', body: `${q.quote_no} is ${q.fulfillment === 'Delivery' ? 'ready for delivery' : 'ready for pickup'}. ${owe} is still to be paid ${where}.` };
+    if (a.kind === 'collect') return { title: `Collect ${owe} on ${q.quote_no}`, severity: a.n ? 'warn' : 'info',
+      body: `${q.contact_name} (${q.phone}): ${q.quote_no} is ${q.fulfillment === 'Delivery' ? 'out for delivery' : 'ready for pickup'} and ${owe} is still unpaid. Collect it ${where}, then record it in Quote Desk > Collect payment.` };
+    if (a.kind === 'online_stale') return { title: `${q.quote_no} accepted but unpaid`, severity: 'warn', body: `${q.contact_name} accepted ${q.quote_no} more than 3 days ago and has not paid ${owe} online. Remind them or close the quote.` };
+    return { title: `${q.quote_no} ready but unpaid`, severity: 'error', body: `${q.quote_no} has been ready for over 7 days with ${owe} still unpaid. Ask the cashier to collect it, or decide what happens to the order.` };
+  }
+  /* sends one reminder; `bucket` makes the key unique per send for manual reminders. Returns 1 when it went out, 0 when the same one was already sent. */
+  async function sendPaymentReminder(q, a, bucket) {
+    const t = reminderText(q, a), key = a.key + ':' + q.quote_no + (bucket ? ':' + bucket : '');
+    const base = { category: 'payment', severity: t.severity, title: t.title, body: t.body, entityType: 'quote', entityId: q.quote_no, dedupeKey: key };
+    if (a.to === 'finance') return (await pingFinance(Object.assign(base, { link: 'Finance_Inventory.html#quotes' }))) ? 1 : 0;
+    if (a.to === 'cashier') return (await pingCashiers(Object.assign(base, { link: 'POS_Cashier.html#quotes' }))) ? 1 : 0;
+    if (!q.customer_id) return 0;
+    const added = await pingUser(q.customer_id, Object.assign(base, { link: 'Shop_Customer.html' }), 'customer');
+    if (!added) return 0;
+    (async () => {
+      const u = (await pool.query('SELECT email FROM users WHERE user_id = $1', [q.customer_id])).rows[0];
+      let link = '';
+      if (a.kind === 'online') { try { link = (await quoteCheckoutUrl(q)) || ''; } catch (_) { /* the in-app message still tells them to open the quote */ } }
+      await send((u && u.email) || q.contact_email, t.title, [`Hi ${q.contact_name},`, t.body, ...(link ? [`Pay online here: ${link}`] : []), 'If you already paid, please ignore this message.', ...signoff()], 'quote-pay-reminder');
+    })().catch((e) => console.error('[mail] quote payment reminder failed:', e.message));
+    return 1;
+  }
+  async function remindQuotePayments() {
+    const { rows } = await pool.query(`
+      SELECT q.*, (q.customer_id IS NOT NULL) AS has_account FROM quote_requests q
+       WHERE q.status IN ('accepted', 'ready') AND q.quoted_amount IS NOT NULL AND q.quoted_amount - COALESCE(q.paid_amount, 0) > 0.004
+       ORDER BY q.quote_id LIMIT 300`);
+    const now = Date.now(), out = { checked: rows.length, sent: 0 };
+    for (const q of rows) {
+      const plan = paymentReminderPlan({ status: q.status, pay_method: q.pay_method, quoted_amount: q.quoted_amount, paid_amount: q.paid_amount,
+        accepted_at: q.responded_at ? new Date(q.responded_at).getTime() : null, ready_at: q.status === 'ready' ? readyAtOf(q) : null, has_account: q.has_account }, now);
+      for (const a of plan) { try { out.sent += await sendPaymentReminder(q, a); } catch (e) { console.warn('[auto] payment reminder for ' + q.quote_no + ' failed:', e.message); } }
+    }
+    if (out.sent) console.log(`[auto] sent ${out.sent} quote payment reminder(s)`);
+    return out;
+  }
+  (app.locals.automationJobs = app.locals.automationJobs || []).push({ name: 'quote-payment-reminders', run: remindQuotePayments });
+
+  // Finance: nudge the customer, or the cashier who collects, about money still owed on an accepted quote (at most once every 6 hours each)
+  app.post('/api/finance/quotes/:no/remind', auth('finance'), wrap(async (req, res) => {
+    const to = str((req.body || {}).to);
+    if (!['customer', 'cashier'].includes(to)) throw bad('to', 'Choose who to remind: the customer or the cashier');
+    const q = await quoteByNo(req.params.no);
+    if (!q) throw bad('id', 'Quote request not found');
+    const owed = round2(+q.quoted_amount - (+q.paid_amount || 0));
+    if (!accepting(q) || !(owed > 0.004)) throw bad('payment', 'Nothing is waiting to be paid on this quote');
+    if (to === 'customer' && !q.customer_id) throw bad('to', `This is a walk-in quote with no online account. Call the customer on ${q.phone || 'the number on the quote'}`);
+    const kind = to === 'customer' ? (q.status === 'ready' ? 'pickup' : 'online') : 'collect';
+    if (to === 'cashier' && q.status !== 'ready') throw bad('to', 'The cashier collects once the order is ready. Until then the customer is the one to remind');
+    if (to === 'customer' && kind === 'online' && q.pay_method !== 'Xendit') throw bad('to', 'This customer pays at ' + (q.fulfillment === 'Delivery' ? 'delivery' : 'pickup') + '. Nothing is due yet');
+    const bucket = 'm' + Math.floor(Date.now() / (6 * HOUR));
+    const sent = await sendPaymentReminder(q, { to, kind, n: 0, key: 'qpay_manual:' + to, owed }, bucket);
+    if (sent) await audit(pool, req.user, 'Record edited', `Quote ${q.quote_no}: payment reminder sent to the ${to} (${peso(owed)} owed)`);
+    res.json({ ok: true, sent: !!sent, message: sent ? `Reminder sent to the ${to}.` : `The ${to} was already reminded in the last 6 hours.` });
+  }));
+  app.locals.quotePayments = { checkoutUrl: quoteCheckoutUrl, owedOn };
 
   /* =====================================================
      4. Reviews
@@ -1370,3 +1752,4 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
 
   app.locals.shopExtras = { decorate, checkMinimums, effectiveMin, MIN_ORDER_FLOOR, MIN_ORDER_CAP };
 };
+module.exports.pure = { paymentReminderPlan };

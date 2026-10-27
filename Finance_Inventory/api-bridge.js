@@ -7,10 +7,11 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
+  const FA = window.FormAssist;                  // form-assist.js (Task 9 form helpers); every use checks it is there
   const esc = (v) => (typeof escapeHTML === 'function' ? escapeHTML(String(v)) : String(v).replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';'));
   const NEEDS_SUPPLIER = ['Raw Materials', 'Finishing Supplies'];
   const DEPARTMENTS = ['Raw Materials', 'Finished Goods', 'Finishing Supplies'];
-  const NOTE_REQUIRED = ['other', 'count_correction_up', 'count_correction_down'];
+  const NOTE_REQUIRED = ['other'];
 
   let REASONS = { in: {}, out: {} };
   const ALL_D = DEPARTMENTS;
@@ -21,18 +22,15 @@
       supplier_receipt: ['Raw Materials', 'Finishing Supplies'], // finished goods are produced in-house
       customer_return: ['Finished Goods'],
       produced_batch: ['Finished Goods'],
-      count_correction_up: ALL_D,
       other: ALL_D
     },
     out: {
       rust_corrosion: ['Raw Materials', 'Finished Goods'],
       damaged: ALL_D,
       scrap_cutting_waste: ['Raw Materials'],
-      production_use: ['Raw Materials', 'Finishing Supplies'],
       quality_rejection: ['Raw Materials', 'Finished Goods'],
       lost_missing: ALL_D,
       returned_to_supplier: ['Raw Materials', 'Finishing Supplies'],
-      count_correction_down: ALL_D,
       other: ALL_D
     }
   };
@@ -62,7 +60,8 @@
     // used by quick-stock.js (double-click a row in Inventory Monitoring)
     reasonsFor: (type, dept) => reasonKeysFor(type, dept).map((k) => ({ key: k, label: REASONS[type][k], help: REASON_HELP[type + ':' + k] || '' })),
     noteRequired: (reason) => NOTE_REQUIRED.indexOf(reason) >= 0,
-    suppliersFor: (item) => suppliersForItem(item) };
+    suppliersFor: (item) => suppliersForItem(item),
+    reloadUsers: () => (typeof window.reloadUserAccounts === "function" ? window.reloadUserAccounts() : null) };
 
   function toast(message, type) {
     const el = document.createElement('div');
@@ -74,7 +73,7 @@
 
   function clearErrors(root) {
     root.querySelectorAll('.field-msg').forEach((n) => n.remove());
-    root.querySelectorAll('.field-invalid').forEach((n) => n.classList.remove('field-invalid'));
+    root.querySelectorAll('.field-invalid').forEach((n) => { n.classList.remove('field-invalid'); n.setAttribute('aria-invalid', 'false'); });
   }
   function setError(id, message) {
     const el = $(id);
@@ -154,10 +153,10 @@
       console.warn('[api-bridge] ' + path + ' failed: ' + e.message); return fallback;
     });
     const archivedRes = soft('/products?archived=1', archivedProductData.slice());
-    const [inventory, products, suppliers, movements, users, audit, reasons, categories, salesRes] = await Promise.all([
+    const [inventory, products, suppliers, movements, audit, reasons, categories, salesRes] = await Promise.all([
       soft('/inventory', inventoryCache), soft('/products', productCatalogData.slice()),
       soft('/suppliers', supplierData.slice()), soft('/movements?limit=1000', movementCache),
-      soft('/users', userAccountsData.slice()), soft('/audit', auditLogData.slice()), soft('/reasons', REASONS), soft('/categories', CATEGORIES),
+      soft('/audit', auditLogData.slice()), soft('/reasons', REASONS), soft('/categories', CATEGORIES),
       soft('/sales', { sales: [] })]);
     salesCache = (salesRes && salesRes.sales) || [];
     replace(archivedProductData, Array.isArray(await archivedRes) ? await archivedRes : []);
@@ -184,7 +183,7 @@
     movementCache = movements;
     safe(renderMovementLog);
     safe(renderReports);
-    replace(userAccountsData, users);   // User Management lists staff AND customer accounts (filter by role on the page)
+    if (typeof window.reloadUserAccounts === 'function') await window.reloadUserAccounts(false);
     replace(auditLogData, audit);
 
     const low = inventory.filter((i) => getStockStatus(i) === 'low');
@@ -243,16 +242,13 @@
     'in:supplier_receipt': 'New stock delivered by a supplier.',
     'in:customer_return': 'A customer sent finished goods back and they are going back on the shelf.',
     'in:produced_batch': 'Finished goods produced in a new batch and added to stock.',
-    'in:count_correction_up': 'The physical count is higher than the system. Note required: what was counted and why.',
     'in:other': 'Anything not listed. Note required: explain what happened.',
     'out:rust_corrosion': 'Stock lost to rust or corrosion.',
     'out:damaged': 'Bent, cracked or broken stock.',
     'out:scrap_cutting_waste': 'Offcuts and cutting waste that cannot be used.',
-    'out:production_use': 'Materials used in production that was NOT recorded as Produced Internally. Do not enter materials again if a production record already deducted them.',
     'out:quality_rejection': 'Failed quality inspection.',
     'out:lost_missing': 'Cannot be found.',
     'out:returned_to_supplier': 'Sent back to the supplier.',
-    'out:count_correction_down': 'The physical count is lower than the system. Note required: what was counted and why.',
     'out:other': 'Anything not listed. Note required: explain what happened.'
   };
 
@@ -304,6 +300,115 @@
     sel.disabled = !dept;
   }
 
+  /* ---------- Task 9: Stock In / Out helpers ----------
+     Unit conversion: the quantity can be typed in another unit of the same kind (g / tonne / lb for a kg product, ft for a meter
+     product); it is converted to the product's own unit before it is checked and saved (2 decimals, like the ledger).
+     On hand is shown beside the quantity, and a Stock Out larger than what is on hand cannot be saved.
+     Supplier delivery: the last supplier and the last cost per unit are filled in (still editable), with the storage location;
+     a cost more than COST_JUMP away from the last purchase asks "is this right?" before saving. */
+  const COST_JUMP = 0.30;                       // assumption: a 30% change from the last purchase price is worth a second look
+  const UNIT_GROUPS = [{ kg: 1, g: 0.001, tonne: 1000, lb: 0.45359237 }, { m: 1, ft: 0.3048 }];
+  const unitGroup = (u) => UNIT_GROUPS.find((g) => g[u] != null) || null;
+  const enterUnit = () => ($('movementEnterUnit') && !$('movementEnterUnit').hidden && $('movementEnterUnit').value) || '';
+  // the typed quantity in the product's own unit (null when nothing valid is typed)
+  function movementQty(raw) {
+    const n = Number(raw == null ? $('movementQuantity').value : raw), item = movementItem();
+    if (!(n > 0) || !item) return Number.isFinite(n) ? n : null;
+    const from = enterUnit(), g = unitGroup(item.unit);
+    if (!from || from === item.unit || !g || g[from] == null) return n;
+    return Math.round((n * g[from] / g[item.unit]) * 100) / 100;
+  }
+  function syncEnterUnit(item) {
+    let sel = $('movementEnterUnit');
+    const unitBox = $('movementUnit'); if (!unitBox) return;
+    if (!sel) {
+      sel = document.createElement('select');
+      sel.id = 'movementEnterUnit'; sel.className = 'form-select'; sel.style.marginTop = '6px';
+      sel.setAttribute('aria-label', 'Unit the quantity is typed in');
+      unitBox.parentNode.appendChild(sel);
+      sel.addEventListener('change', () => { syncMovementForm(); syncCostHint(); validateField('movementQuantity', false); });
+    }
+    const g = item ? unitGroup(item.unit) : null;
+    const sig = item ? item.sku + '|' + item.unit : '';
+    if (sel.dataset.sig !== sig) {
+      sel.dataset.sig = sig;
+      sel.innerHTML = g ? Object.keys(g).map((u) => '<option value="' + u + '">Type it in ' + u + (u === item.unit ? ' (product unit)' : '') + '</option>').join('') : '';
+      if (g) sel.value = item.unit;
+    }
+    sel.hidden = !g;
+  }
+  function syncOnHandLabel(item, type, qty) {
+    const lab = document.querySelector('label[for="movementQuantity"]'); if (!lab) return;
+    let tag = lab.querySelector('.fa-onhand');
+    if (!tag) { tag = document.createElement('span'); tag.className = 'fa-onhand'; lab.appendChild(tag); }
+    tag.textContent = item ? 'On hand: ' + formatNumber(item.onHand) + ' ' + item.unit + (item.location ? ' · ' + item.location : '') : '';
+    tag.style.color = item && type === 'out' && qty > item.onHand ? '#ef7a7a' : '';
+    const conv = $('movementQuantity') && FA ? $('movementQuantity') : null, from = enterUnit();
+    if (conv) {
+      if (item && from && from !== item.unit && qty > 0) {
+        FA.note(conv, '= <b>' + formatNumber(qty) + ' ' + esc(item.unit) + '</b> (saved in the product’s unit)', 'info', 'conv');
+      } else if (item && type === 'in') {
+        const qBox = $('movementQuantity');
+        let suggest = 1;
+        let noteText = '';
+        if (item.reorderLevel > 0 && item.onHand <= item.reorderLevel) {
+          suggest = Math.max(1, Math.round(item.reorderLevel - item.onHand));
+          noteText = 'Auto-filled replenishment (<b>' + suggest + ' ' + esc(item.unit) + '</b> to reach reorder level). You can adjust.';
+        } else {
+          suggest = item.reorderLevel > 0 ? Math.round(item.reorderLevel) : (item.unit === 'kg' ? 50 : 20);
+          noteText = 'Suggested restock quantity (<b>' + suggest + ' ' + esc(item.unit) + '</b> standard lot). You can adjust.';
+        }
+        if (qBox && (!qBox.value || qBox.dataset.autoFill)) {
+          qBox.value = suggest;
+          qBox.dataset.autoFill = '1';
+          setTimeout(() => { syncCostHint(); }, 0);
+        }
+        FA.note(conv, noteText, 'info', 'restock');
+      } else {
+        FA.note(conv, '', '', 'restock');
+      }
+    }
+  }
+  // an impossible Stock Out cannot be sent (runs after production-admin.js has set the button for this sync)
+  function syncOutBlock() {
+    const btn = $('movementSubmitBtn'), item = movementItem(), type = movementType(), qty = movementQty() || 0;
+    if (!btn || (window.ProductionUI && window.ProductionUI.isProduction && window.ProductionUI.isProduction())) return;
+    const block = !!(item && type === 'out' && (qty > item.onHand || item.onHand <= 0));
+    if (block) { btn.disabled = true; btn.title = item.onHand <= 0 ? 'Nothing on hand to take out' : 'More than what is on hand'; }
+    else if (btn.title) { btn.disabled = false; btn.title = ''; }
+  }
+  const receiptCache = new Map();               // sku -> last delivery (forgotten after every save)
+  let receiptSeq = 0;
+  async function prefillReceipt() {
+    const item = movementItem(), type = movementType(), reason = $('movementReason').value;
+    const hint = $('movementCostHint');
+    if (!item || !(type === 'in' && reason === 'supplier_receipt')) { if (FA) FA.note($('movementUnitCost'), '', '', 'last'); return; }
+    const my = ++receiptSeq;
+    let r = receiptCache.get(item.sku);
+    if (!r) { try { r = await api('/products/' + encodeURIComponent(item.sku) + '/last-receipt'); receiptCache.set(item.sku, r); } catch (e) { return; } }
+    if (my !== receiptSeq || !movementItem() || movementItem().sku !== item.sku) return;
+    if (!r.last || movementType() !== 'in' || $('movementReason').value !== 'supplier_receipt') { if (FA) FA.note($('movementUnitCost'), '', '', 'last'); return; }
+    const sup = $('movementSupplier'), cost = $('movementUnitCost');
+    if (sup && r.last.supplier && (!sup.value || sup.dataset.auto) && [].some.call(sup.options, (o) => o.value === r.last.supplier)) { sup.value = r.last.supplier; sup.dataset.auto = '1'; }
+    if (cost && r.last.unitCost != null && (!cost.value || cost.dataset.auto)) { cost.value = r.last.unitCost.toFixed(2); cost.dataset.auto = '1'; syncCostHint(); }
+    if (FA) FA.note(cost, 'Last delivery ' + esc(r.last.day) + (r.last.supplierName ? ' from ' + esc(r.last.supplierName) : '') +
+      (r.last.unitCost != null ? ' at <b>₱' + r.last.unitCost.toFixed(2) + '</b> per ' + esc(item.unit) : '') + '. Filled in for you — change it to match this invoice.', 'info', 'last');
+    if (hint) syncCostHint();
+    syncCostWarning();
+  }
+  // "is this right?": the cost per unit is far from the last purchase
+  function costJump(item, cost) {
+    const r = item && receiptCache.get(item.sku), last = r && r.last && r.last.unitCost;
+    if (!(cost > 0) || !(last > 0)) return null;
+    const diff = (cost - last) / last;
+    return Math.abs(diff) > COST_JUMP ? { last, diff } : null;
+  }
+  function syncCostWarning() {
+    const box = $('movementUnitCost'); if (!box || !FA) return;
+    const j = costJump(movementItem(), Number(String(box.value).replace(/[,₱\s]/g, '')));
+    FA.note(box, j ? 'This is ' + Math.round(Math.abs(j.diff) * 100) + '% ' + (j.diff > 0 ? 'higher' : 'lower') + ' than the last purchase (₱' + j.last.toFixed(2) + '). Check the invoice.' : '', 'warn', 'jump');
+  }
+
   function syncMovementForm() {
     const form = $('movementForm');
     if (!form) return;
@@ -313,7 +418,9 @@
     fillReasons();
     if (window.ProductionUI) window.ProductionUI.beforeSync();   // Finished Goods Stock In: source picker sets the reason
     const reason = $('movementReason').value;
-    const qty = Number($('movementQuantity').value) || 0;
+    syncEnterUnit(movementItem());
+    const qty = movementQty() || 0;
+    syncOnHandLabel(movementItem(), type, qty);
     const item = movementItem();
     const dept = movementDepartment();
 
@@ -349,10 +456,13 @@
     const rg = $('movementReceiptGroup');
     if (rg) {
       rg.style.display = isReceipt ? '' : 'none';
-      if (isReceipt) fillMovementSuppliers(item);
-      else {
-        ['movementSupplier', 'movementInvoice', 'movementUnitCost'].forEach((id) => { const el = $(id); if (el) { el.value = ''; el.classList.remove('field-invalid'); } });
+      if (isReceipt) {
+        fillMovementSuppliers(item);
+        syncDeliveryTiming();
+      } else {
+        ['movementSupplier', 'movementInvoice', 'movementUnitCost', 'movementOrderDate'].forEach((id) => { const el = $(id); if (el) { el.value = ''; el.classList.remove('field-invalid'); } });
         rg.querySelectorAll('.field-msg').forEach((n) => n.remove());
+        if ($('movementDeliveryTiming')) $('movementDeliveryTiming').innerHTML = '<span class="faint">Select supplier &amp; order date to check timing</span>';
       }
     }
 
@@ -368,6 +478,7 @@
         aft.style.color = after < 0 ? '#ef7a7a' : '';
       }
     }
+    setTimeout(syncOutBlock, 0);
   }
 
   // Suppliers that match a product: only the active suppliers linked to it. If none is linked yet, every active supplier
@@ -376,6 +487,30 @@
     const active = supplierData.filter((s) => s.status !== 'archived');
     const linked = item ? active.filter((s) => (s.products || []).some((p) => p.sku === item.sku)) : [];
     return { list: linked.length ? linked : active, linkedOnly: linked.length > 0, anyActive: active.length > 0 };
+  }
+
+  function syncSupplierLeadHint(item) {
+    const h = $('movementSupplierHint'), sel = $('movementSupplier');
+    if (!h) return;
+    const m = suppliersForItem(item);
+    let baseText = !item ? '' : m.linkedOnly ? 'Showing only suppliers that supply this product.'
+      : 'No supplier is linked to this product yet \u2014 showing all active suppliers. Link one in Supplier Management.';
+    const supId = sel ? sel.value : '';
+    if (!supId) {
+      h.innerHTML = esc(baseText);
+      return;
+    }
+    const sup = (supplierData || []).find((s) => String(s.id) === String(supId));
+    if (sup) {
+      const lead = sup.leadTimeDays != null ? sup.leadTimeDays : 7;
+      const arrDate = new Date(Date.now() + lead * 86400000);
+      const dateStr = arrDate.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+      h.innerHTML = (baseText ? '<div style="margin-bottom:4px">' + esc(baseText) + '</div>' : '') +
+        '<div style="color:#0369a1;font-weight:600;font-size:12.5px">Supplier lead time: ' +
+        lead + ' day' + (lead === 1 ? '' : 's') + ' &mdash; Estimated delivery by <b>' + dateStr + '</b></div>';
+    } else {
+      h.innerHTML = esc(baseText);
+    }
   }
 
   // Supplier dropdown: shows only the suppliers that supply the chosen product
@@ -394,9 +529,35 @@
       if (prev && m.list.some((s) => s.id === prev)) sel.value = prev;
       else if (m.linkedOnly && m.list.length === 1) sel.value = m.list[0].id;
     }
-    const h = $('movementSupplierHint');
-    if (h) h.textContent = !item ? '' : m.linkedOnly ? 'Showing only suppliers that supply this product.'
-      : 'No supplier is linked to this product yet \u2014 showing all active suppliers. Link one in Supplier Management.';
+    syncSupplierLeadHint(item);
+    syncDeliveryTiming();
+  }
+
+  function syncDeliveryTiming() {
+    const timingBox = $('movementDeliveryTiming');
+    if (!timingBox) return;
+    const supId = ($('movementSupplier') || {}).value;
+    const orderDateVal = ($('movementOrderDate') || {}).value;
+    if (!supId || !orderDateVal) {
+      timingBox.innerHTML = '<span class="faint">Select supplier &amp; order date to check timing</span>';
+      return;
+    }
+    const sup = (supplierData || []).find((s) => String(s.id) === String(supId));
+    const lead = sup && sup.leadTimeDays != null ? sup.leadTimeDays : 7;
+    const orderDate = new Date(orderDateVal + 'T00:00:00');
+    const expectedArrival = new Date(orderDate.getTime() + lead * 86400000);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const expStr = expectedArrival.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+    const diffDays = Math.round((today.getTime() - expectedArrival.getTime()) / 86400000);
+    if (diffDays > 0) {
+      timingBox.innerHTML = '<span style="color:#b91c1c;font-weight:700">LATE: ' + diffDays + ' day' + (diffDays === 1 ? '' : 's') + ' past expected delivery (' + expStr + ')</span>';
+    } else if (diffDays === 0) {
+      timingBox.innerHTML = '<span style="color:#15803d;font-weight:600">On time: Expected arrival today (' + expStr + ')</span>';
+    } else {
+      const earlyDays = Math.abs(diffDays);
+      timingBox.innerHTML = '<span style="color:#15803d;font-weight:600">On time: ' + earlyDays + ' day' + (earlyDays === 1 ? '' : 's') + ' ahead of schedule (' + expStr + ')</span>';
+    }
   }
 
   function refreshMovementForm() {
@@ -406,16 +567,23 @@
 
   const MOVE_FIELDS = { sku: 'movementProduct', quantity: 'movementQuantity', reason: 'movementReason', note: 'movementNote',
     supplier: 'movementSupplier', invoiceNo: 'movementInvoice', unitCost: 'movementUnitCost' };
-  // moving-average cost: show what the cost becomes before saving (the server does the same sum and saves it)
+  // line total and moving-average cost computation
   function syncCostHint() {
     const hint = $('movementCostHint'), it = movementItem(); if (!hint) return;
-    const raw = ($('movementUnitCost') && $('movementUnitCost').value || '').replace(/[,\u20B1\s]/g, ''), cost = Number(raw), qty = Number($('movementQuantity').value);
+    const raw = ($('movementUnitCost') && $('movementUnitCost').value || '').replace(/[,\u20B1\s]/g, ''), cost = Number(raw), qty = movementQty() || 0;
     if (!it) { hint.textContent = ''; return; }
-    const now = Number(it.unitCost) || 0, peso = (n) => '\u20B1' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    if (!raw || !(cost > 0)) { hint.textContent = 'Current cost ' + peso(now) + ' per ' + it.unit + '. Enter the invoice price to update the average cost; leave it empty to keep it.'; return; }
+    const now = Number(it.unitCost) || 0, peso = (n) => '\u20B1' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (!raw || !(cost > 0)) {
+      hint.innerHTML = 'Current unit cost: <b>' + peso(now) + '</b> per ' + esc(it.unit) + '. Enter invoice unit cost to compute delivery total and update average cost.';
+      return;
+    }
     const have = Math.max(0, Number(it.onHand) || 0);
     const avg = qty > 0 ? Math.round(((have * now + qty * cost) / (have + qty)) * 100) / 100 : now;
-    hint.textContent = 'Average cost ' + peso(now) + ' \u2192 ' + peso(avg) + ' per ' + it.unit + ' (' + (have || 0) + ' on hand at ' + peso(now) + ' + ' + (qty || 0) + ' at ' + peso(cost) + ').';
+    const lineTotal = qty > 0 ? Math.round(qty * cost * 100) / 100 : 0;
+    hint.innerHTML = '<div style="margin-bottom:4px;color:#1e40af;font-weight:700">Line total: ' + peso(lineTotal) + ' ' +
+      '<span class="faint" style="font-weight:normal">(' + formatNumber(qty) + ' ' + esc(it.unit) + ' &times; ' + peso(cost) + ')</span></div>' +
+      '<div class="faint">Average cost update: ' + peso(now) + ' &rarr; <b style="color:#0f172a">' + peso(avg) + '</b> per ' + esc(it.unit) +
+      ' (' + have + ' on hand at ' + peso(now) + ' + ' + qty + ' incoming at ' + peso(cost) + ')</div>';
   }
 
   function setupMovementForm() {
@@ -438,13 +606,26 @@
     $('movementQuantity').addEventListener('input', syncCostHint);
     $('movementProduct').addEventListener('change', syncCostHint);
     if ($('movementUnitCost')) $('movementUnitCost').addEventListener('input', syncCostHint);
+    // last supplier / last cost: filled in when a supplier delivery is being recorded; a value typed or picked by hand is kept
+    $('movementProduct').addEventListener('change', () => { ['movementSupplier', 'movementUnitCost'].forEach((id) => { const x = $(id); if (x && x.dataset.auto) { x.value = ''; delete x.dataset.auto; } }); prefillReceipt(); });
+    $('movementReason').addEventListener('change', prefillReceipt);
+    if ($('movementSupplier')) $('movementSupplier').addEventListener('change', () => { syncSupplierLeadHint(movementItem()); syncDeliveryTiming(); });
+    if ($('movementOrderDate')) $('movementOrderDate').addEventListener('change', syncDeliveryTiming);
+    ['movementSupplier', 'movementUnitCost'].forEach((id) => { const x = $(id); if (x) { x.addEventListener('input', (e) => { if (e.isTrusted) delete x.dataset.auto; }); x.addEventListener('change', (e) => { if (e.isTrusted) delete x.dataset.auto; }); } });
+    if ($('movementUnitCost')) $('movementUnitCost').addEventListener('input', syncCostWarning);
+    form.addEventListener('reset', () => {
+      ['movementSupplier', 'movementUnitCost', 'movementOrderDate'].forEach((id) => { if ($(id)) delete $(id).dataset.auto; });
+      if (FA) ['last', 'jump'].forEach((k) => FA.note($('movementUnitCost'), '', '', k));
+      if ($('movementDeliveryTiming')) $('movementDeliveryTiming').innerHTML = '<span class="faint">Select supplier &amp; order date to check timing</span>';
+    });
+    if (FA) { FA.keyboard(form); FA.guard(form); }
     ['movementSupplier', 'movementInvoice', 'movementUnitCost'].forEach((id) => {       // clear an old error message as soon as the field is changed
       const el = $(id); if (!el) return;
       const clear = () => { el.classList.remove('field-invalid'); const g = el.closest('.form-group'); if (g) g.querySelectorAll('.field-msg').forEach((n) => n.remove()); };
       el.addEventListener('input', clear); el.addEventListener('change', clear);
     });
     const toggle = $('movementTypeToggle');
-    if (toggle) toggle.querySelectorAll('.seg-btn').forEach((b) => b.addEventListener('click', () => setTimeout(syncMovementForm, 0)));
+    if (toggle) toggle.querySelectorAll('.seg-btn').forEach((b) => b.addEventListener('click', () => setTimeout(() => { syncMovementForm(); prefillReceipt(); }, 0)));
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault(); e.stopImmediatePropagation();
@@ -455,7 +636,9 @@
       const errs = {};
       if (!$('movementProduct').value) errs.movementProduct = 'Choose a product';
       if (!reason) errs.movementReason = type === 'out' ? 'Choose why this stock is going out' : 'Choose why this stock is coming in';
-      const qty = vNum(errs, 'movementQuantity', 'Quantity', { gt: true });
+      const typed = vNum(errs, 'movementQuantity', 'Quantity', { gt: true });
+      const qty = typed === null ? null : movementQty(typed);           // in the product's own unit
+      if (typed !== null && !(qty > 0)) errs.movementQuantity = 'That is less than 0.01 ' + ((movementItem() || {}).unit || '') + ' \u2014 enter a bigger quantity';
       const note = vText(errs, 'movementNote', 'Note', { required: false, max: 300 });
       const isReceipt = type === 'in' && reason === 'supplier_receipt';
       let supplier = '', invoiceNo = '', unitCost = '';
@@ -473,6 +656,11 @@
       if (item && type === 'out' && qty !== null && !errs.movementQuantity && qty > item.onHand)
         errs.movementQuantity = 'Only ' + formatNumber(item.onHand) + ' ' + item.unit + ' on hand — cannot take out ' + formatNumber(qty);
       if (Object.keys(errs).length) return showErrors(form, banner, errs);
+      // "is this right?" when the price is far from the last purchase
+      const jump = isReceipt && unitCost ? costJump(item, Number(unitCost)) : null;
+      if (jump && window.uiConfirm && !(await uiConfirm({ title: 'Is this cost right?', confirm: 'Yes, save it', cancel: 'Let me check',
+        message: 'The cost per unit is ' + Math.round(Math.abs(jump.diff) * 100) + '% ' + (jump.diff > 0 ? 'higher' : 'lower') + ' than the last purchase. It changes the average cost of ' + item.name + '.',
+        lines: [['Last purchase', '\u20B1' + jump.last.toFixed(2) + ' / ' + item.unit], ['This delivery', '\u20B1' + Number(unitCost).toFixed(2) + ' / ' + item.unit]] }))) { $('movementUnitCost').focus(); return; }
 
       clearErrors(form); hideBanner(banner);
       try {
@@ -480,8 +668,10 @@
           method: 'POST',
           body: JSON.stringify({ sku: $('movementProduct').value, type, reason, quantity: qty, note, supplier: supplier || undefined, invoiceNo: invoiceNo || undefined, unitCost: unitCost || undefined })
         });
-        toast('Saved. Reference no. ' + r.ref + (r.previousCost != null && r.unitCost !== r.previousCost ? ' \u00B7 average cost is now \u20B1' + Number(r.unitCost).toFixed(2) : ''));
+        toast('Saved. Reference no. ' + r.ref + (r.previousCost != null && r.unitCost !== r.previousCost ? ' \u00B7 average cost is now \u20B1' + Number(r.unitCost).toFixed(2) : '') +
+          (r.ripple ? ' \u00B7 ' + r.ripple.recalculated + ' finished good cost' + (r.ripple.recalculated === 1 ? '' : 's') + ' updated, ' + r.ripple.repriced + ' repriced' + (r.ripple.quotesFlagged ? ', ' + r.ripple.quotesFlagged + ' open quote' + (r.ripple.quotesFlagged === 1 ? '' : 's') + ' to check' : '') + (r.ripple.blocked ? ', ' + r.ripple.blocked + ' cannot be priced yet' : '') : ''));
         if ($('movementCostHint')) $('movementCostHint').textContent = '';
+        receiptCache.clear();
         form.reset();
         await load();
       } catch (err) {
@@ -505,18 +695,24 @@
     box.innerHTML = linked.length
       ? linked.map((s) => '<div>' + esc(s.name) +
           (s.primary && linked.length > 1 ? ' <em class="prod-tag">Primary</em>' : '') +
-          (s.status === 'archived' ? ' <em class="prod-tag muted">Archived</em>' : '') + '</div>').join('')
+          (s.status === 'archived' ? ' <em class="prod-tag muted">Deleted</em>' : '') + '</div>').join('')
       : (needs
         ? '<div class="sup-empty warn">No supplier yet. Link one in Supplier Management.</div>'
         : '<div class="sup-empty">In-house production — made by the company, so no supplier is needed.</div>');
   }
 
-  /* ---------- Storage location dropdown (locations already used by products + a starter list; last option adds a new one) ---------- */
+  /* ---------- Storage locations belong to the selected product department ---------- */
   const NEW_LOCATION = '__new_location__';
-  const STARTER_LOCATIONS = ['Warehouse A', 'Warehouse B', 'Warehouse C', 'Storeroom'];
+  const STARTER_LOCATIONS = {
+    'Raw Materials': ['Raw Materials Storage'],
+    'Finishing Supplies': ['Finishing Supplies Storage'],
+    'Finished Goods': ['Finished Goods Storage']
+  };
   function locationList() {
     const seen = new Map();
-    STARTER_LOCATIONS.concat((productCatalogData || []).map((p) => p && p.location)).forEach((l) => {
+    const department = $('npDept').value;
+    (STARTER_LOCATIONS[department] || []).concat((productCatalogData || [])
+      .filter((p) => p && p.department === department).map((p) => p.location)).forEach((l) => {
       l = clean(l); if (l && !seen.has(l.toLowerCase())) seen.set(l.toLowerCase(), l);
     });
     return Array.from(seen.values()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -526,7 +722,9 @@
     if (!sel || sel.tagName !== 'SELECT') return;
     sel.innerHTML = '<option value="">Select a location…</option>' +
       locationList().map((l) => '<option value="' + esc(l) + '">' + esc(l) + '</option>').join('') +
-      '<option value="' + NEW_LOCATION + '">+ Add new location…</option>';
+      ($('npDept').value ? '<option value="' + NEW_LOCATION + '">+ Add new location…</option>' : '');
+    sel.disabled = !$('npDept').value;
+    delete sel.dataset.auto;
     setLocationValue(keep);
   }
   function setLocationValue(name) {
@@ -594,15 +792,22 @@
   /* ---------- Category dropdown (list comes from the database; last option adds a new one) ---------- */
   // Finished goods are only the two product lines Triple E makes; the other departments keep their own list (and can add one)
   const FG_CATEGORIES = ['Aluminum Die-Cast Products', 'Forged Brass Products'];
+  // Raw materials: Triple E only works in aluminum and brass, so those are the only metal categories (no steel, iron, stainless...)
+  const RM_CATEGORIES = ['Aluminum Alloy', 'Brass / Copper Alloy'];
+  const OTHER_METAL = /steel|stainless|iron|zinc|nickel|bronze|titanium|aluminium|aluminum|brass|copper|metal/i;
   function fillCategories(keep) {
     const sel = $('npCategory');
     if (!sel || sel.tagName !== 'SELECT') return;
     const cur = keep === undefined ? sel.value : keep;
-    const fg = ($('npDept') || {}).value === 'Finished Goods';
+    const dept = ($('npDept') || {}).value, fg = dept === 'Finished Goods', rm = dept === 'Raw Materials';
+    // Finished Goods and Raw Materials have a fixed list; Finishing Supplies keep the database list, minus every metal category
+    const list = fg ? FG_CATEGORIES : rm ? RM_CATEGORIES
+      : CATEGORIES.filter((c) => FG_CATEGORIES.indexOf(c) < 0 && RM_CATEGORIES.indexOf(c) < 0 && !OTHER_METAL.test(c));
     sel.innerHTML = '<option value="">Select a category…</option>' +
-      (fg ? FG_CATEGORIES : CATEGORIES.filter((c) => FG_CATEGORIES.indexOf(c) < 0)).map((c) => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('') +
-      (fg ? '' : '<option value="' + NEW_CATEGORY + '">+ Add new category…</option>');
-    setCategoryValue(cur);
+      list.map((c) => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('') +
+      (fg || rm ? '' : '<option value="' + NEW_CATEGORY + '">+ Add new category…</option>');
+    // switching department by hand: a category that belongs to the other department is dropped (an old product being edited keeps its own)
+    setCategoryValue(keep === undefined && cur !== NEW_CATEGORY && list.indexOf(cur) < 0 ? '' : cur);
   }
   function setCategoryValue(name) {
     const sel = $('npCategory');
@@ -640,14 +845,72 @@
   // Only Finished Goods are sold. Raw Materials and Finishing Supplies have no selling price.
   const SELLS_DEPT = ['Finished Goods'];
   const sellsNow = () => SELLS_DEPT.indexOf(($('npDept') || {}).value) >= 0;
+  // Finished goods are priced automatically: unit cost + the markup (20% by default, Finance > Products > Pricing rules).
+  // The database trigger (pricing.js) applies the same formula on save, so the shown price is exactly what gets stored.
+  let FG_MARKUP = 20;
+  const priceManual = () => !!($('npPriceManual') && $('npPriceManual').checked);
+  function autoPrice() {
+    const raw = window.MoneyInput ? MoneyInput.raw($('npUnitCost').value) : $('npUnitCost').value, c = Number(raw);
+    return raw !== '' && Number.isFinite(c) && c > 0 ? Math.round(c * (1 + FG_MARKUP / 100) * 100) / 100 : null;
+  }
   function syncPriceField() {
     const input = $('npListPrice'); if (!input) return;
-    const sells = sellsNow();
+    const sells = sellsNow(), row = $('npPriceManualRow'), hint = $('npPriceHint');
     const label = document.querySelector('label[for="npListPrice"]');
     if (label) label.innerHTML = 'Selling Price (&#8369;)' + (sells ? ' <span class="required-mark">*</span>' : '');
+    if (row) row.style.display = sells ? '' : 'none';
     input.disabled = !sells;
-    input.placeholder = sells ? 'Required for Finished Goods' : 'Not sold';
-    if (!sells) { input.value = ''; showLive('npListPrice', ''); }
+    if (!sells) { input.value = ''; input.readOnly = false; input.placeholder = 'Not sold'; showLive('npListPrice', ''); if (hint) hint.textContent = ''; return; }
+    const auto = !priceManual();
+    input.readOnly = auto;
+    input.placeholder = auto ? 'Enter the unit cost first' : 'Type the selling price';
+    if (auto) {
+      const v = autoPrice();
+      if (window.MoneyInput) MoneyInput.set(input, v == null ? '' : v.toFixed(2)); else input.value = v == null ? '' : v.toFixed(2);
+      showLive('npListPrice', '');
+      if (hint) hint.textContent = v == null ? 'Automatic: markup on cost ' + FG_MARKUP + '%. The price appears once the unit cost is known.'
+        : (function (cost) { return 'Automatic: unit cost \u20B1' + cost.toFixed(2) + ' + markup on cost ' + FG_MARKUP + '% = \u20B1' + v.toFixed(2) + ' \u00B7 margin ' + (v > 0 ? (((v - cost) / v) * 100).toFixed(1) : '0.0') + '%. It follows the cost by itself. Tick \u201CSet manually\u201D only for a special price.'; })(v / (1 + FG_MARKUP / 100));
+    } else if (hint) {
+      const raw = window.MoneyInput ? MoneyInput.raw($('npListPrice').value) : $('npListPrice').value, c = Number(window.MoneyInput ? MoneyInput.raw($('npUnitCost').value) : $('npUnitCost').value), p = Number(raw);
+      const minPrice = c > 0 ? Math.round(c * 1.20 * 100) / 100 : 0;
+      if (p > 0 && c > 0 && p < minPrice) {
+        hint.innerHTML = '<span style="color:var(--red,#e35b5b);font-weight:600">Manual price: ₱' + p.toFixed(2) + ' is below 20% margin. Minimum recommended: ₱' + minPrice.toFixed(2) + ' (markup 20% on cost).</span>';
+      } else {
+        hint.textContent = 'Manual price: it no longer follows the unit cost.' + (p > 0 && c > 0 ? ' Margin ' + (((p - c) / p) * 100).toFixed(1) + '%' + (p < c ? ' \u2014 BELOW COST' : '') + '.' : '') + ' Untick to go back to unit cost + markup on cost ' + FG_MARKUP + '%.';
+      }
+    }
+  }
+
+  // Finished goods: the unit cost is "auto" (worked out from the materials needed, product-materials.js). Override needs a reason.
+  const costOverridden = () => !!($('npCostOverride') && $('npCostOverride').checked);
+  const costAuto = () => sellsNow() && !costOverridden();
+  function syncCostField() {
+    const input = $('npUnitCost'); if (!input) return;
+    const fg = sellsNow(), row = $('npCostOverrideRow'), reason = $('npCostReason'), hint = $('npCostHint'), lab = $('npUnitCostLabel'), req = $('npUnitCostReq');
+    const sku = productModalState(), product = sku ? productCatalogData.find((p) => p.sku === sku) : null, bom = window.TripleEBom;
+    const has = !!(fg && bom && bom.hasRecipe());
+    if (lab) lab.innerHTML = 'Unit Cost (&#8369;)' + (fg ? ' <span class="auto-tag" style="font-weight:600;font-size:11px;padding:1px 6px;border-radius:8px;background:#e8f1ff;color:#1d4f9f">' + (costOverridden() ? 'override' : 'auto') + '</span>' : '');
+    if (req) req.style.display = fg ? 'none' : '';
+    input.required = !fg;
+    if (row) row.style.display = fg && has ? '' : 'none';
+    if (reason) reason.style.display = fg && costOverridden() ? '' : 'none';
+    if (!fg) { input.readOnly = false; if (hint) hint.textContent = ''; return; }
+    if (costOverridden()) {
+      input.readOnly = false;
+      if (hint) hint.textContent = 'Overridden: this cost no longer follows the recipe and the reason is logged. Untick Override to go back to auto.';
+      return;
+    }
+    input.readOnly = true;
+    const c = bom ? bom.cost() : { total: 0, complete: false, problems: [] };
+    let v = '';
+    if (has && c.complete && c.total > 0) v = c.total.toFixed(2);
+    else if (product && product.stdCost > 0 && !(bom && bom.dirty())) v = Number(product.stdCost).toFixed(2);
+    if (window.MoneyInput) MoneyInput.set(input, v); else input.value = v;
+    input.placeholder = 'Auto';
+    if (hint) hint.textContent = !has ? 'Auto: add the materials needed below and the cost is worked out from them (materials only, no labour, process or tooling).'
+      : c.problems.length ? 'Cannot price yet: ' + c.problems[0] + (c.problems.length > 1 ? ' (+' + (c.problems.length - 1) + ' more)' : '')
+      : 'Auto: materials per piece \u00D7 their current cost (materials only, no labour, process or tooling). It updates by itself when a material cost or the recipe changes.';
+    if (sellsNow() && !priceManual()) syncPriceField();
   }
 
   // duplicate checks against the loaded product list (the server re-checks on save)
@@ -663,6 +926,69 @@
   }
   const dupNameMsg = (p) => 'A product named "' + p.name + '" already exists (SKU ' + p.sku + ')';
 
+  /* ---------- Task 9: product form helpers (form-assist.js) ----------
+     New product: the SKU is suggested from the department + category (next free number, still editable), the unit / category /
+     location start as what that department mostly uses, a name close to an existing one gets "Did you mean …?", and the
+     stock typed here is saved as an "Opening balance" ledger entry. Anything the person picks by hand is never overwritten. */
+  const mostCommon = (list) => {
+    const c = new Map(); list.filter(Boolean).forEach((v) => c.set(v, (c.get(v) || 0) + 1));
+    let best = '', n = 0; c.forEach((k, v) => { if (k > n) { n = k; best = v; } });
+    return best;
+  };
+  let skuSeq = 0;
+  async function suggestSku() {
+    const box = $('npSku'); if (!box || productModalState()) return;
+    if (clean(box.value) && !box.dataset.auto) return;                 // typed by hand: leave it alone
+    const cat = $('npCategory').value === NEW_CATEGORY ? clean($('npCategoryNew').value) : $('npCategory').value;
+    const my = ++skuSeq;
+    try {
+      const r = await api('/products/next-sku?department=' + encodeURIComponent($('npDept').value) + '&category=' + encodeURIComponent(cat || ''));
+      if (my !== skuSeq || productModalState() || (clean(box.value) && !box.dataset.auto)) return;
+      box.value = r.sku; box.dataset.auto = '1';
+      validateField('npSku', false);
+      if (FA) FA.note(box, 'Next free code for ' + esc(r.prefix) + '. You can change it.', 'info');
+    } catch (e) { /* the SKU can still be typed */ }
+  }
+  function applyDeptDefaults() {
+    if (productModalState()) return;
+    const dept = $('npDept').value, same = productCatalogData.filter((p) => p.department === dept);
+    const unit = $('npUnit');
+    if (unit && !unit.disabled && (!unit.value || unit.dataset.auto)) { const u = mostCommon(same.map((p) => p.unit)); if (u) { setUnitValue(u); unit.dataset.auto = '1'; } }
+    const cat = $('npCategory');
+    if (cat && (!cat.value || cat.dataset.auto)) {
+      [].filter.call(cat.options, (o) => o.dataset.legacy).forEach((o) => o.remove());   // the last department's default is not in this list
+      const c = mostCommon(same.map((p) => p.category).filter((x) => x && x !== 'Uncategorized'));
+      setCategoryValue(c || ''); if (c) cat.dataset.auto = '1'; else delete cat.dataset.auto;
+    }
+    const loc = $('npLocation');
+    if (loc && (!loc.value || loc.dataset.auto)) { const l = mostCommon(same.map((p) => p.location)); if (l) { setLocationValue(l); loc.dataset.auto = '1'; } }
+  }
+  function nameHint() {
+    const box = $('npName'); if (!box || !FA) return;
+    const me = productModalState();
+    const near = duplicateProductName(box.value) ? [] : FA.similar(box.value, productCatalogData.filter((p) => p.sku !== me), (p) => p.name);
+    FA.note(box, near.length ? 'Did you mean ' + near.map((p) => '<b>' + esc(p.name) + '</b> (' + esc(p.sku) + ')').join(', ') +
+      '? A similar product already exists — check this is not the same item.' : '', 'warn');
+  }
+  function productAssistOpen(product) {
+    ['npSku', 'npUnit', 'npCategory', 'npLocation'].forEach((id) => { if ($(id)) delete $(id).dataset.auto; });
+    if (FA) { FA.note($('npSku'), ''); FA.note($('npName'), ''); }
+    const lab = document.querySelector('label[for="npOnHand"]');
+    if (lab) lab.innerHTML = (product ? 'On Hand' : 'Opening Stock') + ' <span class="required-mark">*</span>';
+    if (FA) FA.note($('npOnHand'), product ? '' : 'Saved as an <b>opening balance</b> entry in the stock ledger. Later changes go through Stock In / Out.', 'info');
+    if (product) return;
+    applyDeptDefaults();
+    suggestSku();
+  }
+
+  // weight per piece: only finished goods are delivered, so only they have it
+  function syncWeightField(product) {
+    const wrap = $('npWeightWrap'); if (!wrap) return;
+    const fg = $('npDept').value === 'Finished Goods';
+    wrap.style.display = fg ? '' : 'none';
+    if (!fg) $('npWeight').value = '';
+    else if (product !== undefined) $('npWeight').value = product && product.weightKg != null ? String(product.weightKg) : '';
+  }
   function onProductModalOpen() {
     const form = $('newProductForm');
     clearErrors(form); hideBanner($('newProductFormError'));
@@ -677,6 +1003,10 @@
     $('npReorderManual').checked = product ? !product.reorderAuto : false;   // new products are automatic; old ones stay manual until someone unticks it
     syncReorderUI(product);
     MoneyInput.set($('npListPrice'), product && product.listPrice ? product.listPrice : '');
+    if ($('npPriceManual')) $('npPriceManual').checked = !!(product && product.department === 'Finished Goods' && product.priceAuto === false);
+    if ($('npCostOverride')) $('npCostOverride').checked = !!(product && product.department === 'Finished Goods' && product.costMode === 'override');
+    if ($('npCostReason')) $('npCostReason').value = product && product.costOverrideReason ? product.costOverrideReason : '';
+    syncCostField();
     syncPriceField();
     // SKU and opening stock are fixed once a product exists (stock only changes through Stock In / Out)
     $('npSku').readOnly = !!product;
@@ -685,20 +1015,41 @@
     setUnitValue(product ? product.unit : '');
     syncUnitField(product);
     fillCategories(product ? product.category : '');          // the department is set by now: Finished Goods only lists its two product lines
+    productAssistOpen(product);
+    syncWeightField(product);
   }
 
-  const PRODUCT_FIELDS = { sku: 'npSku', name: 'npName', department: 'npDept', category: 'npCategory', unit: 'npUnit',
-    unitCost: 'npUnitCost', listPrice: 'npListPrice', reorderLevel: 'npReorder', onHand: 'npOnHand', location: 'npLocation', supplier: 'npSupplier' };
+  const PRODUCT_FIELDS = { weightKg: 'npWeight', sku: 'npSku', name: 'npName', department: 'npDept', category: 'npCategory', unit: 'npUnit',
+    unitCost: 'npUnitCost', costOverrideReason: 'npCostReason', listPrice: 'npListPrice', reorderLevel: 'npReorder', onHand: 'npOnHand', location: 'npLocation', supplier: 'npSupplier' };
 
   function setupProductModal() {
     const overlay = $('newProductModalOverlay'), form = $('newProductForm');
     if (!overlay || !form || form.dataset.bridge) return;
     form.dataset.bridge = '1';
     $('npDept').addEventListener('change', () => {
-      fillCategories(); syncPriceField(); validateField('npListPrice', false); syncSupplierPick();
+      fillCategories(); fillLocations(''); validateField('npLocation', false); syncCostField(); syncPriceField(); validateField('npListPrice', false); syncSupplierPick(); syncWeightField();
       const sku = productModalState(); syncUnitField(sku ? productCatalogData.find((p) => p.sku === sku) : null); validateField('npUnit', false);
+      applyDeptDefaults(); suggestSku();
     });
+    // a value picked by hand is the person's choice: the department defaults no longer change it
+    ['npUnit', 'npCategory', 'npLocation'].forEach((id) => $(id).addEventListener('change', (e) => { if (e.isTrusted) delete $(id).dataset.auto; }));
+    $('npCategory').addEventListener('change', suggestSku);
+    let catTimer = null, nameTimer = null;
+    $('npCategoryNew').addEventListener('input', () => { clearTimeout(catTimer); catTimer = setTimeout(suggestSku, 400); });
+    $('npSku').addEventListener('input', (e) => { if (e.isTrusted) { delete $('npSku').dataset.auto; if (FA) FA.note($('npSku'), ''); } });
+    $('npName').addEventListener('input', () => { clearTimeout(nameTimer); nameTimer = setTimeout(nameHint, 300); });
+    if (FA) {
+      FA.guard(form, { overlay, closeSelector: '#newProductCloseBtn, #newProductCancelBtn', close: () => closeNewProductModal() });
+      FA.keyboard(form);
+    }
     $('npLocation').addEventListener('change', () => { syncLocationNew(); if ($('npLocation').value === NEW_LOCATION) $('npLocationNew').focus(); });
+    if ($('npPriceManual')) $('npPriceManual').addEventListener('change', () => { syncPriceField(); if (priceManual()) $('npListPrice').focus(); });
+    if ($('npCostOverride')) $('npCostOverride').addEventListener('change', () => { syncCostField(); if (costOverridden()) { $('npUnitCost').focus(); if ($('npCostReason')) $('npCostReason').value = ''; } else syncPriceField(); });
+    document.addEventListener('triplee:recipe-changed', () => { if (sellsNow()) syncCostField(); });
+    $('npUnitCost').addEventListener('input', () => { if (sellsNow() && !priceManual()) syncPriceField(); });
+    $('npUnitCost').addEventListener('blur', () => { if (sellsNow() && !priceManual()) syncPriceField(); });
+    api('/pricing').then((r) => { if (r && r.fgMarkupPct != null) { FG_MARKUP = +r.fgMarkupPct; syncPriceField(); } }).catch(() => {});
+    document.addEventListener('triplee:pricing-saved', (e) => { if (e.detail && e.detail.fgMarkupPct != null) { FG_MARKUP = +e.detail.fgMarkupPct; syncPriceField(); } });
     $('npReorderManual').addEventListener('change', () => {
       const sku = productModalState(), product = sku ? productCatalogData.find((p) => p.sku === sku) : null;
       if ($('npReorderManual').checked) { if (!product) $('npReorder').value = ''; $('npReorder').focus(); }
@@ -706,7 +1057,7 @@
     });
     api('/reorder-settings').then((r) => { if (r && r.leadDays != null) { REORDER = r; syncReorderUI(null); } }).catch(() => {});
     $('npCategory').addEventListener('change', () => { syncCategoryNew(); if ($('npCategory').value === NEW_CATEGORY) $('npCategoryNew').focus(); });
-    form.addEventListener('reset', () => setTimeout(() => { fillCategories(''); fillLocations(''); syncSupplierPick(); $('npReorderManual').checked = false; syncReorderUI(null); syncUnitField(null); }, 0));
+    form.addEventListener('reset', () => setTimeout(() => { fillCategories(''); fillLocations(''); syncSupplierPick(); $('npReorderManual').checked = false; syncReorderUI(null); syncUnitField(null); syncWeightField(null); if ($('npPriceManual')) $('npPriceManual').checked = false; if ($('npCostOverride')) $('npCostOverride').checked = false; syncCostField(); syncPriceField(); }, 0));
     new MutationObserver(() => { if (overlay.classList.contains('open')) onProductModalOpen(); })
       .observe(overlay, { attributes: true, attributeFilter: ['class'] });
 
@@ -730,11 +1081,26 @@
       if (!unit) errs.npUnit = 'Unit is required';
       else if (!/^[A-Za-z][A-Za-z./ ]{0,19}$/.test(unit)) errs.npUnit = 'Unit must be letters only, e.g. kg or pcs';
       else if (department === 'Finished Goods' && unit !== 'pcs') errs.npUnit = 'Finished goods are sold by the piece. Choose pcs';
-      const unitCost = vNum(errs, 'npUnitCost', 'Unit cost', { max: 1e7 });
-      const listPrice = sellsNow() ? vNum(errs, 'npListPrice', 'Selling price', { max: 1e7, gt: true }) : 0;
+      const fgAuto = costAuto();               // Finished Goods: the server works the cost out from the recipe, so it is never sent
+      const unitCost = fgAuto ? null : vNum(errs, 'npUnitCost', 'Unit cost', { max: 1e7 });
+      const costReason = clean(($('npCostReason') || {}).value);
+      if (sellsNow() && costOverridden() && costReason.length < 5) errs.npCostReason = 'Give a reason for overriding the cost (at least 5 characters)';
+      const listPrice = sellsNow() && priceManual() ? vNum(errs, 'npListPrice', 'Selling price', { max: 1e7, gt: true }) : sellsNow() ? autoPrice() : 0;
+      if (sellsNow() && priceManual() && listPrice) {
+        const curCost = fgAuto ? (window.TripleEBom ? window.TripleEBom.cost().total : 0) : (unitCost || 0);
+        if (curCost > 0 && listPrice < Math.round(curCost * 1.20 * 100) / 100) {
+          errs.npListPrice = 'Selling price cannot be below 20% margin floor (minimum ₱' + (Math.round(curCost * 1.20 * 100) / 100).toFixed(2) + ')';
+        }
+      }
+      if (sellsNow() && !priceManual() && !fgAuto && autoPrice() == null && !errs.npUnitCost) errs.npUnitCost = 'Enter the unit cost: the selling price is worked out from it';
       const reorderManual = $('npReorderManual').checked;
       const reorderLevel = reorderManual ? vNum(errs, 'npReorder', 'Reorder level', { noLeadingZero: true }) : null;
       const onHand = editing ? null : vNum(errs, 'npOnHand', 'On hand', { noLeadingZero: true });
+      let weightKg = null;
+      if (department === 'Finished Goods') {
+        const w = clean($('npWeight').value);
+        if (w) { if (!/^\d{1,6}(\.\d{1,3})?$/.test(w) || !(Number(w) > 0)) errs.npWeight = 'Enter the weight of one piece in kg, e.g. 1.25'; else weightKg = Number(w); }
+      }
       const location = chosenLocation(errs);
       let supplierCode = '';
       if (!editing && NEEDS_SUPPLIER.indexOf(department) >= 0) { supplierCode = $('npSupplier').value; if (!supplierCode) errs.npSupplier = 'Choose the supplier for this material'; }
@@ -744,14 +1110,19 @@
       if (Object.keys(errs).length) return showErrors(form, banner, errs);
 
       clearErrors(form); hideBanner(banner);
-      const payload = { sku, name, department, category, unit, unitCost, listPrice, reorderAuto: !reorderManual, location: location || null };
+      const payload = { sku, name, department, category, unit, listPrice, reorderAuto: !reorderManual, location: location || null };
+      if (unitCost != null) payload.unitCost = unitCost;
+      if (department === 'Finished Goods') payload.priceAuto = !priceManual();
+      if (department === 'Finished Goods' && costOverridden()) payload.costOverrideReason = costReason;
+      if (department === 'Finished Goods' && editing && !costOverridden()) { const cur = productCatalogData.find((p) => p.sku === editing); if (cur && cur.costMode === 'override') payload.costBackToAuto = true; }
       if (reorderManual) payload.reorderLevel = reorderLevel;
+      if (department === 'Finished Goods') payload.weightKg = weightKg;
       if (!editing) { payload.onHand = onHand; if (supplierCode) payload.supplierCode = supplierCode; }
       try {
         if (editing) await api('/products/' + encodeURIComponent(editing), { method: 'PUT', body: JSON.stringify(payload) });
         else await api('/products', { method: 'POST', body: JSON.stringify(payload) });
         let bomMsg = '';
-        try { const n = window.TripleEBom ? await window.TripleEBom.saveWithProduct(sku) : 0; if (n) bomMsg = ' · ' + n + ' material' + (n === 1 ? '' : 's') + ' saved'; }
+        try { const n = window.TripleEBom ? await window.TripleEBom.saveWithProduct(sku) : 0; if (n) { bomMsg = ' · ' + n + ' material' + (n === 1 ? '' : 's') + ' saved'; const rr = window.TripleEBom && window.TripleEBom.lastResult && window.TripleEBom.lastResult.cost; if (rr && rr.newCost != null) bomMsg += ' · cost \u20B1' + Number(rr.newCost).toFixed(2) + (rr.newPrice != null ? ', price \u20B1' + Number(rr.newPrice).toFixed(2) : ''); if (rr && rr.problems && rr.problems.length) bomMsg += ' · cannot price yet: ' + rr.problems[0]; } }
         catch (bomErr) { toast('Product saved, but the materials needed were NOT saved: ' + bomErr.message + ' Open Edit to add them again.', 'error'); closeNewProductModal(); await load(); return; }
         let shopMsg = '';
         try { if (window.TripleEShop && await window.TripleEShop.saveWithProduct(sku)) shopMsg = ' · online shop details saved'; }
@@ -782,6 +1153,8 @@
     fill('newSupplierPhone', supplier ? supplier.phone : '');
     fill('newSupplierEmail', supplier ? supplier.email : '');
     fill('newSupplierAddress', supplier ? supplier.address : '');
+    fill('newSupplierLeadTime', supplier && supplier.leadTimeDays != null ? supplier.leadTimeDays : '');
+    if ($('newSupplierLeadTime')) $('newSupplierLeadTime').placeholder = String(REORDER && REORDER.leadDays != null ? REORDER.leadDays : 7);
     setupAddressFields();
     prefillAddress(supplier);
     setEmailStatus(EMAIL_HINT);
@@ -789,7 +1162,7 @@
     const archive = $('archiveSupplierBtn');
     if (archive) {
       archive.style.display = supplier ? '' : 'none';
-      if (supplier) archive.textContent = supplier.status === 'archived' ? 'RESTORE SUPPLIER' : 'ARCHIVE SUPPLIER';
+      if (supplier) archive.textContent = supplier.status === 'archived' ? 'RESTORE SUPPLIER' : 'DELETE SUPPLIER';
     }
   }
 
@@ -1232,8 +1605,30 @@
     setZipStatus('Checked against ' + (sup.city || 'the selected city'));
   }
 
+  // ZIP -> supplier address: picks each level from the PSGC lists exactly as a click would (the ZIP is then checked as usual)
+  async function supplierZipFill(place) {
+    const pick = (list, want) => { const n = want && FA.bestName(list.map((x) => x.name), want); return n ? list.find((x) => x.name === n) : null; };
+    if (!(await ensureRegions())) return;
+    const reg = pick(GEO.regions, place.region); if (!reg) return;
+    setBox('newSupplierRegion', { value: reg.name, code: reg.code }); await onRegionPick(reg);
+    if (GEO.provinces.length) {
+      const prov = pick(GEO.provinces, place.province); if (!prov) return;
+      setBox('newSupplierProvince', { value: prov.name, code: prov.code }); await onProvincePick(prov);
+    }
+    const city = pick(GEO.cities, place.city); if (!city) return;
+    setBox('newSupplierCity', { value: city.name, code: city.code });
+    GEO.zip = null; clearTimeout(GEO.zipTimer); unlockZip(false);     // what picking the city does, but waiting for the barangay list
+    if (!(await loadBarangays(city))) return;
+    const bg = pick(GEO.barangays, place.barangay);
+    if (bg) { setBox('newSupplierBarangay', { value: bg.name, code: bg.code }); onBarangayPick(bg); }
+    const zip = $('newSupplierZip'); zip.value = place.zip;
+    if (bg) scheduleZipCheck(0);
+    $('newSupplierForm').dataset.faDirty = '1';
+    ['newSupplierRegion', 'newSupplierProvince', 'newSupplierCity', 'newSupplierBarangay'].forEach((id) => validateField(id, false));
+  }
+
   const SUPPLIER_FIELDS = { name: 'newSupplierName', contactPerson: 'newSupplierContactPerson', phone: 'newSupplierPhone', email: 'newSupplierEmail',
-    address: 'newSupplierAddress', city: 'newSupplierCity', barangay: 'newSupplierBarangay', province: 'newSupplierProvince', region: 'newSupplierRegion', zip: 'newSupplierZip',
+    address: 'newSupplierAddress', leadTimeDays: 'newSupplierLeadTime', city: 'newSupplierCity', barangay: 'newSupplierBarangay', province: 'newSupplierProvince', region: 'newSupplierRegion', zip: 'newSupplierZip',
     products: 'newSupplierProducts' };
 
   // duplicate supplier checks against the loaded list (the server re-checks on save)
@@ -1263,6 +1658,15 @@
     ['newSupplierName', 'newSupplierContactPerson', 'newSupplierAddress'].forEach(liveTitleCase);
     setupSupplierInputFilters();
     setupAddressFields();
+    if (FA) {
+      FA.phone.bind($('newSupplierPhone'));
+      FA.email.bind($('newSupplierEmail'));
+      // "Know the ZIP code?": fills Region > Province > City (> Barangay) through the same search lists the person would use
+      const regionGroup = $('newSupplierRegion').closest('.form-row');
+      FA.zipFill({ before: regionGroup, fill: supplierZipFill });
+      FA.guard(form, { overlay, closeSelector: '#newSupplierCloseBtn, #newSupplierCancelBtn', close: () => closeNewSupplierModal() });
+      FA.keyboard(form);
+    }
     $('newSupplierEmail').addEventListener('input', scheduleEmailCheck);
     $('newSupplierEmail').addEventListener('blur', scheduleEmailCheck);
     form.addEventListener('reset', () => setTimeout(() => { setEmailStatus(EMAIL_HINT); setupSupplierInputFilters(); prefillToken++; resetBelowRegion(false); }, 0));
@@ -1309,6 +1713,8 @@
         else if (!z.ok) { errs.newSupplierZip = z.message; setZipStatus('Checked against ' + city); }
         else setZipStatus('ZIP code matches ' + city, '#5fbf8a');
       }
+      const leadRaw = clean(($('newSupplierLeadTime') || {}).value);
+      if (leadRaw && !(/^\d{1,3}$/.test(leadRaw) && +leadRaw <= 365)) errs.newSupplierLeadTime = 'Lead time must be a whole number of days from 0 to 365';
       const productSkus = [].map.call($('newSupplierProducts').querySelectorAll('.prod-check:checked'), (c) => c.value);
       if (!productSkus.length) errs.newSupplierProducts = 'Tick at least one product this supplier provides';
       // the email's domain must really exist and be able to receive mail
@@ -1323,6 +1729,7 @@
 
       clearErrors(form); hideBanner(banner);
       const payload = { name, contactPerson, phone, email, address, city, barangay, province, region, zip, productSkus };
+      if (leadRaw) payload.leadTimeDays = Number(leadRaw);
       try {
         if (id) await api('/suppliers/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(payload) });
         else await api('/suppliers', { method: 'POST', body: JSON.stringify(payload) });
@@ -1340,10 +1747,12 @@
       const supplier = id && supplierData.find((s) => s.id === id);
       if (!supplier) return;
       const next = supplier.status === 'archived' ? 'active' : 'archived';
-      if (!(await uiConfirm({ title: (next === 'archived' ? 'Archive ' : 'Restore ') + supplier.name + '?', message: next === 'archived' ? 'The supplier is hidden from new purchase records. You can restore it later.' : 'The supplier can be used again.', confirm: next === 'archived' ? 'Archive' : 'Restore', danger: next === 'archived' }))) return;
+      const del = next === 'archived';
+      const reason = await uiConfirm({ title: (del ? 'Delete ' : 'Restore ') + supplier.name + '?', message: del ? 'The supplier is hidden from new purchase records. It is kept, not erased: you can restore it from the Deleted tab.' : 'The supplier can be used again.', confirm: del ? 'Delete' : 'Restore', danger: del, reason: del ? { label: 'Reason for deleting' } : undefined });
+      if (!reason) return;
       try {
-        await api('/suppliers/' + encodeURIComponent(id) + '/status', { method: 'PATCH', body: JSON.stringify({ status: next }) });
-        toast('Supplier ' + (next === 'archived' ? 'archived' : 'restored'));
+        await api('/suppliers/' + encodeURIComponent(id) + '/status', { method: 'PATCH', body: JSON.stringify(del ? { status: next, reason } : { status: next }) });
+        toast('Supplier ' + (del ? 'deleted' : 'restored'));
         closeNewSupplierModal();
         await load();
       } catch (err) { toast(err.message, 'error'); }
@@ -1353,6 +1762,85 @@
   /* =====================================================
      MOVEMENT LOG  (fills the table on Stock In / Out and filters it)
   ===================================================== */
+  let movementDetailOverlay = null;
+  function ensureMovementDetailModal() {
+    if (movementDetailOverlay) return movementDetailOverlay;
+    movementDetailOverlay = document.createElement('div');
+    movementDetailOverlay.className = 'modal-overlay';
+    movementDetailOverlay.id = 'movementDetailOverlay';
+    movementDetailOverlay.innerHTML =
+      '<div class="account-modal supplier-modal product-modal pd-modal" role="dialog" aria-modal="true" aria-labelledby="movTitle" style="max-width:580px">' +
+        '<button type="button" class="modal-close" id="movClose" aria-label="Close">×</button>' +
+        '<div id="movBody"></div>' +
+      '</div>';
+    document.body.appendChild(movementDetailOverlay);
+    const close = () => {
+      movementDetailOverlay.classList.remove('open');
+      if (!document.querySelector('.modal-overlay.open')) {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+      }
+    };
+    movementDetailOverlay.addEventListener('click', (e) => { if (e.target === movementDetailOverlay) close(); });
+    movementDetailOverlay.querySelector('#movClose').addEventListener('click', close);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && movementDetailOverlay.classList.contains('open')) close();
+    });
+    return movementDetailOverlay;
+  }
+
+  function openMovementDetails(ref) {
+    const m = (movementCache || []).find((x) => x.ref === ref);
+    if (!m) return;
+    const overlay = ensureMovementDetailModal();
+    const isIn = m.type === 'in';
+    const totalCost = (m.unitCost != null && !isNaN(m.unitCost)) ? (Number(m.unitCost) * Number(m.qty)) : null;
+    const formattedTotal = totalCost != null ? (typeof formatCurrency === 'function' ? formatCurrency(totalCost) : 'PHP ' + totalCost.toFixed(2)) : '—';
+    const formattedUnit = (m.unitCost != null && !isNaN(m.unitCost)) ? (typeof formatCurrency === 'function' ? formatCurrency(m.unitCost) : 'PHP ' + Number(m.unitCost).toFixed(2)) : '—';
+
+    const row = (dt, dd) => '<div class="pd-row"><dt>' + dt + '</dt><dd>' + dd + '</dd></div>';
+
+    overlay.querySelector('#movBody').innerHTML =
+      '<div class="supplier-modal-head">' +
+        '<div class="supplier-modal-icon">' +
+          '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 12 5 5 5-5"/><path d="M12 7v10"/></svg>' +
+        '</div>' +
+        '<div>' +
+          '<div class="modal-eyebrow">Stock Movement · ' + esc(m.department || '') + '</div>' +
+          '<h2 class="modal-title" id="movTitle" style="margin-bottom:0;">' + esc(m.product) + '</h2>' +
+          '<div class="pd-sub"><span class="mono">' + esc(m.ref) + '</span> ' +
+            '<span class="status-pill ' + (isIn ? 'in' : 'out') + '">' + (isIn ? 'Stock In (Replenishment)' : 'Stock Out (Deduction)') + '</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<dl class="pd-grid">' +
+        row('Quantity', '<b>' + (isIn ? '+' : '-') + esc(formatNumber(m.qty)) + ' ' + esc(m.unit) + '</b>') +
+        row('Cost & Value', formattedUnit + ' (Total: <b>' + formattedTotal + '</b>)') +
+        row('Reason', esc(m.reason || '—')) +
+        row('Supplier', m.supplier ? esc(m.supplier) : '<span class="dim">Internal / Not specified</span>') +
+        row('Invoice / PO No.', m.invoiceNo ? '<span class="mono">' + esc(m.invoiceNo) + '</span>' : '<span class="dim">None recorded</span>') +
+        row('Production Batch', m.productionRef ? '<span class="mono">' + esc(m.productionRef) + '</span>' + (m.relatedProduct ? ' (for ' + esc(m.relatedProduct) + ')' : '') : '<span class="dim">Not linked</span>') +
+        row('Handled By', esc(m.handledBy)) +
+        row('Date & Time', esc(m.dateTime)) +
+      '</dl>' +
+      (m.note ? '<div class="pd-note" style="margin-top:12px"><b>Transaction note:</b> ' + esc(m.note) + '</div>' : '') +
+      '<div class="modal-footer" style="margin-top:18px;display:flex;justify-content:flex-end">' +
+        '<button type="button" class="btn-secondary" id="movCloseBtn">Close</button>' +
+      '</div>';
+
+    overlay.querySelector('#movCloseBtn').addEventListener('click', () => {
+      overlay.classList.remove('open');
+      if (!document.querySelector('.modal-overlay.open')) {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+      }
+    });
+
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+  }
+
   function renderMovementLog() {
     const body = $('movementLogTableBody');
     if (!body) return;
@@ -1372,18 +1860,25 @@
     }
     body.innerHTML = rows.map((m) => {
       const isIn = m.type === 'in';
-      return '<tr>' +
+      const formattedUnit = (m.unitCost != null && !isNaN(m.unitCost)) ? (typeof formatCurrency === 'function' ? formatCurrency(m.unitCost) : 'PHP ' + Number(m.unitCost).toFixed(2)) : '—';
+
+      return '<tr class="mov-row" data-mov-ref="' + esc(m.ref) + '" style="cursor:pointer">' +
         '<td class="mono">' + esc(m.ref) + '</td>' +
         '<td>' + esc(m.product) + '</td>' +
         '<td><span class="status-pill ' + (isIn ? 'in' : 'out') + '">' + (isIn ? 'In' : 'Out') + '</span></td>' +
-        '<td class="dim">' + esc(m.reason || '') + (m.productionRef ? '<div style="font-size:12.5px">' + esc(m.productionRef) + (m.relatedProduct ? ' \u00B7 for ' + esc(m.relatedProduct) : '') + '</div>' : '') + '</td>' +
+        '<td class="dim">' + esc(m.reason || '') + (m.productionRef ? '<div style="font-size:12.5px">' + esc(m.productionRef) + (m.relatedProduct ? ' · for ' + esc(m.relatedProduct) : '') + '</div>' : '') + '</td>' +
         '<td class="dim">' + (isIn ? '+' : '-') + esc(formatNumber(m.qty)) + ' ' + esc(m.unit) + '</td>' +
         '<td class="dim">' + esc(m.department) + '</td>' +
-        '<td class="dim">' + (m.supplier || m.invoiceNo
-          ? (m.supplier ? esc(m.supplier) : '') + (m.invoiceNo ? '<div style="font-size:12.5px">Inv. ' + esc(m.invoiceNo) + '</div>' : '') : '\u2014') + '</td>' +
+        '<td class="dim">' + formattedUnit + '</td>' +
         '<td class="dim">' + esc(m.handledBy) + '</td>' +
         '<td class="dim">' + esc(m.dateTime) + '</td></tr>';
     }).join('');
+
+    body.querySelectorAll('tr.mov-row').forEach((row) => {
+      row.addEventListener('click', () => {
+        openMovementDetails(row.dataset.movRef);
+      });
+    });
   }
 
   function setupMovementLog() {
@@ -1453,7 +1948,7 @@
     return el;
   }
 
-  function goStockIn(sku) {
+  function goStockIn(sku, suggestedQty, supplierId, unitCost, orderDate) {
     const item = inventoryCache.find((i) => i.sku === sku);
     if (!item) return;
     const nav = document.querySelector('.nav-item[data-page="stockflow"]');
@@ -1464,9 +1959,32 @@
     if (dept) { dept.value = item.department; dept.dispatchEvent(new Event('change', { bubbles: true })); }
     const prod = $('movementProduct');
     if (prod) { prod.value = sku; prod.dispatchEvent(new Event('change', { bubbles: true })); }
+    const reason = $('movementReason');
+    if (reason && (!reason.value || reason.value !== 'supplier_receipt')) {
+      reason.value = 'supplier_receipt';
+      reason.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    const qtyVal = suggestedQty != null ? suggestedQty : (item.reorderLevel > item.onHand ? Math.max(1, Math.round(item.reorderLevel - item.onHand)) : '');
     const qty = $('movementQuantity');
-    if (qty) qty.focus();
+    if (qty) {
+      if (qtyVal) qty.value = qtyVal;
+      qty.dispatchEvent(new Event('input', { bubbles: true }));
+      qty.focus();
+    }
+    if (supplierId && $('movementSupplier')) {
+      $('movementSupplier').value = supplierId;
+      $('movementSupplier').dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (unitCost != null && $('movementUnitCost')) {
+      $('movementUnitCost').value = Number(unitCost).toFixed(2);
+      $('movementUnitCost').dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    if (orderDate && $('movementOrderDate')) {
+      $('movementOrderDate').value = orderDate;
+      $('movementOrderDate').dispatchEvent(new Event('change', { bubbles: true }));
+    }
   }
+  window.goStockIn = goStockIn;
 
   /* ---------------- Dashboard: every KPI card opens its own matching table ---------------- */
   const KPI_ICONS = {
@@ -1644,10 +2162,12 @@
     newSupplierForm: 'newSupplierFormError', inviteUserForm: 'inviteUserFormError', editUserForm: 'editUserFormError' };
   const DEPENDS = {                                        // when X changes, re-check these (if already touched)
     movementProduct: ['movementQuantity', 'movementReason'],
-    movementReason: ['movementNote'],
+    movementReason: ['movementNote', 'movementSupplier', 'movementInvoice', 'movementUnitCost'],
     movementDept: ['movementProduct', 'movementReason'],
     npCategory: ['npCategoryNew'],
-    npDept: ['npListPrice'],
+    npDept: ['npListPrice', 'npWeight', 'npCostReason', 'npUnitCost'],
+    npCostOverride: ['npCostReason', 'npUnitCost'],
+    npUnitCost: ['npListPrice'],
     newSupplierPhone: ['newSupplierEmail'],
     newSupplierEmail: ['newSupplierPhone'],
     newSupplierRegion: ['newSupplierProvince', 'newSupplierCity', 'newSupplierBarangay', 'newSupplierZip'],
@@ -1674,9 +2194,9 @@
       movementReason: () => $('movementReason').value ? '' :
         (movementType() === 'out' ? 'Choose why this stock is going out' : 'Choose why this stock is coming in'),
       movementQuantity: () => {
-        const e = {}; const q = vNum(e, 'movementQuantity', 'Quantity', { gt: true });
+        const e = {}; const typed = vNum(e, 'movementQuantity', 'Quantity', { gt: true });
         if (e.movementQuantity) return e.movementQuantity;
-        const item = movementItem();
+        const item = movementItem(), q = movementQty(typed);
         if (item && movementType() === 'out' && q > item.onHand)
           return 'Only ' + formatNumber(item.onHand) + ' ' + item.unit + ' on hand — cannot take out ' + formatNumber(q);
         return '';
@@ -1687,7 +2207,19 @@
         if (NOTE_REQUIRED.indexOf($('movementReason').value) >= 0 && v.length < 3) return 'Please explain this entry in the note';
         return '';
       },
+      movementSupplier: () => movementType() === 'in' && $('movementReason').value === 'supplier_receipt' && !$('movementSupplier').value ? 'Choose the supplier this delivery came from' : '',
+      movementInvoice: () => movementType() === 'in' && $('movementReason').value === 'supplier_receipt' ? textRule('movementInvoice', 'Invoice / delivery no.', { required: false, max: 40 })() : '',
+      movementUnitCost: () => {
+        if (movementType() !== 'in' || $('movementReason').value !== 'supplier_receipt') return '';
+        const v = $('movementUnitCost').value.replace(/[,\u20B1\s]/g, '');
+        return !v || (/^\d{1,8}(\.\d{1,2})?$/.test(v) && Number(v) > 0) ? '' : 'Enter the cost per unit in pesos, e.g. 145.50';
+      },
       /* product */
+      npWeight: () => {
+        const v = clean($('npWeight').value);
+        return $('npDept').value !== 'Finished Goods' || !v || (/^\d{1,6}(\.\d{1,3})?$/.test(v) && Number(v) > 0) ? '' : 'Enter the weight of one piece in kg, e.g. 1.25';
+      },
+      npCostReason: () => sellsNow() && costOverridden() && clean($('npCostReason').value).length < 5 ? 'Give a reason for overriding the cost (at least 5 characters)' : '',
       npSku: () => {
         const v = clean($('npSku').value).toUpperCase();
         if (!v) return 'SKU is required';
@@ -1705,10 +2237,20 @@
       npCategory: selectRule('npCategory', 'Choose a category'),
       npCategoryNew: textRule('npCategoryNew', 'Category name', { min: 2, max: 60 }),
       npUnit: selectRule('npUnit', 'Choose a unit'),
-      npUnitCost: numRule('npUnitCost', 'Unit cost', { max: 1e7 }),
+      npUnitCost: () => costAuto() ? '' : numRule('npUnitCost', 'Unit cost', { max: 1e7 })(),
       npOnHand: () => $('npOnHand').readOnly ? '' : numRule('npOnHand', 'On hand', { noLeadingZero: true })(),
       npReorder: () => ($('npReorderManual') && $('npReorderManual').checked ? numRule('npReorder', 'Reorder level', { noLeadingZero: true })() : ''),   // automatic = nothing to type
-      npListPrice: () => sellsNow() ? numRule('npListPrice', 'Selling price', { max: 1e7, gt: true })() : '',
+      npListPrice: () => {
+        if (!sellsNow() || !priceManual()) return '';
+        const bad = numRule('npListPrice', 'Selling price', { max: 1e7, gt: true })();
+        if (bad) return bad;
+        const c = Number(window.MoneyInput ? MoneyInput.raw($('npUnitCost').value) : $('npUnitCost').value);
+        const p = Number(window.MoneyInput ? MoneyInput.raw($('npListPrice').value) : $('npListPrice').value);
+        if (c > 0 && p < Math.round(c * 1.20 * 100) / 100) {
+          return 'Selling price cannot be below 20% margin floor (minimum ₱' + (Math.round(c * 1.20 * 100) / 100).toFixed(2) + ')';
+        }
+        return '';
+      },
       npLocation: selectRule('npLocation', 'Choose the storage location'),
       npLocationNew: textRule('npLocationNew', 'Storage location', { min: 2, max: 100 }),
       npSupplier: () => (!productModalState() && NEEDS_SUPPLIER.indexOf($('npDept').value) >= 0 && !$('npSupplier').value ? 'Choose the supplier for this material' : ''),
@@ -1743,6 +2285,7 @@
         return known && !known.ok ? known.message : '';
       },
       newSupplierAddress: textRule('newSupplierAddress', 'Warehouse address', { min: 5, max: 150 }),
+      newSupplierLeadTime: () => { const v = clean($('newSupplierLeadTime').value); return !v || (/^\d{1,3}$/.test(v) && +v <= 365) ? '' : 'Lead time must be a whole number of days from 0 to 365'; },
       newSupplierCity: () => {
         const m = textRule('newSupplierCity', 'City / Municipality', { min: 2, max: 60 })();
         return m || (picked('newSupplierCity') || addressUnchanged() ? '' : 'Pick a city / municipality from the list');
@@ -1780,7 +2323,7 @@
   }
 
   const isActive = (el) => {
-    if (!el || el.disabled) return false;
+    if (!el || el.disabled || el.readOnly || !el.getClientRects().length) return false;
     const grp = el.closest('#movementNoteGroup, #npCategoryNewWrap, #npLocationNewWrap');
     return !(grp && grp.style.display === 'none');
   };
@@ -1791,9 +2334,14 @@
     const group = el.closest('.form-group') || el.parentNode;
     group.querySelectorAll('.field-msg[data-for="' + id + '"]').forEach((n) => n.remove());
     el.classList.toggle('field-invalid', !!message);
+    el.setAttribute('aria-invalid', message ? 'true' : 'false');
     if (message) {
       const m = document.createElement('div');
       m.className = 'field-msg'; m.dataset.for = id; m.textContent = message;
+      m.id = id + 'LiveError'; m.setAttribute('aria-live', 'polite');
+      const descriptions = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+      if (!descriptions.includes(m.id)) descriptions.push(m.id);
+      el.setAttribute('aria-describedby', descriptions.join(' '));
       group.appendChild(m);
     }
   }
@@ -1838,10 +2386,14 @@
         el.addEventListener('blur', check);
       }
     });
+    Object.keys(DEPENDS).filter((id) => !LIVE[id]).forEach((id) => {
+      const el = $(id);
+      if (el) el.addEventListener('change', () => DEPENDS[id].forEach((d) => validateField(d, false)));
+    });
     // switching Stock In <-> Stock Out changes what is valid
     const toggle = $('movementTypeToggle');
     if (toggle) toggle.querySelectorAll('.seg-btn').forEach((b) => b.addEventListener('click', () => {
-      setTimeout(() => { ['movementReason', 'movementQuantity'].forEach((i) => validateField(i, false)); }, 0);
+      setTimeout(() => { ['movementReason', 'movementQuantity', 'movementNote', 'movementSupplier', 'movementInvoice', 'movementUnitCost'].forEach((i) => validateField(i, false)); }, 0);
     }));
 
     Object.keys(FORM_BANNERS).forEach((formId) => {
@@ -2909,6 +3461,14 @@
       const body = table.tBodies[0];
       if (!body || table.closest('#printReport')) return;
       const wrap = table.closest('.table-wrapper');
+      // this pager owns the table: table-pagination.js must not add a second bar (it skips tables with this mark)
+      table.setAttribute('data-bridge-paged', '1');
+      const dup = wrap.nextElementSibling;
+      if (dup && dup.classList.contains('table-pagination')) {          // one was already added before this ran -> remove it
+        dup.remove();
+        table._pagerEl = null;
+        Array.from(body.rows).forEach((r) => { if (r.style.display === 'none') r.style.display = ''; });
+      }
       const bar = document.createElement('div');
       bar.className = 'pager';
       bar.setAttribute('role', 'navigation');

@@ -1,0 +1,64 @@
+/* Shared action layout. Text actions grow with their labels; icon controls keep
+   their dedicated sizing. This sheet is loaded after each page's theme styles. */
+html body :is(.btn-primary, .btn-secondary, .btn-danger, .btn-ghost, .btn-full, .prod-btn) {
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  text-align: center;
+  flex-shrink: 1;
+  padding-block: 8px;
+}
+html body :is(.btn-primary, .btn-secondary, .btn-danger, .btn-ghost) :is(svg, .ico, .ic) { flex-shrink: 0; }
+html body :is(.modal-actions, .form-actions, .acct-footer, .cs-actions, .tq-actions, .qd-review-actions, .prod-actions, .safeguard-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html body :is(.modal-actions, .form-actions, .acct-footer, .cs-actions, .tq-actions, .qd-review-actions) > button {
+  flex: 1 1 140px;
+}
+html body .ui2 .sum-card :is(.btn-primary, .btn-lg),
+html body #quoteForm .qf-submit .btn-primary {
+  height: auto;
+  white-space: normal;
+  padding: 14px 16px;
+  line-height: 1.5;
+  letter-spacing: 1px;
+}
+html body :is(.pd-buy, .q-actions, .ord-quick, .qd-drawer-foot) { flex-wrap: wrap; gap: 8px; }
+html body .pd-dialog .pd-buy > .btn-primary { height: auto; white-space: normal; padding: 12px 16px; }
+html body .safeguard-dialog { box-sizing: border-box; width: min(560px, 95vw); max-height: 90dvh; overflow: auto; padding: 24px; border: 1px solid var(--border, #aaa); border-radius: 10px; background: var(--panel, var(--card, #fff)); color: var(--text, #16202b); }
+.safeguard-dialog::backdrop { background: #0008; }
+.safeguard-dialog label { display: block; margin: 12px 0; }
+.safeguard-dialog :is(input, select, textarea) { display: block; box-sizing: border-box; width: 100%; max-width: 100%; }
+.fa-error { overflow-wrap: anywhere; flex-basis: 100%; }
+.fa-error:empty { display: none; }
+html body :is(.qd-rline, .sx-jobline) > .fa-error { grid-column: 1 / -1; }
+html body .ui2 .ui2-chip { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+html body .topbar-right { flex-shrink: 0; }
+html body .policy-cards-grid { grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); }
+html body .policy-card { min-width: 0; overflow-wrap: anywhere; }
+html body .policy-card-head { flex-wrap: wrap; }
+@media (max-width: 480px) {
+  html body :is(.ui2-actions, .page-header-actions, .page-actions, .qd-drawer-foot) { flex-wrap: wrap; gap: 8px; }
+  html body :is(.ui2-actions, .page-header-actions, .page-actions, .qd-drawer-foot) > button { max-width: 100%; }
+  html body #checkout .sum-card { padding: 18px; }
+  html body #reports .donut-legend-row { flex-wrap: wrap; }
+  html body #reports .donut-legend-left { min-width: 0; flex-wrap: wrap; }
+  html body #reports .donut-legend-name { overflow-wrap: anywhere; }
+}
+
+/* Drop-down lists (the open list of a <select>): always readable in both themes.
+   Without this the list can keep the page's light text on the browser's white popup in dark mode. */
+html:not([data-theme="light"]) select, html:not([data-theme="light"]) select option, html:not([data-theme="light"]) select optgroup { color-scheme: dark; }
+html[data-theme="light"] select, html[data-theme="light"] select option, html[data-theme="light"] select optgroup { color-scheme: light; }
+html body select option, html body select optgroup { background-color: var(--card, var(--panel, #0d1a26)); color: var(--text, #e7edf3); }
+html body select option:disabled { color: var(--text-faint, #8093a3); }
+html body select option:checked { background-color: var(--blue, #23679d); color: #fff; }
+html body select optgroup { font-weight: 600; color: var(--text-dim, #8fa1b0); }
+/* the suggestion list under a typed field (City, Barangay...) follows the theme too */
+html:not([data-theme="light"]) input[list] { color-scheme: dark; }
+html[data-theme="light"] input[list] { color-scheme: light; }

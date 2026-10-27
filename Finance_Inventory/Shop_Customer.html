@@ -12,7 +12,12 @@
 <link rel="stylesheet" href="app-ui.css?v=3">
 <link rel="stylesheet" href="store.css?v=3">
 <link rel="stylesheet" href="notifications.css?v=7">
-<link rel="stylesheet" href="quote-fields.css?v=2">
+<script src="session-guard.js?v=2"></script>
+<link rel="stylesheet" href="ui2-core.css?v=1">
+<link rel="stylesheet" href="ui2-notifications.css?v=1">
+<link rel="stylesheet" href="ui2-shop.css?v=5">
+<link rel="stylesheet" href="ui2-shop-polish.css?v=1">
+<link rel="stylesheet" href="quote-fields.css?v=4">
 <style>
 a.nav-item{text-decoration:none}
 .fulfil-note{margin:10px 0 4px;padding:10px 12px;border-radius:8px;background:var(--inset);border:1px solid var(--border);font-size:13.5px;color:var(--text-dim);line-height:1.55}
@@ -31,6 +36,8 @@ a.nav-item{text-decoration:none}
 #checkout #termNote{margin-top:10px;line-height:1.5}
 #checkout #payPlan:not([hidden]){border-top:1px solid var(--border,#e2e8f0);padding-top:12px;margin-top:12px}
 </style>
+<style>html.gate body{visibility:hidden}</style><script>document.documentElement.classList.add("gate")</script>
+<link rel="stylesheet" href="form-layout.css?v=2">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -120,12 +127,16 @@ a.nav-item{text-decoration:none}
   <div class="content">
 
     <!-- ===== CATALOG ===== -->
-    <section class="page active-page" id="catalog">
-      <div class="hero">
-        <div><h1>Die-cast aluminum &amp; forged brass.</h1><p>Ready stock at clear prices, or request a quote for a part made to your specifications.</p></div>
-        <div class="hero-perks">
-          <span class="perk"><svg class="ico" viewBox="0 0 24 24"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/></svg>Delivery <span data-fee>₱150</span></span>
-          <span class="perk"><svg class="ico" viewBox="0 0 24 24"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 22V7"/></svg>Free pickup</span>
+    <section class="page active-page ui2" id="catalog">
+      <div class="shop-banner">
+        <div>
+          <div class="ui2-eyebrow"><span class="ui2-live"></span> Online shop</div>
+          <h1>Die-cast aluminum &amp; forged brass.</h1>
+          <p>Ready stock at clear prices, or request a quote for a part made to your specifications.</p>
+        </div>
+        <div class="ui2-actions">
+          <span class="ui2-chip"><svg class="ico" viewBox="0 0 24 24"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/></svg>Delivery <span data-fee>₱150</span></span>
+          <span class="ui2-chip"><svg class="ico" viewBox="0 0 24 24"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 22V7"/></svg>Free pickup</span>
         </div>
       </div>
       <div class="quote-cta"><div><b>Bulk order or a custom size?</b> Tell us what you need and our team will send you a price.</div><button type="button" class="btn-secondary btn-sm" data-view="quote">Request a quote</button></div>
@@ -140,8 +151,11 @@ a.nav-item{text-decoration:none}
     </section>
 
     <!-- ===== CART ===== -->
-    <section class="page" id="cart">
-      <div class="page-head"><div><h1>Your cart</h1></div><button class="btn-ghost" data-view="catalog"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-.15em"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Continue shopping</button></div>
+    <section class="page ui2" id="cart">
+      <div class="ui2-hero">
+        <div><div class="ui2-eyebrow"><span class="ui2-live"></span> Step 1 of 3</div><h1>Your cart</h1><p>Review your items before checkout.</p></div>
+        <div class="ui2-actions"><button class="btn-ghost" data-view="catalog"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-.15em"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Continue shopping</button></div>
+      </div>
       <div class="flow"><span class="f on"><span class="n">1</span>Cart</span><span class="bar"></span><span class="f"><span class="n">2</span>Details</span><span class="bar"></span><span class="f"><span class="n">3</span>Done</span></div>
       <div class="cart-layout">
         <div class="card" id="cartCard"><div id="cartRows"></div></div>
@@ -157,11 +171,24 @@ a.nav-item{text-decoration:none}
     </section>
 
     <!-- ===== CHECKOUT ===== -->
-    <section class="page" id="checkout">
-      <div class="page-head"><div><h1>Checkout</h1></div><button class="btn-ghost" data-view="cart"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-.15em"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back to cart</button></div>
+    <section class="page ui2" id="checkout">
+      <div class="ui2-hero">
+        <div><div class="ui2-eyebrow"><span class="ui2-live"></span> Step 2 of 3</div><h1>Checkout</h1><p>Tell us where to send your order and how you want to pay.</p></div>
+        <div class="ui2-actions"><button class="btn-ghost" data-view="cart"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-.15em"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back to cart</button></div>
+      </div>
       <div class="flow"><span class="f done"><span class="n"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-.15em"><path d="M20 6 9 17l-5-5"/></svg></span>Cart</span><span class="bar"></span><span class="f on"><span class="n">2</span>Details</span><span class="bar"></span><span class="f"><span class="n">3</span>Done</span></div>
+      <div class="checkout-legal-notice" style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:12px 16px;margin:12px 0 16px;font-size:12.5px;line-height:1.5;color:#334155">
+        <div style="font-weight:700;color:#0f172a;margin-bottom:4px">Philippine Contract &amp; Consumer Law Notice (Civil Code Arts. 1482, 1582&ndash;1599)</div>
+        <div>&bull; <b>Default Rule (Simultaneous Exchange):</b> Standard catalog orders without partial terms are payable at the exact time and place of delivery or pickup.</div>
+        <div>&bull; <b>Custom Orders &amp; Reservations:</b> For custom-fabricated goods or high-value orders, an agreed down payment or half-payment serves as earnest money (Art. 1482) to allocate materials and schedule fabrication. Production begins upon confirmation of the initial deposit.</div>
+        <div>&bull; <b>Delivery Obligation:</b> Once the agreed initial payment is verified, the seller is legally bound to fulfill and deliver the product according to the agreed specifications and timeframe.</div>
+      </div>
+      <div class="checkout-guide-banner" id="coGuideBanner" style="background:var(--hover,#f1f5f9);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:12px 16px;margin:12px 0 16px;font-size:13px;line-height:1.5;color:var(--text,#1e293b)">
+        <div style="font-weight:600;color:var(--blue-bright,#2563eb);margin-bottom:2px">Order Placement Guide</div>
+        <div>Choose <b>Delivery</b> (shipping calculated per region) or <b>Pickup</b> (free counter collection). An online down payment confirms your reservation and allocates inventory immediately.</div>
+      </div>
       <div class="checkout-layout">
-        <div class="card" style="padding:20px">
+        <div class="card checkout-form-card" style="padding:20px">
           <div class="sec-title">Fulfilment</div>
           <div class="opt-grid">
             <label class="opt on" data-f="Delivery"><input type="radio" name="f" checked><span>Delivery<small><span data-fee>₱150</span> fee · depends on your region / province</small></span></label>
@@ -172,7 +199,7 @@ a.nav-item{text-decoration:none}
           <div id="addrBox"></div>
           <div id="contactBox">
             <div class="sec-title">Contact</div>
-            <label for="phone" style="margin-top:0">Mobile number</label><input id="phone" inputmode="tel" placeholder="0917 123 4567">
+            <label for="phone" style="margin-top:0">Mobile number</label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="20" placeholder="0917 123 4567"><div id="phoneError" class="err-text" aria-live="polite"></div>
           </div>
           <div class="sec-title">Payment</div>
           <div class="opt-stack" id="payOpts"></div>
@@ -200,16 +227,23 @@ a.nav-item{text-decoration:none}
     </section>
 
     <!-- ===== REQUEST A QUOTE ===== -->
-    <section class="page" id="quote">
-      <div class="page-head"><div><h1>Request a quote</h1><p>Tell us what you need and our team will send you a price. Nothing is reserved and no payment is taken until you accept.</p></div></div>
+    <section class="page ui2" id="quote">
+      <div class="ui2-hero">
+        <div><div class="ui2-eyebrow"><span class="ui2-live"></span> Custom orders</div><h1>Request a quote</h1><p>Tell us what you need and our team will send you a price. Nothing is reserved and no payment is taken until you accept.</p></div>
+      </div>
+      <div class="quote-guide-banner" style="background:var(--hover,#f1f5f9);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:12px 16px;margin:0 0 16px;font-size:13px;line-height:1.5;color:var(--text,#1e293b)">
+        <div style="font-weight:600;color:var(--blue-bright,#2563eb);margin-bottom:2px">Custom Quotation Assistant</div>
+        <div>Specify part dimensions, material grade, and secondary operations. Batch orders exceeding 100 units calculate minimum production lead time automatically to guarantee on-time delivery.</div>
+      </div>
       <div class="cart-layout">
         <form class="card quote-form" id="quoteForm" autocomplete="off" novalidate>
-          <div class="qf-sec first"><span class="qf-num">1</span><span class="qf-txt"><b>What do you need?</b><small>Pick a product from the catalog, or choose “Other” and describe it.</small></span></div>
+          <div class="qf-step"><div class="qf-sec first"><span class="qf-num">1</span><span class="qf-txt"><b>What do you need?</b><small>Pick a product from the catalog, or choose “Other” and describe it.</small></span></div>
           <div class="q-field"><label for="qProduct">Product</label><select id="qProduct"></select></div>
           <div class="q-field" id="qNameWrap" hidden><label for="qProductName">Describe the item</label><input id="qProductName" maxlength="120" placeholder="e.g. Die-cast aluminum housing, ADC12, powder coated"><div class="err-text" id="qE_productName"></div></div>
           <div id="qFields"><p class="dim">Loading the form…</p></div>
 
-          <div class="qf-sec"><span class="qf-num">2</span><span class="qf-txt"><b>How will you receive it?</b><small>Delivery quotes only need the area, not your full address.</small></span></div>
+          </div>
+          <div class="qf-step"><div class="qf-sec"><span class="qf-num">2</span><span class="qf-txt"><b>How will you receive it?</b><small>Delivery quotes only need the area, not your full address.</small></span></div>
           <div id="qDeliveryAnchor" tabindex="-1"></div>
           <div class="q-seg" role="radiogroup" aria-label="Delivery or pickup">
             <label class="q-opt"><input type="radio" name="qFulfil" value="Delivery"><span class="q-opt-body"><svg class="q-opt-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7.5" cy="17.5" r="1.8"/><circle cx="17.5" cy="17.5" r="1.8"/></svg><span class="q-opt-txt"><b>Delivery</b><small>We bring it to your address</small></span></span></label>
@@ -235,14 +269,17 @@ a.nav-item{text-decoration:none}
             <div class="err-text" id="qE_address"></div>
           </div>
 
-          <div class="qf-sec"><span class="qf-num">3</span><span class="qf-txt"><b>Your contact details</b><small>We call or text this number with your price.</small></span></div>
+          </div>
+          <div class="qf-step"><div class="qf-sec"><span class="qf-num">3</span><span class="qf-txt"><b>Your contact details</b><small>We call or text this number with your price.</small></span></div>
           <div class="q-grid">
             <div class="q-field"><label for="qName">Your name</label><input id="qName" maxlength="80" autocomplete="name" placeholder="Full name"><div class="err-text" id="qE_contactName"></div></div>
             <div class="q-field"><label for="qPhone">Mobile number</label><input id="qPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="0917 123 4567"><div class="err-text" id="qE_phone"></div></div>
           </div>
-          <div class="err-text q-formerr" id="qErr" role="alert"></div>
+          </div>
+          <div class="qf-submit"><div class="err-text q-formerr" id="qErr" role="alert"></div>
           <button type="submit" class="btn-primary btn-lg" id="qSend">Review Request</button>
           <p class="q-foot-note">You will see a summary to check before anything is sent. This is a request for a price only, not an order.</p>
+                  </div>
         </form>
         <aside class="sticky-side">
           <div class="card quote-how" style="margin-bottom:14px"><h3>How it works</h3>
@@ -251,7 +288,14 @@ a.nav-item{text-decoration:none}
               <li><b>We send you a price</b><span>It appears under “My quote requests” when it is ready.</span></li>
               <li><b>Accept or decline</b><span>Accept to go ahead, or ask for a new quote.</span></li>
             </ol></div>
-          <div class="card quote-side" style="margin-bottom:14px"><h3>My quote requests</h3><div id="quoteList"><p class="dim">Loading…</p></div></div>
+          <div class="card quote-side" style="margin-bottom:14px"><h3>My quote requests <span class="qs-count" id="quoteCount"></span></h3>
+            <div class="qs-tools" id="quoteTools" hidden>
+              <div class="search-wrap"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="quoteSearch" placeholder="Search quotes…" autocomplete="off" aria-label="Search quote requests"></div>
+              <div class="ord-chips" id="quoteChips"></div>
+              <div class="result-line" id="quoteResult"></div>
+            </div>
+            <div id="quoteList"><p class="dim">Loading…</p></div>
+            <button type="button" class="btn-secondary btn-sm qs-more" id="quoteMore" hidden>Show 5 more</button></div>
           <div class="help-line" data-help></div>
         </aside>
       </div>
@@ -264,30 +308,56 @@ a.nav-item{text-decoration:none}
 <div class="tq-overlay" id="tqOverlay" hidden><div class="tq-dialog" role="dialog" aria-modal="true" aria-labelledby="tqTitle" tabindex="-1"><h2 id="tqTitle">Review quotation request</h2><p id="tqSubtitle">Check your details before submitting.</p><div id="tqDetails"></div><div class="tq-note" id="tqDisclaimer">This is a quotation request, not a reservation, order or payment.</div><div class="tq-error" id="tqError" role="alert"></div><div class="tq-actions"><button type="button" class="btn-secondary" id="tqBack">Edit details</button><button type="button" class="btn-primary" id="tqConfirm">Confirm &amp; Submit</button></div></div></div>
 
     <!-- ===== ORDERS ===== -->
-    <section class="page" id="notifications">
-      <div class="page-head"><div><h1>Notifications</h1></div></div>
-      <div class="nc-page-tools">
-        <div class="nc-chips">
-          <button type="button" class="nc-chip on" data-nc-cat="">All</button>
-          <button type="button" class="nc-chip" data-nc-cat="inventory" data-nc-roles="x">Inventory</button>
-          <button type="button" class="nc-chip" data-nc-cat="production" data-nc-roles="x">Production</button>
-          <button type="button" class="nc-chip" data-nc-cat="orders" data-nc-roles="customer">Orders</button>
-          <button type="button" class="nc-chip" data-nc-cat="payment" data-nc-roles="customer">Payments</button>
-          <button type="button" class="nc-chip" data-nc-cat="delivery" data-nc-roles="customer">Delivery</button>
-          <button type="button" class="nc-chip" data-nc-cat="pos" data-nc-roles="x">POS</button>
+    <section class="page ui2" id="notifications">
+      <div class="ui2-hero">
+        <div>
+          <div class="ui2-eyebrow"><span class="ui2-live"></span> Updates</div>
+          <h1>Notifications</h1>
+          <p>Updates on your orders, payments and deliveries. Click an item to open the page it is about.</p>
         </div>
-        <button type="button" class="nc-chip" id="ncUnreadOnly">All statuses</button>
-        <button type="button" class="btn-secondary" id="ncPageMarkAll">Mark all as read</button>
+        <div class="ui2-actions">
+          <div class="ui2-chip">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            <span id="ncPageSub">Loading...</span>
+          </div>
+          <button type="button" class="btn-secondary" id="ncPageMarkAll">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></svg>
+            Mark all as read
+          </button>
+        </div>
       </div>
-      <div class="panel">
+      <div class="panel nc-panel">
+        <div class="nc-page-tools">
+          <div class="nc-chips">
+            <button type="button" class="nc-chip on" data-nc-cat="">All</button>
+            <button type="button" class="nc-chip" data-nc-cat="inventory" data-nc-roles="x">Inventory</button>
+            <button type="button" class="nc-chip" data-nc-cat="production" data-nc-roles="x">Production</button>
+            <button type="button" class="nc-chip" data-nc-cat="orders" data-nc-roles="customer">Orders</button>
+            <button type="button" class="nc-chip" data-nc-cat="payment" data-nc-roles="customer">Payments</button>
+            <button type="button" class="nc-chip" data-nc-cat="delivery" data-nc-roles="customer">Delivery</button>
+            <button type="button" class="nc-chip" data-nc-cat="pos" data-nc-roles="x">POS</button>
+          </div>
+          <button type="button" class="nc-chip nc-toggle" id="ncUnreadOnly">All statuses</button>
+        </div>
         <div class="nc-page-list" id="ncPageList"></div>
         <button type="button" class="btn-secondary nc-more" id="ncMore" hidden>Load more</button>
       </div>
     </section>
 
-    <section class="page" id="orders">
-      <div class="page-head"><div><h1>My orders</h1></div></div>
+    <section class="page ui2" id="orders">
+      <div class="ui2-hero">
+        <div><div class="ui2-eyebrow"><span class="ui2-live"></span> Account</div><h1>My orders</h1><p>Track your orders, payments and deliveries.</p></div>
+      </div>
+      <div class="ord-stats" id="orderStats" hidden></div>
+      <div class="ord-tools" id="orderTools" hidden>
+        <div class="search-wrap"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="orderSearch" placeholder="Search order no. or product…" autocomplete="off" aria-label="Search orders"></div>
+        <select id="orderSort" aria-label="Sort orders"><option value="new">Newest first</option><option value="old">Oldest first</option><option value="high">Highest total</option></select>
+        <button type="button" class="btn-secondary btn-sm" id="orderExpand">Expand all</button>
+        <div class="ord-chips" id="orderChips"></div>
+      </div>
+      <div class="result-line" id="orderResult"></div>
       <div id="orderList"></div>
+      <button type="button" class="btn-secondary ord-more" id="orderMore" hidden>Show 10 more</button>
       <div class="help-line" data-help></div>
     </section>
 
@@ -302,14 +372,14 @@ a.nav-item{text-decoration:none}
   <select id="cancelReason"><option value="">Choose a reason…</option><option value="changed_mind">Changed my mind</option><option value="ordered_by_mistake">Ordered by mistake</option><option value="wrong_item_or_qty">Wrong item or quantity</option><option value="found_better_price">Found a better price</option><option value="too_slow">Delivery or pickup will take too long</option><option value="wrong_details">Wrong address or contact details</option><option value="payment_problem">Problem with payment</option><option value="other">Other</option></select>
   <label for="cancelDetails" id="cancelDetailsLbl" style="margin-top:12px">More details (optional)</label><textarea id="cancelDetails" rows="3" maxlength="300" placeholder="Anything else you would like us to know"></textarea>
   <div class="err-text" id="cancelErr" role="alert"></div>
-  <div class="modal-actions"><button class="btn-danger" id="cancelSend">Cancel order</button><button class="btn-secondary" onclick="closeModal('cancelBg')">Keep order</button></div></div></div>
+  <div class="modal-actions"><button class="btn-danger" id="cancelSend">Cancel order</button><button class="btn-secondary" data-close-modal="cancelBg">Keep order</button></div></div></div>
 <div class="modal-overlay" id="refundBg"><div class="modal"><h3>Request a refund</h3><p class="dim" id="refundFor"></p>
   <label for="refundReason">Reason</label>
   <select id="refundReason"><option value="">Choose a reason…</option><option value="damaged">Damaged or defective</option><option value="wrong_item">Wrong item received</option><option value="not_as_described">Not as described</option><option value="missing_items">Missing items</option><option value="other">Other</option></select>
   <label for="refundDetails" style="margin-top:12px">What went wrong? (required)</label><textarea id="refundDetails" rows="3" maxlength="300" placeholder="Tell us what happened so we can review it quickly"></textarea>
   <div class="err-text" id="refundErr" role="alert"></div>
   <p class="dim" style="font-size:13px;margin-top:8px">Our team reviews every request. You will see the decision on this page.</p>
-  <div class="modal-actions"><button class="btn-primary" id="refundSend">Send request</button><button class="btn-secondary" onclick="closeModal('refundBg')">Close</button></div></div></div>
+  <div class="modal-actions"><button class="btn-primary" id="refundSend">Send request</button><button class="btn-secondary" data-close-modal="refundBg">Close</button></div></div></div>
 <div class="modal-overlay" id="payBg"><div class="modal" style="max-width:480px;text-align:center">
   <h3 id="payTitle">Complete your payment</h3><p class="dim" id="payFor"></p>
   <div id="payWait">
@@ -322,7 +392,7 @@ a.nav-item{text-decoration:none}
   <div class="modal-actions" style="justify-content:center"><button class="btn-secondary" id="payClose">Close</button></div></div></div>
 <div class="modal-overlay" id="receiptBg"><div class="modal" style="max-width:560px;max-height:92vh;overflow:auto">
   <div id="rcptBody"></div>
-  <div class="modal-actions" style="justify-content:center;flex-wrap:wrap"><button class="btn-primary" id="rcptPrint">Print / Save as PDF</button><button class="btn-secondary" id="rcptOrders">View my orders</button><button class="btn-secondary" onclick="closeModal('receiptBg')">Close</button></div></div></div>
+  <div class="modal-actions" style="justify-content:center;flex-wrap:wrap"><button class="btn-primary" id="rcptPrint">Print / Save as PDF</button><button class="btn-secondary" id="rcptOrders">View my orders</button><button class="btn-secondary" data-close-modal="receiptBg">Close</button></div></div></div>
 <div id="toast" role="status"></div>
 
 <!-- My Profile / Change Password window — shared with Finance Admin and the Cashier (account-menu.js) -->
@@ -338,7 +408,7 @@ a.nav-item{text-decoration:none}
   <div class="star-pick" id="starPick" role="radiogroup" aria-label="Rating"></div>
   <label for="reviewBody" style="margin-top:12px">Your review <span class="dim">(optional)</span></label><textarea id="reviewBody" rows="4" maxlength="1000" placeholder="How was the quality, size and finish? Did it match the description?"></textarea>
   <div class="err-text" id="reviewErr" role="alert"></div>
-  <div class="modal-actions"><button class="btn-primary" id="reviewSend">Post review</button><button class="btn-secondary" onclick="closeModal('reviewBg')">Cancel</button></div></div></div>
+  <div class="modal-actions"><button class="btn-primary" id="reviewSend">Post review</button><button class="btn-secondary" data-close-modal="reviewBg">Cancel</button></div></div></div>
 <style>
 .pd-dialog{position:relative;width:min(980px,100%);max-height:92vh;overflow:auto;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overscroll-behavior:contain}
 .pd-close{position:absolute;top:12px;right:12px;z-index:5;width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:22px;line-height:1;cursor:pointer}
@@ -399,23 +469,27 @@ a.nav-item{text-decoration:none}
 </style>
 
 <script>window.ACCOUNT_CFG = { roleLabel: 'Customer', idLabel: 'Customer ID', idPrefix: 'CUS', deptLabel: 'Account Type', customer: true };</script>
-<script src="password-change.js?v=1"></script>
+<script src="password-change.js?v=2"></script>
 <script src="account-menu.js?v=3"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="shop-address.js"></script>
 <script src="notification-center.js?v=8"></script>
-<script src="quote-fields.js?v=10"></script>
+<script src="form-assist.js?v=3"></script>
+<script src="quote-fields.js?v=14"></script>
 
 <script>
 /* ===== Role check: customers belong here; staff are sent to their own page ===== */
 const HOME = { finance: 'Finance_Inventory.html', cashier: 'POS_Cashier.html', customer: 'Shop_Customer.html' };
-let USER = { name: 'Demo Customer', role: 'customer' };          // used when the API is not reachable (preview mode)
+let USER = { name: 'Customer', role: 'customer' };
 async function guard() {
+  // Fail closed: anything other than "signed in as a customer" goes to the login page, and the shop stays hidden until then.
   try {
     const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
-    if (r.status === 401) { location.href = 'Login_Inventory.html'; return false; }
-    if (r.ok) { USER = await r.json(); if (USER.role !== 'customer') { location.href = HOME[USER.role] || 'Login_Inventory.html'; return false; } }
-  } catch (e) { /* preview mode */ }
+    if (!r.ok) { location.replace('Login_Inventory.html'); return false; }
+    USER = await r.json();
+    if (USER.role !== 'customer') { location.replace(HOME[USER.role] || 'Login_Inventory.html'); return false; }
+  } catch (e) { location.replace('Login_Inventory.html'); return false; }
+  document.documentElement.classList.remove('gate');
   return true;
 }
 
@@ -466,9 +540,15 @@ async function requestCancel(id, reason, details) { return api('/api/shop/orders
 
 /* ===== App ===== */
 let DELIVERY_FEE = 150, FEE_FROM = null;                 // DELIVERY_FEE: fallback rate; FEE_FROM: the lowest rate (for the "from ₱…" labels)
+let shipEta = '', shipFeeNote = '';   // estimated arrival and how the fee was made up (from the server)
 let shipFee = null, shipRate = '', shipBlock = '', shipNoCover = false, feeSeq = 0;   // shipBlock: why delivery to the chosen address is not possible (not covered / could not calculate)            // fee for the chosen delivery address (null until a region is chosen)
 const ONLINE = ['Xendit'];
-const payLabel = (m) => (m === 'Xendit' ? 'Online payment' : m);   // Xendit is only the gateway behind it; the stored value stays 'Xendit'
+const payLabel = (m) => {
+  if (m === 'Xendit') return 'Full Online Payment (GCash / Card)';
+  if (m === 'Cash on Delivery') return 'Cash on Delivery (50% Down Payment online, balance to rider)';
+  if (m === 'Cash on Pickup') return 'Cash on Pickup (50% Down Payment online, balance at counter)';
+  return m;
+};   // Xendit is only the gateway behind it; the stored value stays 'Xendit'
 const $ = id => document.getElementById(id);
 const IC_CHECK = '<svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-.15em"><path d="M20 6 9 17l-5-5"/></svg>';
 const IC_STAR = '<svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true" style="vertical-align:-.15em"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z"/></svg>';
@@ -518,7 +598,20 @@ const catIcon = c => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${
 const EMPTY_CART_ICO = '<svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>';
 
 function toast(msg, err) { const t = $('toast'); t.textContent = msg; t.className = (err ? 'err ' : '') + 'show'; clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 3000); }
-function closeModal(id) { $(id).classList.remove('show'); }
+function closeModal(id) { $(id).classList.remove('show'); if (window.FormAssist) FormAssist.validation.reset($(id)); }
+/* CSP: no inline onclick/onerror attributes — elements carry data-* flags and these delegated listeners act on them */
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('[data-close-modal],[data-goto-profile],[data-noop-link]');
+  if (!t) return;
+  if (t.hasAttribute('data-close-modal')) closeModal(t.dataset.closeModal);
+  else if (t.hasAttribute('data-goto-profile')) { e.preventDefault(); const b = $('myProfileBtn'); if (b) b.click(); }
+  else e.preventDefault();
+});
+document.addEventListener('error', e => {
+  const t = e.target;
+  if (!t || !t.matches || !t.matches('img[data-err-hide]')) return;
+  if (t.dataset.errHide === 'visibility') t.style.visibility = 'hidden'; else t.hidden = true;
+}, true);
 
 /* ----- theme (same behaviour + storage key as the inventory app) ----- */
 function applyTheme(t) {
@@ -605,11 +698,19 @@ function stockChip(p) {
 /* ----- unit clarity, minimum order, ratings, stock messages ----- */
 const minQty = p => { if (!p) return 1; const m = Number(p.minOrder) || 1; return p.available > 0 ? Math.min(m, p.available) : m; };   // never more than what is in stock
 const soldPer = p => (minQty(p) > 1 ? 'Min. <b>' + minQty(p) + ' ' + esc(p.unit) + '</b>' : 'Sold per ' + esc(p.unit)) + (p.available > 0 ? ' · <b>' + p.available + '</b> in stock' : '');
+const metaChips = p => {
+  const m = minQty(p), low = p.available > 0 && p.available <= p.low;
+  return '<span class="mchip">' + (m > 1 ? 'Min. <b>' + m + ' ' + esc(p.unit) + '</b>' : 'Sold per <b>' + esc(p.unit) + '</b>') + '</span>'
+    + (p.available > 0 ? '<span class="mchip' + (low ? ' warn' : '') + '"><b>' + p.available + '</b> in stock</span>' : '');
+};
 function starsHtml(avg) { return '<span class="stars" style="--p:' + Math.max(0, Math.min(100, (avg || 0) / 5 * 100)) + '%" aria-hidden="true"></span>'; }
 function ratingLine(avg, n, link) {
-  if (!n) return '';
+  if (!n) {
+    const none = starsHtml(0) + ' <span class="dim">No reviews yet</span>';
+    return '<div class="rating none">' + (link ? '<a href="#" data-pdtab-go="reviews" data-noop-link>' + none + '</a>' : none) + '</div>';
+  }
   const inner = starsHtml(avg) + ' <span class="rate-num">' + Number(avg).toFixed(1) + '</span> <span class="dim">(' + n + ' review' + (n === 1 ? '' : 's') + ')</span>';
-  return '<div class="rating" role="img" aria-label="' + Number(avg).toFixed(1) + ' out of 5 stars, ' + n + ' reviews">' + (link ? '<a href="#" data-pdtab-go="reviews" onclick="return false">' + inner + '</a>' : inner) + '</div>';
+  return '<div class="rating" role="img" aria-label="' + Number(avg).toFixed(1) + ' out of 5 stars, ' + n + ' reviews">' + (link ? '<a href="#" data-pdtab-go="reviews" data-noop-link>' + inner + '</a>' : inner) + '</div>';
 }
 function stockMsg(p) {
   if (p.available <= 0) return `<div class="pd-stockmsg bad"><span>Out of stock.${p.notifyMe ? " We'll email you as soon as it is back." : ' Want to know when it is back?'}</span>${p.notifyMe ? `<button type="button" class="btn-secondary btn-sm" data-unnotify="${esc(p.sku)}">Cancel alert</button>` : `<button type="button" class="btn-primary btn-sm" data-notify="${esc(p.sku)}">Notify me</button>`}</div>`;
@@ -631,14 +732,16 @@ function renderCatalog() {
   const rows = filtered();
   $('resultLine').textContent = `${rows.length} of ${PRODUCTS.length} products`;
   $('grid').innerHTML = rows.map(p => { const out = p.available <= 0, n = inCart(p.sku); return `<article class="card prod">
-    <div class="prod-art" data-details="${esc(p.sku)}" style="cursor:pointer" title="View details">${p.image ? `<img class="shop-product-image" src="${esc(p.image)}" alt="${esc(p.name)}" loading="lazy" onerror="this.hidden=true" />` : catIcon(p.category)}${stockChip(p)}</div>
+    <div class="prod-art" data-details="${esc(p.sku)}" style="cursor:pointer" title="View details">${p.image ? `<img class="shop-product-image" src="${esc(p.image)}" alt="${esc(p.name)}" loading="lazy" data-err-hide="hidden" />` : catIcon(p.category)}${stockChip(p)}</div>
     <div class="prod-body">
-      <div class="sku">${esc(p.sku)}</div><div class="name"><a href="#" data-details="${esc(p.sku)}" style="color:inherit;text-decoration:none" onclick="return false">${esc(p.name)}</a></div><div class="spec">${esc(p.spec || p.category)}</div>
+      <div class="prod-head"><div class="sku">${esc(p.sku)}</div><div class="name"><a href="#" data-details="${esc(p.sku)}" style="color:inherit;text-decoration:none" data-noop-link>${esc(p.name)}</a></div><div class="spec">${esc(p.spec || p.category)}</div></div>
+      <div class="prod-foot">
       <div class="price-row"><span class="price">${peso(p.price)}</span><span class="per">/ ${esc(p.unit)}</span></div>
-      <div class="unit-line">${soldPer(p)}</div>
+      <div class="prod-meta">${metaChips(p)}</div>
       ${ratingLine(p.rating, p.reviewCount, false)}
       <div class="buy"><button class="btn-secondary" type="button" data-details="${esc(p.sku)}">View details</button>${out ? (p.notifyMe ? `<button class="btn-secondary" type="button" data-unnotify="${esc(p.sku)}" title="Cancel the back-in-stock email">Alert on <svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-.15em"><path d="M20 6 9 17l-5-5"/></svg></button>` : `<button class="btn-primary" type="button" data-notify="${esc(p.sku)}">Notify me</button>`) : `<button class="btn-primary" data-add="${esc(p.sku)}">Add to cart${minQty(p) > 1 ? ' · ' + minQty(p) : ''}</button>`}</div>
       <div class="in-cart-note">${n ? n + ' in your cart' : ''}</div>
+      </div>
     </div></article>`; }).join('')
     || '<div class="card empty-card" style="grid-column:1/-1"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><h3>No products match</h3><p>Try a different search or clear the filters.</p></div>';
 }
@@ -732,7 +835,7 @@ function cashHint() {
 function renderPayPlan() {
   const total = orderTotal(), t = chosenTerm(), box = $('payPlan');
   if (!(total > 0) || view !== 'checkout') { box.hidden = true; $('place').textContent = 'Place order'; return; }
-  const online = ONLINE.includes(pay), adv = !online ? cashAdvance() : null, advOn = adv && adv.amount > 0;
+  const online = ONLINE.includes(pay), adv = !online ? cashAdvance() : null, advOn = !!(adv && adv.amount > 0);
   if (adv && adv.kind === 'shipping_fee' && !adv.known) {        // cash on delivery before the address: the fee is not known yet
     box.hidden = false;
     $('ppNowLabel').textContent = 'Pay online now (' + adv.label + ')'; $('ppNow').textContent = adv.deposit ? peso(adv.deposit) + ' + delivery fee' : 'after you choose the address';
@@ -752,7 +855,15 @@ function renderPayPlan() {
     ? (adv.kind === 'shipping_fee' ? 'Your order is confirmed once the ' + adv.label + (adv.deposit ? ' are' : ' is') + ' paid' + (adv.deposit ? '; the down payment is taken off your total' : '') + '. Prepare ' + peso(bal) + ' in cash for the rider.'
       : 'Your order is confirmed once the down payment is paid; it is taken off your total. Pick it up within ' + ((CASH && CASH.copHoldHours) || 48) + ' hours of our "ready for pickup" message and pay ' + peso(bal) + ' in cash, or the order is cancelled and the down payment is not refunded.')
     : 'The ' + peso(bal) + ' balance is ' + ((t && t.balanceCondition) || 'due before your order is released') + '.';
-  $('place').textContent = (online || advOn) && bal > 0 ? 'Place order \u00B7 pay ' + peso(due) + ' now' : 'Place order';
+  if (advOn) {
+    $('place').textContent = 'Pay Down Payment & Confirm (' + peso(adv.amount) + ')';
+  } else if (online && bal > 0) {
+    $('place').textContent = 'Place order \u00B7 pay ' + peso(due) + ' now';
+  } else if (online) {
+    $('place').textContent = 'Pay Online (' + peso(total) + ')';
+  } else {
+    $('place').textContent = 'Place order';
+  }
 }
 /* Delivery line of the order summary: the amount, plus a note saying which rate applies and whether it changed when the address changed. */
 let feeShown = null, feeShownRate = '';      // last fee the customer saw for an address (to tell them when it changes)
@@ -770,6 +881,8 @@ function renderFeeRow() {
   else {
     s2.textContent = shipFee ? peso(shipFee) : 'Free';
     text = (area ? 'Delivery to ' + esc(area) : 'Delivery rate') + (shipRate && shipRate !== area ? ' · ' + esc(shipRate) + ' rate' : '') + '.';
+    if (shipFeeNote) text += ' ' + esc(shipFeeNote) + '.';
+    if (shipEta) text += ' <b>Estimated arrival: ' + esc(shipEta) + '</b>.';
     if (feeShown != null && shipFee !== feeShown) {      // the address changed and so did the price
       text += ' <b>Fee updated: ' + (feeShown ? peso(feeShown) : 'Free') + ' → ' + (shipFee ? peso(shipFee) : 'Free') + '</b>';
       cls = 'changed'; s2.classList.add('fee-flash'); $('s3').classList.remove('fee-flash'); void $('s3').offsetWidth; $('s3').classList.add('fee-flash');
@@ -790,10 +903,10 @@ async function refreshFee() {
   const place = ShopAddress.place(), seq = ++feeSeq;
   if (!place.region && !place.province) { if (shipFee != null || shipBlock) { shipFee = null; shipRate = ''; shipBlock = ''; shipNoCover = false; renderTotals(); } return; }
   try {
-    const q = await api('/api/shop/delivery-fee?region=' + encodeURIComponent(place.region) + '&province=' + encodeURIComponent(place.province));
+    const q = await api('/api/shop/delivery-fee?region=' + encodeURIComponent(place.region) + '&province=' + encodeURIComponent(place.province) + '&items=' + encodeURIComponent(cart.map(l => l.sku + ':' + l.qty).join(',')));   // the cart's weight is part of the fee
     if (seq !== feeSeq) return;                                   // a newer choice is already on its way
     if (q.available === false) { shipFee = null; shipRate = ''; shipNoCover = true; shipBlock = 'Sorry, we do not deliver to ' + (place.province || place.region) + ' yet.'; }
-    else { shipFee = q.fee; shipRate = q.rate || ''; shipBlock = ''; shipNoCover = false; }
+    else { shipFee = q.fee; shipRate = q.rate || ''; shipBlock = ''; shipNoCover = false; shipEta = q.eta ? q.eta.text : ''; shipFeeNote = q.weightCharge > 0 ? 'Includes a weight charge of ' + peso(q.weightCharge) + ' (' + q.weightKg + ' kg in total)' : (q.free ? q.feeNote || '' : ''); }
   } catch (e) { if (seq !== feeSeq) return; shipFee = null; shipRate = ''; shipNoCover = false; shipBlock = 'Could not work out the delivery fee. Check your connection and choose the address again.'; }   // never guess a fee: the order stays blocked until the server answers
   renderTotals();
 }
@@ -831,7 +944,7 @@ function renderHelpLines() {
     el.innerHTML = 'Questions? ' + (bits.length ? bits.join(' · ') + ' · ' : '') + '<a href="Shop_Info.html#contact">Help &amp; contact</a>';
   });
 }
-/* ----- online payment window: shows the QR inside checkout, confirms by itself, then shows the receipt ----- */
+/* ----- online payment window: shows the QR inside checkout, confirms by itself, then shows the invoice ----- */
 let payPoll = null, payOrderId = null, payInvoice = null, payBase = 0;
 const stopPayPoll = () => { clearInterval(payPoll); payPoll = null; };
 async function checkPay() {
@@ -855,7 +968,7 @@ async function showPaid(led) {
   if (led) { o.paymentState = led.paymentState || o.paymentState; o.paidAmount = led.paidAmount; o.outstanding = led.outstanding; o.dueNow = led.dueNow; }
   receiptShown.add(id); markAnnounced(rcptKey(id, led && led.paidAmount != null ? led.paidAmount : (orders.find(x => x.id === id) || {}).paidAmount)); try { sessionStorage.removeItem('payInv:' + id); } catch (e) {}
   closePay(); renderOrders(); syncCounts();
-  openReceipt(id, true);                       // payment confirmed: show the receipt straight away
+  openReceipt(id, true);                       // payment confirmed: show the invoice straight away
 }
 const rcptKey = (id, amt) => 'rcptDone:' + id + ':' + (Number(amt) || 0).toFixed(2);
 const wasAnnounced = k => { try { return localStorage.getItem(k) === '1'; } catch (e) { return false; } };
@@ -880,7 +993,7 @@ function openPayModal(order, url, payment) {
 }
 $('payClose').onclick = () => { const was = payOrderId; closePay(); if (was) { show('orders'); } };
 document.addEventListener('visibilitychange', () => { if (!document.hidden && payOrderId) checkPay(); });
-/* ----- receipt (shown automatically after a successful online payment, and from My Orders) ----- */
+/* ----- invoice (shown automatically after a successful online payment, and from My Orders) ----- */
 const receiptShown = new Set();
 const RCPT_CSS = `
 .rcpt-ok{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;background:rgba(46,160,102,.12);border:1px solid rgba(46,160,102,.45);margin-bottom:14px;text-align:left}
@@ -946,7 +1059,7 @@ function receiptHtml(o) {
     <div class="rcpt-head">
       <div class="rcpt-brand">Triple E Metal Products</div>
       ${contact ? `<div class="rcpt-contact">${contact}</div>` : ''}
-      <div class="rcpt-titlerow"><span class="rcpt-title">Order receipt</span><span class="rcpt-pill${paid ? '' : ' wait'}">${PAY_PILL[o.paymentState] || (paid ? 'PAID' : 'UNPAID')}</span></div>
+      <div class="rcpt-titlerow"><span class="rcpt-title">Order invoice</span><span class="rcpt-pill${paid ? '' : ' wait'}">${PAY_PILL[o.paymentState] || (paid ? 'PAID' : 'UNPAID')}</span></div>
     </div>
     <div class="rcpt-meta">
       <div><small>Order no.</small><span class="mono">${esc(o.id)}</span></div>
@@ -965,7 +1078,7 @@ function receiptHtml(o) {
       ${o.paymentState && Number(o.outstanding) > 0 ? `<div><span>Balance still to pay</span><span>${peso(o.outstanding)}</span></div>` : ''}
       ${balBarHtml(o)}
     </div>
-    <div class="rcpt-foot"><b>Thank you for shopping with us!</b>Keep this receipt for your records.</div>
+    <div class="rcpt-foot"><b>Thank you for shopping with us!</b>Keep this invoice for your records.</div>
   </div>`;
 }
 function openReceipt(id, justPaid) {
@@ -982,8 +1095,8 @@ function openReceipt(id, justPaid) {
 }
 function printReceipt(id) {
   const o = orders.find(x => x.id === id); if (!o) return;
-  const w = window.open('', '_blank'); if (!w) return toast('Allow pop-ups to print your receipt.', true);
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipt ${esc(o.id)}</title>
+  const w = window.open('', '_blank'); if (!w) return toast('Allow pop-ups to print your invoice.', true);
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${esc(o.id)}</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&family=Oswald:wght@500;600&display=swap">
     <style>body{margin:0;padding:24px 14px;background:#eef1f5}.sheet{max-width:580px;margin:0 auto}
     .rcpt,.rcpt *{-webkit-print-color-adjust:exact;print-color-adjust:exact}${RCPT_CSS}
@@ -991,6 +1104,92 @@ function printReceipt(id) {
     @media print{html{color-scheme:light}body{background:#fff;padding:0}.rcpt{box-shadow:none!important;border:1px solid #cfd7e0;break-inside:avoid}}</style></head>
     <body><div class="sheet">${receiptHtml(o)}</div></body></html>`);
   w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 600);
+}
+
+function quoteInvoiceHtml(q) {
+  const i = INFO || {};
+  const when = new Date(q.createdAt).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' });
+  const contact = [i.address, i.phone, i.email].filter(Boolean).map(esc).join(' · ');
+  const where = q.fulfillment === 'Delivery' ? (q.area || q.address || 'Delivery') : 'Pickup' + (i.address ? ' at ' + i.address : '');
+  const ready = q.estimatedReady ? new Date(q.estimatedReady + 'T00:00:00').toLocaleDateString('en-PH', { dateStyle: 'medium' }) : (q.leadTime || 'Upon confirmation');
+  const valid = q.validUntil ? new Date(q.validUntil + 'T00:00:00').toLocaleDateString('en-PH', { dateStyle: 'medium' }) : 'Valid for 7 days';
+  const sp = q.specs || {};
+  const specsList = [
+    sp.material ? 'Material: ' + esc(sp.material) : '',
+    sp.size ? 'Dimensions: ' + esc(sp.size) : '',
+    sp.thickness ? 'Thickness: ' + esc(sp.thickness) : '',
+    sp.finish ? 'Finish: ' + esc(sp.finish) : '',
+    sp.service ? 'Secondary work: ' + esc(sp.service) : ''
+  ].filter(Boolean).join(' · ');
+  const amount = Number(q.quotedAmount) || 0;
+  const paid = Number(q.paidAmount) || 0;
+  const balance = q.balance != null ? Number(q.balance) : Math.max(0, amount - paid);
+  const termName = q.terms ? (q.terms.label || q.terms.key) : 'Full Payment';
+  const st = q.expired ? 'EXPIRED' : (q.statusLabel || q.status).toUpperCase();
+
+  return `<div class="rcpt">
+    <div class="rcpt-head">
+      <div class="rcpt-brand">Triple E Metal Products</div>
+      ${contact ? `<div class="rcpt-contact">${contact}</div>` : ''}
+      <div class="rcpt-titlerow"><span class="rcpt-title">Quotation Pro-Forma Invoice</span><span class="rcpt-pill">${st}</span></div>
+    </div>
+    <div class="rcpt-meta">
+      <div><small>Quotation no.</small><span class="mono">${esc(q.id)}</span></div>
+      <div><small>Date quoted</small><span>${esc(when)}</span></div>
+      <div><small>Customer</small><span>${esc(q.customer || (window.USER && USER.name) || '')}</span></div>
+      <div><small>Contact</small><span>${esc(q.phone || (window.USER && USER.phone) || '')}</span></div>
+      <div><small>Fulfillment</small><span>${esc(where)}</span></div>
+      <div><small>Estimated ready date</small><span><b>${esc(ready)}</b>${q.neededBy ? ' <span class="dim">(Needed by: ' + esc(qDay(q.neededBy)) + ')</span>' : ''}</span></div>
+      <div><small>Price valid until</small><span>${esc(valid)}</span></div>
+      <div><small>Payment terms</small><span>${esc(termName)}</span></div>
+    </div>
+    <div class="rcpt-items">
+      <table>
+        <thead><tr><th>Item / Specification</th><th class="r">Quantity</th><th class="r">Total</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>
+              <b>${esc(q.product || 'Custom item')}</b>
+              ${specsList ? `<div style="font-size:12px;color:var(--text-dim,#5d6b7a);margin-top:4px">${specsList}</div>` : ''}
+            </td>
+            <td class="r mono">${esc(q.quantity || '1')}</td>
+            <td class="r mono"><b>${peso(amount)}</b></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="rcpt-tot">
+      <div><span>Total quoted price</span><span>${peso(amount)}</span></div>
+      ${paid > 0 ? `<div><span>Amount paid so far</span><span>${peso(paid)}</span></div>` : ''}
+      <div class="grand"><span>${balance <= 0 && paid > 0 ? 'Total settled' : 'Outstanding balance'}</span><span>${peso(balance)}</span></div>
+      ${q.terms && q.terms.condition ? `<div style="font-size:12px;color:var(--text-dim,#5d6b7a);margin-top:4px">Terms: ${esc(q.terms.condition)}</div>` : ''}
+    </div>
+    <div class="rcpt-foot"><b>Official Quotation Pro-Forma Invoice</b>Keep this invoice for your reference. Prices and availability are guaranteed within the validity period.</div>
+  </div>`;
+}
+function openQuoteInvoice(id) {
+  const q = (window.QUOTES || []).find(x => String(x.id) === String(id));
+  if (!q) return toast('Quote not found.', true);
+  $('rcptBody').innerHTML = quoteInvoiceHtml(q);
+  $('rcptPrint').onclick = () => printQuoteInvoice(q.id);
+  $('rcptOrders').textContent = 'Back to Quotes';
+  $('rcptOrders').onclick = () => { closeModal('receiptBg'); show('quotes'); };
+  $('receiptBg').classList.add('show');
+}
+function printQuoteInvoice(id) {
+  const q = (window.QUOTES || []).find(x => String(x.id) === String(id));
+  if (!q) return toast('Quote not found.', true);
+  const w = window.open('', '_blank');
+  if (!w) return toast('Allow pop-ups to print your quotation invoice.', true);
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Quotation Invoice ${esc(q.id)}</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&family=Oswald:wght@500;600&display=swap">
+    <style>body{margin:0;padding:24px 14px;background:#eef1f5}.sheet{max-width:580px;margin:0 auto}
+    .rcpt,.rcpt *{-webkit-print-color-adjust:exact;print-color-adjust:exact}${RCPT_CSS}
+    @page{size:A4;margin:14mm}
+    @media print{html{color-scheme:light}body{background:#fff;padding:0}.rcpt{box-shadow:none!important;border:1px solid #cfd7e0;break-inside:avoid}}</style></head>
+    <body><div class="sheet">${quoteInvoiceHtml(q)}</div></body></html>`);
+  w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 600);
 }
 
 /* ----- orders ----- */
@@ -1054,29 +1253,108 @@ function payRowHtml(o) {
   return `<div class="row"><span class="dim">Payment</span><span class="mono">${esc(st)}${bal > 0 ? ' \u00B7 ' + peso(bal) + ' to pay' : ''}</span></div>`
     + (o.paymentState === 'partially_paid' ? balBarHtml(o) : '') + (o.terms && o.terms.key !== 'full' ? `<div class="fee-note">${o.terms.percent}% initial payment agreed${o.terms.condition ? ' \u00B7 balance ' + esc(o.terms.condition) : ''}.</div>` : '');
 }
-function renderOrders() {
-  $('navOrderCount').textContent = orders.length;
-  $('orderList').innerHTML = orders.length ? orders.map(o => { const flow = FLOW[o.fulfillment], i = flow.indexOf(o.status), done = ['Delivered', 'Picked Up'].includes(o.status);
-    return `<div class="card order">
-    <div class="order-head"><span class="id">${o.id}</span><span class="chip-pill ${o.status === 'Cancelled' ? 'bad' : done ? 'ok' : o.status === 'Pending Confirmation' ? 'warn' : ''}">${o.status}</span></div>
+const ORD = { q: '', f: 'all', sort: 'new', shown: 10, open: new Set(), seen: new Set() };
+const ORD_DONE = ['Delivered', 'Picked Up'], ORD_END = ['Cancelled', 'Returned'];
+const ordNeedsPay = o => !ORD_END.includes(o.status) && !ORD_DONE.includes(o.status) && ((o.advance && !o.advance.paid) || (o.method === 'Xendit' && Number(o.outstanding || 0) > 0.005));
+const ordGroup = o => ORD_END.includes(o.status) ? 'cancelled' : ORD_DONE.includes(o.status) ? 'done' : (o.status === 'Pending Confirmation' || ordNeedsPay(o)) ? 'action' : 'progress';
+const ORD_FILTERS = [['all', 'All'], ['action', 'Needs action'], ['progress', 'In progress'], ['done', 'Completed'], ['cancelled', 'Cancelled']];
+const CHEV = '<svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const QI = { pay: '<path d="M2 5h20v14H2zM2 10h20"/>', ok: '<path d="m5 12 5 5 9-10"/>', refund: '<path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/>' };
+const qIco = k => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${QI[k]}</svg>`;
+// the buttons a customer needs most, shown on the collapsed card so nobody has to open it first (same data-* hooks as the full card)
+function quickActions(o) {
+  const b = [], done = ['Delivered', 'Picked Up'].includes(o.status);
+  if (ordNeedsPay(o)) {
+    const due = Number(o.dueNow) > 0 ? o.dueNow : o.outstanding;
+    if ((o.advance && !o.advance.paid) || (o.method === 'Xendit' && Number(o.outstanding || 0) > 0.005))
+      b.push(`<button type="button" class="btn-primary btn-sm" data-xendit="${esc(o.id)}">${qIco('pay')}Pay ${peso(due)} now</button>`);
+  }
+  if (o.fulfillment === 'Delivery' && o.status === 'Delivered' && !(o.delivery && o.delivery.customerReceivedAt))
+    b.push(`<button type="button" class="btn-primary btn-sm qa-ok" data-received="${esc(o.id)}">${qIco('ok')}I received my order</button>`);
+  if (done && !o.refund && o.refundEligible)
+    b.push(`<button type="button" class="btn-secondary btn-sm" data-refund="${esc(o.id)}">${qIco('refund')}Request refund</button>`);
+  if (done) {
+    const todo = o.items.filter(it => !MY_REVIEWS.has(it.sku));
+    if (todo.length && todo.length <= 2) todo.forEach(it => b.push(`<button type="button" class="btn-secondary btn-sm qa-rate" data-review="${esc(it.sku)}" title="Rate ${esc(it.name)}">${IC_STAR} Rate ${todo.length > 1 ? esc(it.name.length > 22 ? it.name.slice(0, 21) + '…' : it.name) : 'this'}</button>`));
+    else if (todo.length) b.push(`<button type="button" class="btn-secondary btn-sm qa-rate" data-ord-toggle="${esc(o.id)}">${IC_STAR} Rate ${todo.length} items</button>`);
+  }
+  if (!b.length) return '';
+  const hint = o.fulfillment === 'Delivery' && o.status === 'Delivered' && !(o.delivery && o.delivery.customerReceivedAt) ? '<span class="qa-hint">Tap once everything has arrived.</span>'
+    : done && o.refundEligible && !o.refund ? `<span class="qa-hint">Refund possible until ${fmtDay(o.refundDeadline)}.</span>` : '';
+  return `<div class="ord-quick">${b.join('')}${hint}</div>`;
+}
+function orderCardHtml(o, open) {
+  const flow = FLOW[o.fulfillment], i = flow.indexOf(o.status), done = ['Delivered', 'Picked Up'].includes(o.status);
+  const grp = ordGroup(o), first = o.items[0] || { qty: 0, name: '' };
+  const title = o.items.length > 1 ? esc(first.name) + ' <span class="more">+' + (o.items.length - 1) + ' more</span>' : first.qty + ' × ' + esc(first.name);
+  const due = ordNeedsPay(o) ? (Number(o.dueNow) > 0 ? o.dueNow : o.outstanding) : 0;
+  const flag = due > 0 ? 'Pay ' + peso(due) : '';
+  const pct = i >= 0 ? Math.round(((done ? flow.length : i + 1) / flow.length) * 100) : 0;
+  return `<div class="card order ord g-${grp}${open ? ' open' : ''}" data-ord="${esc(o.id)}">
+    <button type="button" class="ord-sum" data-ord-toggle="${esc(o.id)}" aria-expanded="${open ? 'true' : 'false'}">
+      <span class="ord-top"><span class="id">${o.id}</span><span class="chip-pill ${o.status === 'Cancelled' ? 'bad' : done ? 'ok' : o.status === 'Pending Confirmation' ? 'warn' : ''}">${o.status}</span>${flag ? `<span class="ord-flag">${flag}</span>` : ''}</span>
+      <span class="ord-title">${title}</span>
+      <span class="ord-sub">${new Date(o.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })} · ${o.fulfillment}</span>
+      <span class="ord-total mono">${peso(o.total)}</span>${CHEV}
+      ${i >= 0 && grp !== 'cancelled' ? `<span class="ord-prog" aria-hidden="true"><i style="width:${pct}%"></i></span>` : ''}
+    </button>
+    ${quickActions(o)}
+    <div class="ord-body">
     <div class="order-meta">${new Date(o.createdAt).toLocaleString('en-PH')} · ${o.fulfillment} · ${esc(payLabel(o.method))}</div>
     ${o.items.map(it => `<div class="row"><span>${it.qty} × ${esc(it.name)}${done ? reviewBtn(it) : ''}</span><span class="mono">${peso(it.qty * it.price)}</span></div>`).join('')}
     ${o.deliveryFee ? `<div class="row"><span class="dim">Delivery</span><span class="mono">${peso(o.deliveryFee)}</span></div>` : ''}
     <div class="row total"><span>Total</span><span class="mono">${peso(o.total)}</span></div>
     ${payRowHtml(o)}
-    ${!['Pending Confirmation', 'Cancelled'].includes(o.status) ? `<div style="margin-top:8px"><button class="btn-secondary btn-sm" data-receipt="${esc(o.id)}">View receipt</button></div>` : ''}
+    ${!['Pending Confirmation', 'Cancelled'].includes(o.status) ? `<div style="margin-top:8px"><button class="btn-secondary btn-sm" data-receipt="${esc(o.id)}">View invoice</button></div>` : ''}
     ${o.fulfillment === 'Delivery' && o.address ? `<div class="ship-to"><b>Deliver to</b>${o.shipTo ? esc(o.shipTo.recipient) + ' · ' + esc(o.phone) + '<br>' : ''}${esc(o.address)}</div>` : ''}
     ${deliveryBlock(o)}
     ${receivedBlock(o)}
-    ${o.advance && !['Cancelled', 'Returned'].includes(o.status) ? `<div class="dim" style="margin-top:8px">${o.advance.paid ? '✓ ' + peso(o.advance.amount) + ' ' + o.advance.label + ' paid online.' : peso(o.advance.amount) + ' ' + o.advance.label + ' to pay online to confirm this order.'} ${Number(o.outstanding || 0) > 0.005 ? peso(o.advance.paid ? o.outstanding : o.advance.cash) + ' in cash ' + (o.fulfillment === 'Delivery' ? 'to the rider.' : 'at our counter.') : ''}</div>` : ''}
+    ${o.advance && !['Cancelled', 'Returned'].includes(o.status) ? `<div class="dim" style="margin-top:8px">${o.advance.paid ? 'Confirmed: ' + peso(o.advance.amount) + ' ' + o.advance.label + ' paid online.' : peso(o.advance.amount) + ' ' + o.advance.label + ' to pay online to confirm this order.'} ${Number(o.outstanding || 0) > 0.005 ? peso(o.advance.paid ? o.outstanding : o.advance.cash) + ' in cash ' + (o.fulfillment === 'Delivery' ? 'to the rider.' : 'at our counter.') : ''}</div>` : ''}
     ${o.forfeited ? `<div class="dim" style="margin-top:8px;color:#b32929">The ${peso(o.forfeited)} ${o.fulfillment === 'Delivery' ? 'delivery fee and down payment' : 'down payment'} ${o.fulfillment === 'Delivery' ? 'were' : 'was'} not refunded because the order was not ${o.fulfillment === 'Delivery' ? 'received' : 'picked up'}.</div>` : ''}
     ${o.advance && !o.advance.paid && !['Cancelled', 'Returned', 'Delivered', 'Picked Up'].includes(o.status) ? `<button class="btn-primary btn-sm" style="margin-top:12px" data-xendit="${esc(o.id)}">Pay ${peso(o.dueNow)} ${o.advance.label} online</button>` : ''}
     ${o.method === 'Xendit' && Number(o.outstanding || 0) > 0.005 && !['Cancelled', 'Returned', 'Delivered', 'Picked Up'].includes(o.status) ? `<button class="btn-primary btn-sm" style="margin-top:12px" data-xendit="${esc(o.id)}">${Number(o.paidAmount || 0) > 0 ? 'Pay remaining ' + peso(o.outstanding) : Number(o.dueNow) > 0 ? 'Pay ' + peso(o.dueNow) + ' now' : 'Continue Online Payment'}</button>` : ''}
     ${i >= 0 ? `<div class="track">${flow.map((s, k) => `<div class="st ${k < i || done ? 'done' : k === i ? 'now' : ''}"><span class="pt"></span>${s}</div>`).join('')}</div>` : ''}
     ${cancelBlock(o)}
-    ${refundBlock(o)}</div>`; }).join('')
-    : `<div class="card empty-card"><svg class="ico" viewBox="0 0 24 24"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><h3>No orders yet</h3><p>Your orders and their delivery progress will show up here.</p><button class="btn-primary" data-view="catalog">Start shopping</button></div>`;
+    ${refundBlock(o)}
+    </div></div>`;
 }
+const ORD_EMPTY = `<div class="card empty-card"><svg class="ico" viewBox="0 0 24 24"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><h3>No orders yet</h3><p>Your orders and their delivery progress will show up here.</p><button class="btn-primary" data-view="catalog">Start shopping</button></div>`;
+function renderOrders() {
+  $('navOrderCount').textContent = orders.length;
+  const host = $('orderList'); if (!host) return;
+  const tools = $('orderTools'), stats = $('orderStats'), more = $('orderMore'), res = $('orderResult');
+  if (!orders.length) { host.innerHTML = ORD_EMPTY; tools.hidden = true; stats.hidden = true; more.hidden = true; res.textContent = ''; return; }
+  tools.hidden = false; stats.hidden = false;
+  const counts = { all: orders.length, action: 0, progress: 0, done: 0, cancelled: 0 };
+  orders.forEach(o => { counts[ordGroup(o)]++; });
+  $('orderChips').innerHTML = ORD_FILTERS.map(([k, l]) => `<button type="button" class="ord-chip${ORD.f === k ? ' on' : ''}" data-ofilter="${k}">${l} <span class="n">${counts[k]}</span></button>`).join('');
+  const spent = orders.filter(o => !ORD_END.includes(o.status)).reduce((t, o) => t + Number(o.total || 0), 0);
+  stats.innerHTML = [['all', 'Total orders', counts.all], ['action', 'Needs action', counts.action], ['progress', 'In progress', counts.progress], ['done', 'Completed', counts.done]]
+    .map(([k, l, n]) => `<button type="button" class="ord-stat${k === 'action' && n ? ' hot' : ''}${ORD.f === k ? ' on' : ''}" data-ofilter="${k}"><span class="v">${n}</span><span class="l">${l}</span></button>`).join('')
+    + `<div class="ord-stat static"><span class="v mono">${peso(spent)}</span><span class="l">Total ordered</span></div>`;
+  const q = ORD.q.trim().toLowerCase();
+  let rows = orders.filter(o => (ORD.f === 'all' || ordGroup(o) === ORD.f) && (!q || (o.id + ' ' + o.status + ' ' + o.fulfillment + ' ' + o.items.map(it => it.name).join(' ')).toLowerCase().includes(q)));
+  rows = rows.slice().sort((x, y) => ORD.sort === 'old' ? new Date(x.createdAt) - new Date(y.createdAt) : ORD.sort === 'high' ? Number(y.total) - Number(x.total) : new Date(y.createdAt) - new Date(x.createdAt));
+  orders.forEach(o => { if (!ORD.seen.has(o.id)) { ORD.seen.add(o.id); if (orders.length <= 3 && ordGroup(o) === 'action') ORD.open.add(o.id); } });
+  const page = rows.slice(0, ORD.shown);
+  host.innerHTML = page.length ? page.map(o => orderCardHtml(o, ORD.open.has(o.id))).join('')
+    : `<div class="card empty-card"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><h3>No matching orders</h3><p>Try a different word or filter.</p><button type="button" class="btn-secondary" data-ofilter="all" data-oclear="1">Clear filters</button></div>`;
+  res.textContent = rows.length ? 'Showing ' + page.length + ' of ' + rows.length + ' order' + (rows.length === 1 ? '' : 's') : '';
+  more.hidden = rows.length <= page.length;
+  more.textContent = 'Show ' + Math.min(10, rows.length - page.length) + ' more';
+}
+(function ordWire() {
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  on('orderSearch', 'input', e => { ORD.q = e.target.value; ORD.shown = 10; renderOrders(); });
+  on('orderSort', 'change', e => { ORD.sort = e.target.value; renderOrders(); });
+  on('orderMore', 'click', () => { ORD.shown += 10; renderOrders(); });
+  on('orderList', 'click', e => {
+    const t = e.target.closest('[data-ord-toggle]'); if (t) { const id = t.dataset.ordToggle; ORD.open.has(id) ? ORD.open.delete(id) : ORD.open.add(id); const c = t.closest('.ord'); c.classList.toggle('open', ORD.open.has(id)); t.setAttribute('aria-expanded', ORD.open.has(id)); return; }
+    const c = e.target.closest('[data-oclear]'); if (c) { ORD.q = ''; ORD.f = 'all'; $('orderSearch').value = ''; renderOrders(); }
+  });
+  ['orderChips', 'orderStats'].forEach(id => on(id, 'click', e => { const b = e.target.closest('[data-ofilter]'); if (!b) return; ORD.f = b.dataset.ofilter; ORD.shown = 10; renderOrders(); }));
+  on('orderExpand', 'click', () => { const ids = [...document.querySelectorAll('#orderList .ord')].map(c => c.dataset.ord); const all = ids.every(id => ORD.open.has(id)); ids.forEach(id => all ? ORD.open.delete(id) : ORD.open.add(id)); renderOrders(); $('orderExpand').textContent = all ? 'Expand all' : 'Collapse all'; });
+})();
 async function placeOrder() {
   const fail = m => { $('coErr').textContent = m; };
   if (!cart.length) return fail('Your cart is empty.');
@@ -1089,7 +1367,7 @@ async function placeOrder() {
     phone = ship.phone;
   } else {
     phone = $('phone').value.replace(/[\s().-]/g, '');
-    if (!/^(\+63|0)9\d{9}$/.test(phone)) return fail('Enter a valid mobile number, e.g. 0917 123 4567.');
+    if (checkoutPhoneProblem()) { FormAssist.validation.show($('phone'), checkoutPhoneProblem(), $('phoneError')); $('phone').focus(); return fail('Please correct the mobile number.'); }
   }
   fail('');
   const online = ONLINE.includes(pay);
@@ -1169,7 +1447,7 @@ async function openProductDetails(sku) {
   let cur = 0;
   area.innerHTML = `<div class="pd-grid">
     <div class="pd-gallery">
-      <div class="pd-stage" id="pdStage">${catIcon(p.category)}${photos.length ? `<img id="pdHero" src="${esc(photos[0].url)}" alt="${esc(photos[0].alt || d.name)}" onerror="this.style.visibility='hidden'">` : ''}
+      <div class="pd-stage" id="pdStage">${catIcon(p.category)}${photos.length ? `<img id="pdHero" src="${esc(photos[0].url)}" alt="${esc(photos[0].alt || d.name)}" data-err-hide="visibility">` : ''}
         ${photos.length > 1 ? `<button type="button" class="pd-nav prev" data-pd="-1" aria-label="Previous photo">&#8249;</button><button type="button" class="pd-nav next" data-pd="1" aria-label="Next photo">&#8250;</button><span class="pd-count" id="pdCount">1 / ${photos.length}</span>` : ''}
       </div>
       ${photos.length > 1 ? `<div class="pd-thumbs">${photos.map((im, i) => `<button type="button" class="pd-thumb ${i ? '' : 'on'}" data-pdthumb="${i}" aria-label="Show photo ${i + 1}"><img src="${esc(im.url)}" alt="" loading="lazy"></button>`).join('')}</div>` : ''}
@@ -1177,13 +1455,11 @@ async function openProductDetails(sku) {
     <div class="pd-info">
       <div class="pd-crumb">${esc(p.category || 'Product')} · ${esc(p.sku)}</div>
       <h2 id="shopDetailsTitle">${esc(d.name || p.name)}</h2>
-      <div>${stockChip(p)}</div>
       ${ratingLine(rv && rv.summary ? rv.summary.average : p.rating, rv && rv.summary ? rv.summary.count : p.reviewCount, true)}
-      <div class="pd-price"><b>${peso(p.price)}</b><span>per ${esc(p.unit)}</span></div>
-      <div class="pd-unit">${soldPer(p)}</div>
+      <div class="pd-pricebox"><div class="pd-price"><b>${peso(p.price)}</b><span>per ${esc(p.unit)}</span></div>${minQty(p) > 1 ? `<span class="pd-min">Min. order <b>${minQty(p)} ${esc(p.unit)}</b></span>` : ''}</div>
       <div id="pdStockMsg">${stockMsg(p)}</div>
-      ${p.spec ? `<div class="spec" style="color:var(--text-dim)">${esc(p.spec)}</div>` : ''}
-      ${desc.length > 140 ? `<div class="pd-short">${esc(desc)}</div>` : ''}
+      ${p.spec ? `<div class="pd-specline">${esc(p.spec)}</div>` : ''}
+      ${desc.length > 140 ? `<div class="pd-short">${esc(desc)}</div><button type="button" class="pd-more" data-pdtab-go="desc">Read full description</button>` : ''}
       <div class="pd-buy">
         <div class="pd-qty"><button type="button" id="pdMinus" aria-label="Decrease quantity">&minus;</button><input id="pdQty" type="number" inputmode="decimal" min="${step}" step="${step}" value="${need()}" aria-label="Quantity ${esc(p.unit)}" ${p.available <= 0 ? 'disabled' : ''}><button type="button" id="pdPlus" aria-label="Increase quantity">+</button></div>
         <button type="button" class="btn-primary" id="pdAdd" ${p.available <= 0 ? 'disabled' : ''}>${p.available <= 0 ? 'Out of stock' : 'Add to cart'}</button>
@@ -1195,7 +1471,7 @@ async function openProductDetails(sku) {
     <div class="pd-tabs">
       <div class="pd-tabbar" role="tablist"><button type="button" class="pd-tab on" role="tab" data-pdtab="desc">Description</button><button type="button" class="pd-tab" role="tab" data-pdtab="specs">Specifications${specs.length ? ' (' + specs.length + ')' : ''}</button><button type="button" class="pd-tab" role="tab" data-pdtab="reviews">Reviews${rv && rv.summary && rv.summary.count ? ' (' + rv.summary.count + ')' : ''}</button></div>
       <div class="pd-panel" id="pdPanelDesc" role="tabpanel">${desc ? `<div class="pd-desc">${esc(desc)}</div>` : '<div class="pd-empty">No description has been added for this product yet.</div>'}</div>
-      <div class="pd-panel" id="pdPanelSpecs" role="tabpanel" hidden>${specs.length ? `<dl class="pd-specs">${specs.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`).join('')}</dl>` : '<div class="pd-empty">No specifications listed yet.</div>'}</div>
+      <div class="pd-panel" id="pdPanelSpecs" role="tabpanel" hidden>${specs.length ? `<div class="pd-spec-count">${specs.length} specification${specs.length === 1 ? '' : 's'}</div><dl class="pd-specs">${specs.map(([k, v]) => `<div class="pd-spec"><dt>${esc(k)}</dt><dd>${esc(String(v))}</dd></div>`).join('')}</dl>` : '<div class="pd-empty">No specifications listed yet.</div>'}</div>
       <div class="pd-panel" id="pdPanelReviews" role="tabpanel" hidden>${reviewsPanel(p, rv)}</div>
     </div></div>`;
   const show = i => {
@@ -1211,11 +1487,15 @@ async function openProductDetails(sku) {
     $('pdPanelDesc').hidden = name !== 'desc'; $('pdPanelSpecs').hidden = name !== 'specs'; $('pdPanelReviews').hidden = name !== 'reviews';
   };
   area.querySelectorAll('[data-pdtab]').forEach(b => b.onclick = () => openTab(b.dataset.pdtab));
-  area.querySelectorAll('[data-pdtab-go]').forEach(b => b.onclick = () => { openTab(b.dataset.pdtabGo); $('pdPanelReviews').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
+  area.querySelectorAll('[data-pdtab-go]').forEach(b => b.onclick = () => { openTab(b.dataset.pdtabGo); area.querySelector('.pd-tabs').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
   const qty = $('pdQty'), clamp = () => { let v = Number(qty.value); if (!Number.isFinite(v) || v < need()) v = need(); const room = p.available - inCart(p.sku); if (room > 0 && v > room) v = room; qty.value = frac ? Math.round(v * 100) / 100 : Math.floor(v); };
+  const checkQty = FormAssist.validation.bind(qty, value => {
+    const n = Number(value), room = p.available - inCart(p.sku);
+    return !value || n < need() ? 'Enter at least ' + need() + ' ' + p.unit + '.' : n > room ? 'Only ' + Math.max(0, room) + ' ' + p.unit + ' available to add.' : !frac && !Number.isInteger(n) ? 'Use a whole number.' : Math.abs(n * 100 - Math.round(n * 100)) > 1e-6 ? 'Use at most 2 decimals.' : '';
+  });
   $('pdMinus').onclick = () => { qty.value = Number(qty.value) - step; clamp(); };
   $('pdPlus').onclick = () => { qty.value = Number(qty.value) + step; clamp(); };
-  qty.onchange = clamp;
+  qty.onchange = () => { clamp(); checkQty(true); };
   $('pdAdd').onclick = () => {
     clamp(); const n = Number(qty.value), l = cart.find(x => x.sku === p.sku);
     if ((l ? l.qty : 0) + n > p.available) return toast('Only ' + p.available + ' ' + p.unit + ' available.', true);
@@ -1231,7 +1511,7 @@ $('shopDetailsBg').addEventListener('click', e => {if(e.target === $('shopDetail
 let MY_REVIEWS = new Map();           // sku -> { rating, status } for the products this customer already reviewed
 async function loadMyReviews() { try { MY_REVIEWS = new Map((await api('/api/shop/my-reviews')).map(r => [r.sku, r])); } catch (e) { /* keep what we have */ } }
 function reviewBtn(it) {
-  return MY_REVIEWS.has(it.sku) ? ' <span class="rev-done">${IC_STAR} Reviewed</span>' : ` <button type="button" class="link-btn" data-review="${esc(it.sku)}">${IC_STAR} Rate this</button>`;
+  return MY_REVIEWS.has(it.sku) ? ` <span class="rev-done">${IC_STAR} Reviewed</span>` : ` <button type="button" class="link-btn" data-review="${esc(it.sku)}">${IC_STAR} Rate this</button>`;
 }
 function reviewsPanel(p, rv) {
   if (!rv) return '<div class="pd-empty">Reviews could not be loaded right now.</div>';
@@ -1294,7 +1574,7 @@ function termsSummary(q) {
     (t.amount != null ? ': pay ' + peso(t.amount) + ' now' : '') +
     (t.balance != null && Number(t.balance) > 0 ? ', balance ' + peso(t.balance) + (t.condition ? ' — ' + t.condition : '') : '');
 }
-let QOPTS = null, qMounted = false;
+let QOPTS = null, qMounted = false, PROFILE = null;   // PROFILE = /api/auth/profile (the live account, not the name baked into the sign-in token)
 const Q_PHONE_RE = /^(\+63|0)9\d{9}$/, Q_NAME_RE = /^[\p{L}][\p{L}\p{M}\s.,'’-]*$/u;
 const qFulfil = () => (document.querySelector('input[name="qFulfil"]:checked') || {}).value || '';
 const todayISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
@@ -1315,16 +1595,75 @@ const QCHECK = {                                    // one rule per field; each 
   street: () => { const v = $('qStreet').value.trim(); return qAddr === 'new' && v && v.length < 5 ? 'Enter the house no. and street, or leave it empty.' : ''; }
 };
 const qField = f => qErr(f, QCHECK[f]());
+/* Name and mobile number come from the signed-in account. They are only filled while the customer has not typed in the box,
+   and re-filled after My Profile is edited, so the quote never goes out with an old name or number. */
+function fillQuoteContact() {
+  const me = PROFILE || {}, n = $('qName'), p = $('qPhone');
+  if (!n || !p) return;
+  const name = String(me.name || [me.firstName, me.middleName, me.lastName].filter(Boolean).join(' ') || (window.USER && USER.name) || '').trim();
+  const phone = String(me.phone || (window.USER && USER.phone) || '').trim();
+  if (name) {
+    n.value = name;
+    n.readOnly = true;
+    n.style.background = '#f8fafc';
+    n.style.color = '#334155';
+    n.style.cursor = 'not-allowed';
+    let lk = $('qNameLocked');
+    if (!lk) {
+      lk = document.createElement('div');
+      lk.id = 'qNameLocked';
+      lk.className = 'q-hint';
+      lk.style.fontSize = '11.5px';
+      lk.style.color = '#475467';
+      lk.style.marginTop = '4px';
+      lk.innerHTML = 'Locked to your profile name. <a href="#" data-goto-profile style="color:#1e5aa8;text-decoration:underline">Edit in My Profile</a>';
+      n.parentElement.appendChild(lk);
+    }
+    qErr('contactName', '');
+  }
+  if (phone) {
+    p.value = phone;
+    p.readOnly = true;
+    p.style.background = '#f8fafc';
+    p.style.color = '#334155';
+    p.style.cursor = 'not-allowed';
+    let lk = $('qPhoneLocked');
+    if (!lk) {
+      lk = document.createElement('div');
+      lk.id = 'qPhoneLocked';
+      lk.className = 'q-hint';
+      lk.style.fontSize = '11.5px';
+      lk.style.color = '#475467';
+      lk.style.marginTop = '4px';
+      lk.innerHTML = 'Locked to your profile mobile number. <a href="#" data-goto-profile style="color:#1e5aa8;text-decoration:underline">Edit in My Profile</a>';
+      p.parentElement.appendChild(lk);
+    }
+    qErr('phone', '');
+  }
+}
+// while typing a mobile number: complain at once about what can never become a valid number, and wait with the length until it is complete
+function qPhoneLive() {
+  const v = $('qPhone').value.replace(/[\s().-]/g, ''); if (!v) return '';
+  if (!/^(\+|0)/.test(v)) return 'Start with 09 or +63, e.g. 0917 123 4567.';
+  if (v[0] === '0' && v.length > 1 && v[1] !== '9') return 'A mobile number starts with 09.';
+  if (v[0] === '+' && v.length > 1 && !'+63'.startsWith(v.slice(0, 3)) && !v.startsWith('+63')) return 'Use +63 9XX XXX XXXX or 09XX XXX XXXX.';
+  if (v.startsWith('+63') && v.length > 3 && v[3] !== '9') return 'After +63 a mobile number starts with 9.';
+  const max = v[0] === '+' ? 13 : 11;
+  if (v.length > max) return 'That is too long for a mobile number.';
+  if (v.length === max && !Q_PHONE_RE.test(v)) return 'Enter a valid mobile number, e.g. 0917 123 4567.';
+  return '';
+}
 /* Same delivery coverage as checkout and the POS (Finance > Delivery rates), checked as soon as the area / saved address is chosen,
    so a quote is never requested for a place we do not deliver to. The server repeats the check when the request is sent. */
 let qNoCover = '', qCoverSeq = 0;
 async function qCheckCover() {
-  const seq = ++qCoverSeq; qNoCover = '';
+  const seq = ++qCoverSeq; qNoCover = ''; qFeeNote('');
   if (qFulfil() !== 'Delivery') return;
   const a = qAddr === 'new' ? { region: $('qRegion').value, province: $('qProvince').value } : QADDRS.find(x => x.id === qAddr);
   if (!a || !a.region || !a.province) { if (qAddr === 'new') qField('province'); else $('qE_address').textContent = ''; return; }
   try { const q = await api('/api/shop/delivery-fee?region=' + encodeURIComponent(a.region) + '&province=' + encodeURIComponent(a.province)); if (seq !== qCoverSeq) return;
-    if (q && q.available === false) qNoCover = 'Sorry, we do not deliver to ' + a.province + ' yet. Choose another area, or pick it up at our shop.'; } catch (_) { /* the server checks again */ }
+    if (q && q.available === false) qNoCover = 'Sorry, we do not deliver to ' + a.province + ' yet. Choose another area, or pick it up at our shop.';
+    qFeeNote(q && q.available !== false ? 'Delivery fee to ' + esc(a.province) + ': <b>' + peso(q.fee) + '</b> \u00B7 the final fee is confirmed in your quotation.' : ''); } catch (_) { /* the server checks again */ }
   if (qAddr === 'new') qField('province'); else $('qE_address').textContent = qNoCover;
 }
 
@@ -1394,15 +1733,16 @@ function renderQuote() {
   const sel = $('qProduct'), keep = sel.value;
   sel.innerHTML = '<option value="">Other / custom item…</option>' + PRODUCTS.map(p => `<option value="${esc(p.sku)}">${esc(p.name)}${p.spec ? ' — ' + esc(p.spec) : ''} (${esc(p.sku)})</option>`).join('');
   if (keep && prod(keep)) sel.value = keep;
-  if (!$('qName').value) $('qName').value = USER.name || '';
-  if (!$('qPhone').value && $('phone') && $('phone').value) $('qPhone').value = $('phone').value;
+  fillQuoteContact();
   ensureQuoteFields(); quoteProductChanged(); renderQuoteReceive(); loadQuotes(); loadQuoteAddresses(); if (!QG.regions.length) qLoadRegions();
 }
 async function ensureQuoteFields() {            // the dropdown choices come from the server so they always match what it accepts
   if (qMounted) return true;
   try { QOPTS = await api('/api/shop/quote-options'); } catch (e) { $('qFields').innerHTML = '<p class="dim">Could not load the form. Please refresh the page.</p>'; return false; }
   if (qMounted) return true;
-  QuoteFields.mount($('qFields'), { prefix: 'q', options: QOPTS }); qMounted = true; quoteProductChanged(); return true;
+  QuoteFields.mount($('qFields'), { prefix: 'q', options: QOPTS, estimate: 'customer', productSku: () => ($('qProduct').value && $('qProduct').value !== 'other') ? $('qProduct').value : '' }); qMounted = true; quoteProductChanged();
+  qStartDraft();
+  return true;
 }
 function quoteProductChanged() {
   const p = prod($('qProduct').value);
@@ -1411,6 +1751,7 @@ function quoteProductChanged() {
   QuoteFields.autofill('q', p ? p.specs : null);
   if (p) QuoteFields.setUnit('q', p.unit);
   QuoteFields.setHint('q', p ? 'Priced per ' + p.unit + ' (now ' + peso(p.price) + '). Bulk quantities may get a better price.' : '');
+  QuoteFields.estimate('q');
 }
 async function loadQuoteAddresses() {
   try { QADDRS = await api('/api/shop/addresses'); if (!Array.isArray(QADDRS)) QADDRS = []; } catch (e) { QADDRS = []; }
@@ -1437,18 +1778,34 @@ async function loadQuotes() {
   try { QUOTES = await api('/api/shop/quotes'); } catch (e) { QUOTES = []; }
   if (!Array.isArray(QUOTES)) QUOTES = [];
   const ready = QUOTES.filter(q => q.status === 'quoted' && !q.expired).length; $('navQuoteCount').textContent = ready; $('navQuoteCount').hidden = !ready; $('navQuoteCount').title = ready + ' quote(s) ready for you to accept or decline';
-  $('quoteList').innerHTML = QUOTES.length ? QUOTES.map(q => { const key = q.expired ? 'expired' : q.status, st = [q.expired ? 'bad' : q.status === 'new' ? 'warn' : ['quoted', 'accepted', 'preparing', 'ready', 'completed'].includes(q.status) ? 'ok' : '', q.expired ? 'Quote expired' : (q.statusLabel || q.status)];
+  renderQuotes();
+}
+const QS = { q: '', f: 'all', shown: 5, open: new Set(), seen: new Set() };
+const qGroup = q => (q.expired || ['declined', 'closed', 'completed'].includes(q.status)) ? 'done' : (q.status === 'quoted' || (q.clarification && q.clarification.status === 'awaiting_customer') || (q.payOnline && q.payNow > 0)) ? 'action' : q.status === 'new' ? 'waiting' : 'progress';
+const QS_FILTERS = [['all', 'All'], ['action', 'Needs you'], ['waiting', 'Waiting'], ['progress', 'In progress'], ['done', 'Done']];
+const quoteRowHtml = (q, open) => { const key = q.expired ? 'expired' : q.status, st = [q.expired ? 'bad' : q.status === 'new' ? 'warn' : ['quoted', 'accepted', 'preparing', 'ready', 'completed'].includes(q.status) ? 'ok' : '', q.expired ? 'Quote expired' : (q.statusLabel || q.status)];
     const pickup = q.fulfillment !== 'Delivery';
     const next = { new: 'We will reply with a price soon.', accepted: 'You accepted this quote' + (q.payOnline ? (q.balance > 0 ? '. Please complete your online payment.' : '. Your online payment was received.') : q.payMethod ? ' and will pay ' + q.payMethod.replace(/^Pay /, '') + '.' : '.') + ' Our team will contact you to arrange ' + (pickup ? 'pickup' : 'delivery') + '.', preparing: 'We are preparing your order.' + (q.leadTime ? ' Estimated time: ' + q.leadTime + '.' : ''),
       ready: pickup ? 'Your order is ready. Please pick it up at our shop.' : 'Your order is on its way to you.', completed: pickup ? 'Picked up. Thank you for ordering!' : 'Delivered. Thank you for ordering!', declined: 'You declined this quote.', closed: 'This request is closed.' }[key] || '';
     const flow = ['accepted', 'preparing', 'ready', 'completed'].includes(q.status);
-    const pay = flow && q.quotedAmount != null ? `<div class="row"><span>Paid</span><span class="mono">${peso(q.paidAmount || 0)}</span></div>${q.payMethod ? `<div class="row"><span>Payment method</span><span>${q.payOnline ? 'Online (Xendit)' : esc(q.payMethod)}</span></div>` : ''}${q.payOnline && q.balance > 0 && ['accepted', 'preparing', 'ready'].includes(q.status) ? `<div class="q-actions"><button type="button" class="btn-primary btn-sm" data-qpaynow="${esc(q.id)}">Pay ${peso(q.balance)} now</button></div>` : ''}${q.balance > 0 ? `<div class="row"><span>Balance to pay ${pickup ? 'at pickup' : 'on delivery'}</span><span class="mono">${peso(q.balance)}</span></div>` : ''}` : '';
+    const pay = flow && q.quotedAmount != null ? `<div class="row"><span>Paid</span><span class="mono">${peso(q.paidAmount || 0)}</span></div>${q.payMethod ? `<div class="row"><span>Payment method</span><span>${q.payOnline ? 'Online (Xendit)' : esc(q.payMethod)}</span></div>` : ''}${q.payNow > 0 ? `<div class="q-actions"><button type="button" class="btn-primary btn-sm" data-qpaynow="${esc(q.id)}">Pay ${peso(q.payNow)} online now${q.payOnline ? '' : ' (optional)'}</button></div>${q.payOnline ? '' : `<div class="dim">You chose to pay ${pickup ? 'on pickup' : 'on delivery'}. You can also pay online now if you prefer.</div>`}` : ''}${q.balance > 0 ? `<div class="row"><span>Balance to pay ${pickup ? 'at pickup' : 'on delivery'}</span><span class="mono">${peso(q.balance)}</span></div>` : ''}` : '';
     const trail = flow && (q.progress || []).length ? `<div class="dim" style="margin-top:6px">${q.progress.map(e => '• ' + esc(e.label) + ' — ' + new Date(e.at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })).join('<br>')}</div>` : '';
     const clarification=q.clarification;
     const clarifyBox=clarification ? `<div class="quote-clarify" style="margin:12px 0;padding:14px;border:1px solid var(--amber,#d9a441);border-radius:10px;background:var(--card,#fff)"><strong>${clarification.status==='answered'?'Your clarification was submitted':'Additional product details needed'}</strong><p>${esc(clarification.message)}</p>${clarification.status==='awaiting_customer'?`${clarifyFormHtml(q.id, clarification.fields || [], q)}`:`<p class="dim">${esc(clarification.response||'Your response is under review.')}</p>`}</div>` : '';
-    const payPick = q.status === 'quoted' && !q.expired ? `<div style="margin-top:10px"><label class="dim" for="qpay-${esc(q.id)}">How will you pay? (needed to accept)</label><select class="form-input" id="qpay-${esc(q.id)}" data-qpay><option value="">Choose how to pay</option><option value="online">Pay online now (GCash, Maya, card or bank, via Xendit)</option><option value="cod">${q.fulfillment === 'Delivery' ? 'Cash on delivery' : 'Pay on pickup'}</option></select></div>` : '';
+    const isCustomOrBig = !q.sku || (q.quotedAmount != null && Number(q.quotedAmount) >= 10000);
+    const dep = q.terms && q.terms.state === 'approved' && q.terms.key !== 'full' && Number(q.terms.amount) > 0
+      ? Number(q.terms.amount)
+      : (isCustomOrBig && q.quotedAmount ? Math.round(Number(q.quotedAmount) * 0.5 * 100) / 100 : 0);
+    const payPick = q.status === 'quoted' && !q.expired ? `<div style="margin-top:10px"><label class="dim" for="qpay-${esc(q.id)}">How will you pay? (needed to accept)</label><select class="form-input" id="qpay-${esc(q.id)}" data-qpay><option value="">Choose how to pay</option><option value="online">Pay online now (GCash, Maya, card or bank, via Xendit)</option><option value="cod"${dep ? ' disabled' : ''}>${q.fulfillment === 'Delivery' ? 'Cash on delivery' : 'Pay on pickup'}${dep ? ' (the ' + peso(dep) + ' down payment must be paid online first)' : ''}</option></select>${dep ? '<div class="dim" style="font-size:12px;margin-top:4px;color:#b45309">Under Philippine Contract Law (Civil Code Arts. 1482 & 1582), custom and high-value orders require an initial down payment (' + peso(dep) + ') online before production begins. The remaining balance is paid on ' + (q.fulfillment === 'Delivery' ? 'delivery' : 'pickup') + '.</div>' : ''}</div>` : '';
     const actions = q.status === 'quoted' ? `${payPick}<div class="q-actions">${q.expired ? '' : `<button type="button" class="btn-primary btn-sm" data-qresp="accept" data-qid="${esc(q.id)}">Accept quote</button><button type="button" class="btn-secondary btn-sm" data-qresp="decline" data-qid="${esc(q.id)}">Decline</button>`}<button type="button" class="btn-secondary btn-sm" data-qresp="renew" data-qid="${esc(q.id)}">Ask for a new quote</button></div>` : '';
-    return `<div class="quote-row"><div class="order-head"><span class="id">${esc(q.id)}</span><span class="chip-pill ${st[0]}">${st[1]}</span></div>
+    const need = q.status === 'quoted' && !q.expired ? 'Quote ready: review it' : (q.clarification && q.clarification.status === 'awaiting_customer') ? 'Details needed' : (q.payOnline && q.payNow > 0) ? 'Payment due' : '';
+    return `<div class="quote-row${open ? ' open' : ''}" data-qrow="${esc(q.id)}">
+      <button type="button" class="qr-sum" data-qr-toggle="${esc(q.id)}" aria-expanded="${open ? 'true' : 'false'}">
+        <span class="qr-top"><span class="id">${esc(q.id)}</span><span class="chip-pill ${st[0]}">${st[1]}</span>${need ? `<span class="ord-flag">${need}</span>` : ''}</span>
+        <span class="qr-title">${esc(q.product || 'Custom item')}</span>
+        <span class="qr-sub">${esc(q.quantity)} · sent ${qAgo(q.createdAt)}${q.quotedAmount != null ? ' · <b class="mono">' + peso(q.quotedAmount) + '</b>' : ''}</span>${CHEV}
+      </button>
+      <div class="qr-body">
       <div class="dim">${esc(q.product || 'Custom item')} · ${esc(q.quantity)}${q.neededBy ? ' · needed by ' + new Date(q.neededBy + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : q.neededMonths ? ' · within ' + q.neededMonths + (q.neededMonths === 1 ? ' month' : ' months') : ''} · sent ${qAgo(q.createdAt)}</div>
       ${q.fulfillment ? `<div class="dim">${esc(q.fulfillment)}${q.area ? ' · ' + esc(q.area) : ''}</div>` : ''}
       ${q.quotedAmount != null ? `<div class="row"><span>Quoted amount</span><span class="mono">${peso(q.quotedAmount)}</span></div>` : ''}
@@ -1460,9 +1817,30 @@ async function loadQuotes() {
       ${pay}
       ${q.replyNote ? `<div class="refund-why">Our reply: ${esc(q.replyNote)}</div>` : ''}
       ${q.status === 'closed' && q.closeReason ? `<div class="refund-why">Closed: ${esc(q.closeReason)}</div>` : ''}
-      ${next ? `<div class="dim" style="margin-top:6px">${esc(next)}</div>` : ''}${trail}${clarifyBox}${actions}</div>`; }).join('')
-    : '<div class="q-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg><b>No requests yet</b><span>Your quotes will show up here once you send one.</span></div>';
+      ${(q.quotedAmount != null || ['quoted', 'accepted', 'preparing', 'ready', 'completed'].includes(q.status)) ? `<div style="margin-top:8px"><button type="button" class="btn-secondary btn-sm" data-quote-invoice="${esc(q.id)}">View Quotation Invoice</button></div>` : ''}${next ? `<div class="dim" style="margin-top:6px">${esc(next)}</div>` : ''}${trail}${clarifyBox}${actions}</div></div>`; };
+function renderQuotes() {
+  const host = $('quoteList'); if (!host) return;
+  const tools = $('quoteTools'), more = $('quoteMore'), res = $('quoteResult');
+  if (!QUOTES.length) { host.innerHTML = '<div class="q-empty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg><b>No requests yet</b><span>Your quotes will show up here once you send one.</span></div>'; tools.hidden = true; more.hidden = true; res.textContent = ''; $('quoteCount').textContent = ''; return; }
+  tools.hidden = false; $('quoteCount').textContent = QUOTES.length;
+  const counts = { all: QUOTES.length, action: 0, waiting: 0, progress: 0, done: 0 };
+  QUOTES.forEach(q => { counts[qGroup(q)]++; });
+  $('quoteChips').innerHTML = QS_FILTERS.map(([k, l]) => `<button type="button" class="ord-chip${QS.f === k ? ' on' : ''}" data-qfilter="${k}">${l} <span class="n">${counts[k]}</span></button>`).join('');
+  const s = QS.q.trim().toLowerCase();
+  const rows = QUOTES.filter(q => (QS.f === 'all' || qGroup(q) === QS.f) && (!s || ((q.id || '') + ' ' + (q.product || '') + ' ' + (q.statusLabel || q.status || '') + ' ' + (q.quantity || '')).toLowerCase().includes(s)));
+  QUOTES.forEach(q => { if (!QS.seen.has(q.id)) { QS.seen.add(q.id); if (QUOTES.length <= 3 && qGroup(q) === 'action') QS.open.add(q.id); } });
+  const page = rows.slice(0, QS.shown);
+  host.innerHTML = page.length ? page.map(q => quoteRowHtml(q, QS.open.has(q.id))).join('') : '<div class="q-empty"><b>No matching requests</b><span>Try a different word or filter.</span></div>';
+  res.textContent = rows.length ? 'Showing ' + page.length + ' of ' + rows.length : '';
+  more.hidden = rows.length <= page.length; more.textContent = 'Show ' + Math.min(5, rows.length - page.length) + ' more';
 }
+(function qsWire() {
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  on('quoteSearch', 'input', e => { QS.q = e.target.value; QS.shown = 5; renderQuotes(); });
+  on('quoteMore', 'click', () => { QS.shown += 5; renderQuotes(); });
+  on('quoteChips', 'click', e => { const b = e.target.closest('[data-qfilter]'); if (!b) return; QS.f = b.dataset.qfilter; QS.shown = 5; renderQuotes(); });
+  on('quoteList', 'click', e => { const t = e.target.closest('[data-qr-toggle]'); if (!t) return; const id = t.dataset.qrToggle; QS.open.has(id) ? QS.open.delete(id) : QS.open.add(id); t.closest('.quote-row').classList.toggle('open', QS.open.has(id)); t.setAttribute('aria-expanded', QS.open.has(id)); });
+})();
 /* the cashier asked for missing details: one REQUIRED box per detail they asked for (same rules as clarifyProblem in shop-extras.js) */
 const CLARIFY = { dimensions: ['Dimensions', 'e.g. 100 x 60 x 40 mm'], thickness: ['Thickness', 'e.g. 2.5 mm'], material: ['Material', 'e.g. Brass C37700'], finish: ['Finish', 'e.g. Polished'], quantity: ['Quantity', 'e.g. 200 pcs'] };
 (function () { const st = document.createElement('style'); st.textContent = '.cl-now{font-size:12px;font-weight:500;color:var(--text-dim,#5d6b7a);text-transform:none;letter-spacing:0;font-family:Inter,system-ui,sans-serif}.cl-more summary{cursor:pointer;font-weight:600;font-size:13.5px;color:var(--blue,#2e6fb5)}.cl-f{display:grid;gap:5px;font-weight:600;font-size:13.5px}.cl-f .form-input{width:100%;box-sizing:border-box;font-weight:400;background:var(--field,#fff);color:var(--text,#1d2733);border:1px solid var(--border,#cbd8e5);border-radius:8px;padding:9px 11px;font-family:Inter,system-ui,sans-serif;text-transform:none;letter-spacing:0}.cl-f .form-input:focus{outline:none;border-color:var(--blue-bright,#2e6fb5)}.cl-err{color:#b32929;font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;font-family:Inter,system-ui,sans-serif}.cl-err:empty{display:none}[data-clarify-quote] .is-bad{border-color:#b32929!important;box-shadow:0 0 0 3px rgba(179,41,41,.14)}'; document.head.appendChild(st); })();
@@ -1523,7 +1901,7 @@ $('quoteList').addEventListener('click', e => {
   const labels={accept:'Accept quotation',decline:'Decline quotation',renew:'Request updated quotation'};
   const details=[['Reference',q.id],['Product',q.product||'Custom item'],['Quantity',q.quantity],['Specifications',typeof q.specs==='object'?JSON.stringify(q.specs):q.specs||'See request'],['Preferred date',q.neededBy||'Flexible'],['Fulfillment',q.fulfillment||'Not specified'],['Quoted total',q.quotedAmount==null?'Pending':peso(q.quotedAmount)],['Valid until',q.validUntil||'Not specified'],['Payment terms',termsSummary(q)]];
   if(payMethod)details.push(['Payment choice',payMethod==='online'?'Online via Xendit':'Pay on pickup/delivery']);
-  tqOpen({title:labels[b.dataset.qresp],subtitle:'Review the quotation and confirm your decision.',details,disclaimer:b.dataset.qresp==='accept'?'Accepting agrees to these payment terms as well. It does not mean payment has been received — online payment is handled separately.':'The cashier will receive your response.',confirm:'Confirm '+(b.dataset.qresp==='renew'?'request':b.dataset.qresp),async run(){const r=await api('/api/shop/quotes/'+encodeURIComponent(q.id)+'/respond',{method:'POST',body:JSON.stringify({action:b.dataset.qresp,payMethod})});if(r?.checkoutUrl){location.href=r.checkoutUrl;return;}if(r?.payError)toast(r.payError,true);else toast('Your response was recorded.');await loadQuotes();}});
+  tqOpen({title:labels[b.dataset.qresp],subtitle:'Review the quotation and confirm your decision.',details,disclaimer:b.dataset.qresp==='accept'?'Under Philippine Contract and Consumer Law (Civil Code Arts. 1482, 1582-1599), delivery and payment depend on agreed terms. Standard catalog orders are payable at delivery/pickup, while custom-made and high-value orders require an agreed down payment as earnest money before materials are allocated and production begins. Once confirmed, the seller is legally obligated to fabricate and deliver the agreed product.':'The cashier will receive your response.',confirm:'Confirm '+(b.dataset.qresp==='renew'?'request':b.dataset.qresp),async run(){const r=await api('/api/shop/quotes/'+encodeURIComponent(q.id)+'/respond',{method:'POST',body:JSON.stringify({action:b.dataset.qresp,payMethod})});if(r?.checkoutUrl){location.href=r.checkoutUrl;return;}if(r?.payError)toast(r.payError,true);else toast('Your response was recorded.');await loadQuotes();}});
 });
 $('quoteList').addEventListener('click', async e => {            // pay an accepted quote online
   const b = e.target.closest('[data-qpaynow]'); if (!b || b.disabled) return; b.disabled = true;
@@ -1541,9 +1919,43 @@ $('qRegion').addEventListener('change', qOnRegion); $('qProvince').addEventListe
 $('qCity').addEventListener('change', qOnCity); $('qBrgy').addEventListener('change', qOnBarangay);
 [['qProductName', 'productName'], ['qName', 'contactName'], ['qPhone', 'phone'], ['qCity', 'city'], ['qBrgy', 'barangay'], ['qStreet', 'street']].forEach(([id, f]) => {
   $(id).addEventListener('blur', () => qField(f));
-  $(id).addEventListener('input', () => { if ($(id).classList.contains('is-bad')) qField(f); $('qErr').textContent = ''; });
+  $(id).addEventListener('input', e => {
+    if (e.isTrusted) $(id).dataset.touched = '1';
+    qField(f);
+    $('qErr').textContent = '';
+  });
 });
 $('qPhone').addEventListener('input', () => { const p = $('qPhone'), d = p.value.replace(/[^\d+\s]/g, ''); if (d !== p.value) p.value = d; });
+
+/* ---------- Task 9 (form-assist.js): minimum order warning, delivery fee, ZIP -> delivery area, autosaved draft, Enter to move on ---------- */
+const QFA = window.FormAssist;
+let qDraft = null;
+function qFeeNote(html) {
+  let n = $('qFeeNote');
+  if (!n) { n = document.createElement('div'); n.id = 'qFeeNote'; n.className = 'fa-note ok'; n.setAttribute('role', 'status'); $('qDeliveryBox').appendChild(n); }
+  n.innerHTML = html || ''; n.hidden = !html;
+}
+function qMinWarn() {
+  const qty = $('qQty'), p = prod($('qProduct').value); if (!QFA || !qty) return;
+  const n = Number(qty.value), m = p ? minQty(p) : 0;               // a custom item's minimum is checked by quote-fields.js itself
+  QFA.note(qty, p && n > 0 && n < m ? 'The minimum order for ' + esc(p.name) + ' is <b>' + m + ' ' + esc(p.unit) + '</b>' +
+    (p.available > 0 && p.available < (Number(p.minOrder) || 0) ? ' (only ' + p.available + ' left in stock)' : '') + '.' : '', 'warn', 'min');
+}
+function qStartDraft() {
+  if (!QFA || qDraft) return;
+  qDraft = QFA.draft('shopQuote.' + (USER && USER.id != null ? USER.id : 'preview'), $('quoteForm'),
+    ['qProduct', 'qProductName', 'qS_itemType', 'qS_material', 'qS_size', 'qS_thickness', 'qS_finish', 'qS_service', 'qQty', 'qUnit', 'qNeeded', 'qNotes', 'qStreet'],
+    { ignoreDefault: (id) => ['qName', 'qPhone', 'qUnit'].includes(id),           // filled from the profile / the product: not a draft by themselves
+      onDiscard: () => { $('qProduct').value = ''; $('qProductName').value = ''; QuoteFields.reset('q'); quoteProductChanged(); } });
+  if (!$('qProduct').value) qDraft.restore().then(qMinWarn);                      // opened from a product page: that product wins over an old draft
+}
+if (QFA) {
+  $('quoteForm').addEventListener('input', e => { if (e.target.id === 'qQty') qMinWarn(); });
+  $('qProduct').addEventListener('change', qMinWarn);
+  QFA.zipFill({ before: $('qRegion').closest('.q-grid'), region: $('qRegion'), province: $('qProvince'), city: $('qCity'), barangay: $('qBrgy'), api: (u) => api(u) });
+  QFA.keyboard($('quoteForm'));
+  QFA.guard($('quoteForm'));
+}
 function validateQuote() {
   const f = qFulfil(), fields = ['productName'];
   if (f === 'Delivery' && qAddr === 'new') fields.push('region', 'province', 'city', 'barangay', 'street');
@@ -1607,13 +2019,15 @@ async function tqSubmitQuote() {
   $('qSend').disabled = false;
   $('qProductName').value = ''; $('qProductName').classList.remove('is-bad'); $('qProduct').value = ''; QuoteFields.reset('q');
   qErr('productName', ''); quoteProductChanged(); ['qCity', 'qBrgy', 'qStreet'].forEach(id => { $(id).value = ''; $(id).classList.remove('is-bad'); }); qResetArea();
+  if (qDraft) qDraft.clear(); if (QFA) { QFA.markClean($('quoteForm')); QFA.note($('qQty'), '', '', 'min'); }
   toast('Quotation request submitted. We will reply soon.'); await loadQuotes();
 }
 
 /* ----- events ----- */
 document.addEventListener('click', e => {
-  const el = e.target.closest('[data-view],[data-details],[data-add],[data-inc],[data-dec],[data-rm],[data-cat],[data-f],[data-pay],[data-term],[data-cancel],[data-refund],[data-xendit],[data-receipt],[data-notify],[data-unnotify],[data-quote],[data-review],[data-received]'); if (!el) return; const d = el.dataset;
+  const el = e.target.closest('[data-view],[data-details],[data-add],[data-inc],[data-dec],[data-rm],[data-cat],[data-f],[data-pay],[data-term],[data-cancel],[data-refund],[data-xendit],[data-receipt],[data-quote-invoice],[data-notify],[data-unnotify],[data-quote],[data-review],[data-received]'); if (!el) return; const d = el.dataset;
   if (d.receipt) return openReceipt(d.receipt);
+  if (d.quoteInvoice) return openQuoteInvoice(d.quoteInvoice);
   if (d.notify) return setAlert(d.notify, true);
   if (d.unnotify) return setAlert(d.unnotify, false);
   if (d.quote !== undefined && el.dataset.quote !== '') { closeProductDetails(); return openQuote(d.quote); }
@@ -1694,6 +2108,34 @@ $('refundSend').onclick = async () => {
   try { orders = await loadOrders(); } catch (e) {}
   renderOrders(); syncCounts(); toast('Refund request sent. We will review it soon.');
 };
+function checkoutPhoneProblem() {
+  return /^(\+63|0)9\d{9}$/.test($('phone').value.replace(/[\s().-]/g, '')) ? '' : 'Enter a valid mobile number, e.g. 0917 123 4567.';
+}
+if (window.FormAssist) {
+  FormAssist.validation.bind($('phone'), checkoutPhoneProblem, $('phoneError'));
+  ['cancel', 'refund'].forEach(prefix => {
+    FormAssist.validation.bind($(prefix + 'Reason'), value => value ? '' : 'Please choose a reason.');
+    const checkDetails = FormAssist.validation.bind($(prefix + 'Details'), value => (prefix === 'refund' || $(prefix + 'Reason').value === 'other') && value.trim().length < 5 ? 'Please explain the reason (at least 5 characters).' : '');
+    $(prefix + 'Reason').addEventListener('change', () => checkDetails(true));
+  });
+  $('quoteList').addEventListener('input', e => {
+    const input = e.target, form = input.closest('[data-clarify-quote]'); if (!form || !input.name) return;
+    const q = QUOTES.find(x => String(x.id) === form.dataset.clarifyQuote), requested = q?.clarification?.fields || [];
+    const key = input.name.replace(/^spec_/, ''), value = input.value.trim();
+    let message = '';
+    if (input.name === 'response') {
+      const needed = requested.includes('other') || requested.includes('drawing');
+      message = needed && value.length < 10 ? 'Explain it in at least 10 characters.' : !needed && value && value.length < 5 ? 'Write at least 5 characters, or leave it empty.' : '';
+    } else if (CLARIFY[key] && (requested.includes(key) || (value && value !== clarifyNow(q, key)))) message = clarifyProblem(key, value);
+    FormAssist.validation.show(input, message, form.querySelector('[data-err="' + input.name + '"]'));
+  });
+  $('cartRows').addEventListener('input', e => {
+    const input = e.target.closest('[data-qtyin]'), p = input && prod(input.dataset.qtyin); if (!p) return;
+    const n = Number(input.value), step = p.fractional ? 0.5 : 1;
+    const message = !input.value.trim() || !Number.isFinite(n) || n < minQty(p) ? 'Enter at least ' + minQty(p) + ' ' + p.unit + '.' : n > p.available ? 'Only ' + p.available + ' ' + p.unit + ' available.' : Math.abs(n / step - Math.round(n / step)) > 1e-6 ? 'Use increments of ' + step + ' ' + p.unit + '.' : '';
+    FormAssist.validation.show(input, message);
+  });
+}
 $('q').oninput = $('sort').onchange = $('inStock').onchange = renderCatalog;
 $('q').onkeydown = e => { if (e.key === 'Escape') { $('shopDetailsBg').style.display='none'; $('q').value = ''; renderCatalog(); } };
 document.addEventListener('keydown', e => {
@@ -1726,6 +2168,8 @@ $('grid').innerHTML = '<div class="skeleton" style="min-height:230px"></div>'.re
   $('uname').textContent = $('dName').textContent = USER.name; $('avatar').textContent = $('dAvatar').textContent = ini;
   if (window.AccountMenu) AccountMenu.setUser(USER);       // fills the name / email / photo and powers My Profile + Change Password
   const [cfgShop, profile] = await Promise.all([loadConfig(), api('/api/auth/profile').catch(() => ({}))]);
+  PROFILE = profile || {}; fillQuoteContact();
+  window.addEventListener('accountmenu:close', async () => { try { PROFILE = await api('/api/auth/profile'); fillQuoteContact(); } catch (e) {} });
   INFO = cfgShop.info || {}; REFUND_DAYS = cfgShop.refundWindowDays || 7; renderHelpLines();
   if (cfgShop.deliveryFee >= 0) {
     DELIVERY_FEE = cfgShop.deliveryFee; FEE_FROM = cfgShop.deliveryFeeFrom >= 0 ? cfgShop.deliveryFeeFrom : DELIVERY_FEE;
@@ -1766,7 +2210,7 @@ $('grid').innerHTML = '<div class="skeleton" style="min-height:230px"></div>'.re
       if (id) {
         receiptShown.add(id); renderOrders(); syncCounts();
         let mine = false; try { mine = sessionStorage.getItem('payInv:' + id) != null; sessionStorage.removeItem('payInv:' + id); } catch (e) {}
-        // the full receipt only opens for the visit that started this payment; a payment recorded elsewhere (counter, another device) is a quiet toast
+        // the full invoice only opens for the visit that started this payment; a payment recorded elsewhere (counter, another device) is a quiet toast
         if (mine) openReceipt(id, true); else toast('Payment received for order ' + id + '. See My Orders for your balance.');
       }
       else toast('Payment received. Thank you!');

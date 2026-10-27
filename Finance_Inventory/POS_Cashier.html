@@ -10,12 +10,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="app-ui.css?v=3">
-<link rel="stylesheet" href="cash-shift.css?v=2">
+<link rel="stylesheet" href="ui2-core.css">
+<link rel="stylesheet" href="cash-shift.css?v=5">
 <link rel="stylesheet" href="cashier-orders.css?v=3">
 <link rel="stylesheet" href="notifications.css?v=7">
-<link rel="stylesheet" href="quotes.css?v=8">
-<link rel="stylesheet" href="quote-fields.css?v=2">
+<script src="session-guard.js?v=2"></script>
+<link rel="stylesheet" href="quotes.css?v=11">
+<link rel="stylesheet" href="quote-fields.css?v=4">
 <link rel="stylesheet" href="customer-pages.css?v=2">
+<link rel="stylesheet" href="table-pagination.css">
+<link rel="stylesheet" href="ui2-pos.css?v=6">
 <style>
 .fseg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}.fseg-btn{padding:10px 8px;border-radius:10px;border:1px solid var(--border,#2a2f3a);background:transparent;color:inherit;font:inherit;font-weight:600;font-size:13.5px;cursor:pointer;line-height:1.2}.fseg-btn small{display:block;font-weight:500;font-size:11px;opacity:.75;margin-top:2px}.fseg-btn.on{background:var(--accent,#d4a24c);border-color:var(--accent,#d4a24c);color:#111}
 .cust-err{min-height:0;margin-top:4px;font-size:12.5px;color:var(--red,#e35b5b)}.cust-err:empty{display:none}.cust-grid input.is-bad{border-color:var(--red,#e35b5b)!important}
@@ -35,12 +39,17 @@
 /* Delivery mode makes the payment area taller than the screen: let the whole side panel scroll (header stays put) so the address,
    payment and "Complete sale" button can always be reached, instead of being cut off at the bottom. */
 .cartpane{overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
-.cartpane .cart-head{position:sticky;top:0;z-index:3;background:var(--panel)}
-.cartpane .lines{flex:1 0 120px}
+.cartpane .cart-head{position:sticky;top:0;z-index:3;background:var(--panel);flex-wrap:wrap;gap:8px}
+/* The item list keeps a readable height (never squeezed by the payment area) and scrolls on its own when many products are added. */
+.cartpane .lines{flex:0 0 auto;min-height:190px;max-height:clamp(220px,42vh,460px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.cartpane .lines>.empty{min-height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center}
 #complete{white-space:normal;line-height:1.25;letter-spacing:.4px;font-size:13.5px;min-height:48px;overflow-wrap:anywhere}
 </style>
+<link rel="stylesheet" href="form-layout.css?v=2">
 </head>
 <body>
+<!-- cash shift gate: full screen, no dismiss; cash-shift-ui.js fills it and lifts it once a shift is open -->
+<div class="sg" id="shiftGate" role="dialog" aria-modal="true" aria-labelledby="sgTitle"><div class="sg-card" id="sgCard"><h1 id="sgTitle">Checking your cash shift…</h1><p class="sg-lead dim">One moment.</p></div></div>
 <a class="skip-link" href="#main">Skip to content</a>
 
 <!-- ================= SIDEBAR ================= -->
@@ -123,12 +132,25 @@
   <div class="content">
 
     <!-- ===== PAGE: POINT OF SALE ===== -->
-    <section class="page active-page" id="page-terminal">
+    <div class="pos-connection" id="posConnection" role="status" hidden><span id="posConnectionText"></span><button type="button" class="btn-secondary btn-sm" id="posRetry">Retry connection</button></div>
+    <section class="page active-page ui2" id="page-terminal">
+      <div class="pos-hero"><div><div class="ui2-eyebrow"><span class="ui2-live"></span>Counter terminal</div><h1 class="pos-title" style="font-family:Oswald,sans-serif;font-weight:600;font-size:clamp(26px,3vw,38px);line-height:1.12;margin:0">Point of Sale</h1></div><div class="ui2-chips"><span class="ui2-chip"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="15" rx="2"/><path d="M3 10h18"/></svg>Triple E Metal Products</span><span class="ui2-chip"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span id="heroClock"></span></span></div></div>
+      <div class="pos-stock-tools"><span id="stockUpdated" role="status">Stock has not loaded.</span><button type="button" class="btn-secondary btn-sm" id="refreshStock">Refresh stock</button></div>
+      <section class="pos-payments" id="xenditPending" aria-labelledby="pendingPaymentTitle" hidden><h2 id="pendingPaymentTitle">Online payments</h2><p>Resolve pending payments before collecting again. Only a verified payment creates an invoice.</p><div id="paymentRecoveryList" aria-live="polite"></div><p id="paymentRecoveryError" role="status"></p><button type="button" class="btn-secondary btn-sm" id="recoverPayments">Check all payments</button></section>
       <div class="cs-banner" id="shiftBanner" hidden><div><b>No open cash shift.</b> You need to open one before you can complete a sale.</div><button type="button" class="btn-primary" id="shiftBannerBtn">Open cash shift</button></div>
       <div class="terminal">
         <div class="panel">
           <div class="panel-head">
             <div><div class="panel-title">Products</div><div class="panel-sub" id="prodSub">Tap a product to add it to the sale</div></div>
+          </div>
+          <div class="pos-guide-bar">
+            <span class="keys">
+              <span><kbd>F2</kbd><kbd>/</kbd>Search</span>
+              <span><kbd>Enter</kbd>Add item</span>
+              <span><kbd>F4</kbd>Pay cash</span>
+              <span><kbd>Esc</kbd>Cancel</span>
+            </span>
+            <span class="tag">POS Keyboard Assistant</span>
           </div>
           <div class="toolbar">
             <div class="search-wrap">
@@ -163,26 +185,22 @@
               </div>
               <div class="cust-title" id="custTitle">Customer details <span class="faint">(optional)</span></div>
               <div class="cust-grid"><div><input id="custName" maxlength="80" autocomplete="off" placeholder="Customer name" aria-label="Customer name"><div class="cust-err" id="custNameErr"></div></div><div><input id="custPhone" maxlength="20" inputmode="tel" autocomplete="off" placeholder="Phone number" aria-label="Customer phone number"><div class="cust-err" id="custPhoneErr"></div></div></div>
+              <div id="acctHost" hidden aria-live="polite"></div>
               <div id="dlvHost" hidden></div>
             </div>
             <div class="seg" role="group" aria-label="Payment method">
               <button class="seg-btn on" data-m="Cash"><svg class="ico" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>Cash</button>
-              <button class="seg-btn" data-m="Card"><svg class="ico" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Manual Card</button>
+              <button class="seg-btn" data-m="Card"><svg class="ico" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg><span>Manual payment<span class="sub">Card / Bank / Wallet</span></span></button>
               <button class="seg-btn" data-m="Xendit"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v1M14 20h1M18 18h3v3h-3z"/></svg><span>Online payment<span class="sub">QR / Bank</span></span></button>
             </div>
             <div id="cashBox"><label for="tendered">Cash received</label><input id="tendered" data-money inputmode="decimal" placeholder="0.00">
               <div class="quick" title="Each tap adds that bill to the cash received"><button class="btn-secondary btn-sm" data-cash="exact">Exact</button><button class="btn-secondary btn-sm" data-cash="50">+₱50</button><button class="btn-secondary btn-sm" data-cash="100">+₱100</button><button class="btn-secondary btn-sm" data-cash="200">+₱200</button><button class="btn-secondary btn-sm" data-cash="500">+₱500</button><button class="btn-secondary btn-sm" data-cash="1000">+₱1,000</button><button class="btn-secondary btn-sm quick-clear" data-cash="clear">Clear</button></div>
               <div class="row" style="margin-top:6px"><span class="dim">Change</span><span class="mono" id="change">₱0.00</span></div></div>
             <div id="cardBox" hidden><label for="cardRef">Payment reference no.</label><input id="cardRef" maxlength="30" autocomplete="off" autocapitalize="characters" placeholder="From the customer's payment confirmation">
-              <div class="faint" style="font-size:12.5px;margin-top:6px">The customer pays the total from their own phone (bank / card / e-wallet app). Check that the payment really went through, then type the reference number shown on their confirmation screen.</div>
-              <label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13.5px"><input type="checkbox" id="cardOk" style="width:auto"> I saw the payment confirmation for the full amount</label></div>
+              <div class="faint" style="font-size:12.5px;margin-top:6px">Check the full payment in the merchant’s payment records, then enter its reference number. Use this for card, bank or wallet payments verified outside this checkout.</div>
+              <label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13.5px"><input type="checkbox" id="cardOk" style="width:auto"> I verified receipt of the full amount</label></div>
             <div id="xenditBox" hidden style="margin:10px 0;font-size:13px">Create a secure online payment link. Customer can scan its QR or open the link and select available bank, wallet, or other supported channels. Sale completes only after verified payment.</div>
-            <div id="xenditPending" hidden style="padding:12px;border:1px solid #aaa;border-radius:8px;margin:8px 0;text-align:center">
-              <strong id="xenditState">Waiting for payment</strong><div id="xenditQR" style="display:flex;justify-content:center;margin:12px"></div>
-              <a id="xenditLink" href="#" target="_blank" rel="noopener noreferrer">Open secure checkout</a>
-              <div style="margin-top:10px"><button type="button" class="btn-secondary btn-sm" id="xenditCheck">Check payment</button> <button type="button" class="btn-secondary btn-sm" id="xenditDismiss">Close</button></div>
-            </div>
-            <div class="err-text" id="payErr"></div>
+            <div class="err-text" id="payErr" role="status" aria-live="polite"></div>
             <button class="btn-primary btn-lg" id="complete" disabled>Complete sale</button>
           </div>
         </aside>
@@ -190,26 +208,26 @@
     </section>
 
     <!-- ===== PAGE: TODAY'S SALES ===== -->
-    <section class="page" id="page-sales">
+    <section class="page ui2" id="page-sales">
       <div class="welcome"><h1>Today's Sales</h1></div>
       <div class="stats">
         <div class="stat-card green"><div class="stat-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="stat-label">Sales total</div><div class="stat-value mono" id="stTotal" style="font-family:Oswald,sans-serif">₱0.00</div><div class="stat-foot">Excludes voided</div></div>
         <div class="stat-card"><div class="stat-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/></svg></div><div class="stat-label">Transactions</div><div class="stat-value" id="stCount">0</div><div class="stat-foot" id="stAvg">Avg ₱0.00</div></div>
         <div class="stat-card violet"><div class="stat-ico"><svg class="ico" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg></div><div class="stat-label">Items sold</div><div class="stat-value" id="stItems">0</div><div class="stat-foot">Total units</div></div>
-        <div class="stat-card amber"><div class="stat-ico"><svg class="ico" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><div class="stat-label">Cash / Card</div><div class="stat-value" id="stSplit" style="font-size:22px;padding-top:4px">₱0 / ₱0</div><div class="stat-foot">By payment method</div></div>
+        <div class="stat-card amber"><div class="stat-ico"><svg class="ico" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div><div class="stat-label">By payment method</div><dl class="pos-method-totals"><div><dt>Cash</dt><dd id="stCash">₱0.00</dd></div><div><dt>Manual · card / bank / wallet</dt><dd id="stManual">₱0.00</dd></div><div><dt>Online · verified checkout</dt><dd id="stOnline">₱0.00</dd></div></dl></div>
       </div>
       <div class="panel">
-        <div class="panel-head"><div><div class="panel-title">Receipts</div><div class="panel-sub">Reprint a receipt, return items, or ask admin to void one</div></div>
-          <form id="rcFind" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:100%" autocomplete="off"><input id="rcFindNo" placeholder="Older receipt no. (e.g. R-1001)" maxlength="30" style="width:230px;max-width:100%;flex:1 1 180px"><button class="btn-secondary btn-sm" type="submit">Return items…</button></form></div>
+        <div class="panel-head"><div><div class="panel-title">Invoices</div><div class="panel-sub">Reprint an invoice, return items, or ask admin to void one</div></div>
+          <form id="rcFind" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:100%" autocomplete="off"><input id="rcFindNo" placeholder="Older invoice no. (e.g. SI-1001)" maxlength="30" style="width:230px;max-width:100%;flex:1 1 180px"><button class="btn-secondary btn-sm" type="submit">Return items…</button></form></div>
         <div class="table-wrapper"><table>
-          <thead><tr><th>Receipt</th><th>Time</th><th class="r">Items</th><th class="r">Total</th><th>Paid by</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Invoice</th><th>Time</th><th class="r">Items</th><th class="r">Total</th><th>Paid by</th><th>Status</th><th></th></tr></thead>
           <tbody id="saleRows"></tbody></table></div>
         <div class="empty" id="noSales"><svg class="ico" viewBox="0 0 24 24"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>No sales yet today.</div>
       </div>
     </section>
 
     <!-- ===== PAGE: WALK-IN QUOTE REQUESTS ===== -->
-    <section class="page" id="page-notifications">
+    <section class="page ui2" id="page-notifications">
       <div class="welcome"><h1>Notification Center</h1></div>
       <div class="nc-page-tools">
         <div class="nc-chips">
@@ -230,7 +248,8 @@
       </div>
     </section>
 
-    <section class="page" id="page-orders">
+
+    <section class="page ui2" id="page-orders">
       <div class="welcome"><h1>Online Orders</h1><p>Confirm, pack and release online orders. Store pickups are paid and handed over here at the counter; deliveries are simply marked out for delivery and delivered.</p></div>
       <div class="co-toolbar">
         <div class="co-tabs" id="coTabs" role="tablist" aria-label="Order stages"></div>
@@ -247,7 +266,7 @@
     </section>
 
     <!-- ===== Quotations: full-width desk (quote-desk-ui.js + quotes.css) ===== -->
-    <section class="page" id="page-customers"><div class="welcome"><h1>Customer Profiles</h1><p>Registered shop customers: find someone, check their contact details and what they reviewed.</p></div>
+    <section class="page ui2" id="page-customers"><div class="welcome"><h1>Customer Profiles</h1><p>Registered shop customers: find someone, check their contact details and what they reviewed.</p></div>
       <div class="cmx">
         <div class="cmx-bar"><label class="cmx-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="cmSearch" type="search" placeholder="Search name, email or phone" aria-label="Search customers" autocomplete="off"></label>
           <div class="cmx-chips" id="cmChips" role="group" aria-label="Filter by account status"></div>
@@ -256,7 +275,7 @@
         <div class="cmx-tablewrap" id="cmTableWrap"><table class="cmx-table"><thead><tr><th>Customer</th><th>Phone</th><th>Joined</th><th>Last sign-in</th><th class="is-right">Orders</th><th class="is-right">Reviews</th><th>Status</th><th></th></tr></thead><tbody id="cmRows"></tbody></table></div>
         <div class="cmx-cards" id="cmCards"></div><div id="cmEmpty" hidden></div>
       </div></section>
-    <section class="page" id="page-reviews"><div class="welcome"><h1>Product Reviews</h1><p>What customers say about the products they received. Hide a review that breaks the rules; restore it any time.</p></div>
+    <section class="page ui2" id="page-reviews"><div class="welcome"><h1>Product Reviews</h1><p>What customers say about the products they received. Hide a review that breaks the rules; restore it any time.</p></div>
       <div class="cmx">
         <div class="cmx-kpis" id="cmReviewKpis"></div>
         <div class="cmx-bar"><label class="cmx-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="cmReviewSearch" type="search" placeholder="Search product, customer or review text" aria-label="Search reviews" autocomplete="off"></label>
@@ -267,7 +286,7 @@
         <div class="cmx-tablewrap" id="cmReviewTable"><table class="cmx-table"><thead><tr><th>Product</th><th>Rating</th><th>Review</th><th>Customer</th><th>Date</th><th>Status</th><th></th></tr></thead><tbody id="cmReviewRows"></tbody></table></div>
         <div class="cmx-cards" id="cmReviewCards"></div><div id="cmReviews" hidden></div>
       </div></section>
-    <section class="page" id="page-quotes">
+    <section class="page ui2" id="page-quotes">
       <div class="welcome"><h1>Quotation Desk</h1><p>Review requests, price them, and turn accepted quotes into orders.</p></div>
 
       <div class="qd-nav" role="tablist" aria-label="Quotation desk">
@@ -427,7 +446,7 @@
       </div>
     </section>
 
-    <section class="page" id="page-shift">
+    <section class="page ui2" id="page-shift">
       <div class="welcome"><h1>Cash Shift</h1></div>
       <div id="csApp" aria-live="polite"><div class="panel cs-loading">Loading your shift…</div></div>
       <div class="panel cs-history"><div class="panel-head"><div><div class="panel-title">My shift history</div><div class="panel-sub">Your last 50 shifts</div></div></div><div class="table-wrapper"><table><thead><tr><th>Shift</th><th>Opened</th><th>Closed</th><th>Length</th><th class="cs-r">Cash sales</th><th class="cs-r">Counted</th><th>Result</th></tr></thead><tbody id="shiftHistory"></tbody></table></div></div>
@@ -437,14 +456,14 @@
 
 <button class="cart-fab" id="cartFab" hidden><span id="fabText">View sale</span><span class="mono" id="fabTotal">₱0.00</span></button>
 
-<div class="modal-overlay" id="receiptBg"><div class="modal" style="max-width:380px"><div class="paper" id="receipt" style="padding:0;overflow:hidden"><img id="receiptImg" alt="Receipt" style="display:block;width:100%;height:auto"></div>
-  <div class="modal-actions"><button class="btn-primary" id="rcPrint">Print</button><button class="btn-secondary" id="rcSave">Save PNG</button><button class="btn-secondary" onclick="closeModal('receiptBg')">Close</button></div></div></div>
+<div class="modal-overlay" id="receiptBg"><div class="modal" style="max-width:380px"><div class="paper" id="receipt" style="padding:0;overflow:hidden"><img id="receiptImg" alt="Invoice" style="display:block;width:100%;height:auto"></div>
+  <div class="modal-actions"><button class="btn-primary" id="rcPrint">Print</button><button class="btn-secondary" id="rcSave">Save PNG</button><button class="btn-secondary" data-close-modal="receiptBg">Close</button></div></div></div>
 <div class="modal-overlay" id="voidBg"><div class="modal"><h3>Request void</h3><p class="dim" id="voidFor"></p>
   <label for="voidReason">Reason</label>
   <select id="voidReason"><option value="">Choose a reason…</option><option value="wrong_item">Wrong item or quantity rung up</option><option value="wrong_price">Wrong price</option><option value="changed_mind">Customer changed their mind</option><option value="payment_problem">Payment problem</option><option value="duplicate">Duplicate sale</option><option value="other">Other</option></select>
   <label for="voidDetails" id="voidDetailsLbl" style="margin-top:12px">More details (optional)</label><textarea id="voidDetails" rows="3" maxlength="300" placeholder="Anything Finance should know"></textarea>
   <div class="err-text" id="voidErr" role="alert"></div>
-  <div class="modal-actions"><button class="btn-primary" id="voidSend">Send to admin</button><button class="btn-secondary" onclick="closeModal('voidBg')">Cancel</button></div></div></div>
+  <div class="modal-actions"><button class="btn-primary" id="voidSend">Send void to Finance</button><button class="btn-secondary" data-close-modal="voidBg">Cancel</button></div></div></div>
 <div class="modal-overlay" id="returnBg"><div class="modal" style="max-width:620px"><h3>Return items</h3><p class="dim" id="returnFor"></p>
   <div class="table-wrapper" style="max-height:260px;overflow:auto"><table style="min-width:0;width:100%"><thead><tr><th>Item</th><th class="r">Bought</th><th class="r">Can return</th><th class="r" style="width:100px">Return qty</th></tr></thead><tbody id="returnRows"></tbody></table></div>
   <div style="display:flex;justify-content:space-between;margin:10px 0;font-weight:600"><span>Refund to customer</span><span class="mono" id="returnTotal">₱0.00</span></div>
@@ -453,73 +472,62 @@
   <select id="returnReason"><option value="">Choose a reason…</option><option value="damaged">Damaged or defective</option><option value="wrong_item">Wrong item given</option><option value="not_as_described">Not as described</option><option value="changed_mind">Customer changed their mind</option><option value="other">Other</option></select>
   <label for="returnDetails" id="returnDetailsLbl" style="margin-top:12px">More details (optional)</label><textarea id="returnDetails" rows="2" maxlength="300" placeholder="Anything Finance should know"></textarea>
   <div class="err-text" id="returnErr" role="alert"></div>
-  <div class="modal-actions"><button class="btn-primary" id="returnSend">Save Quotation</button><button class="btn-secondary" onclick="closeModal('returnBg')">Cancel</button></div></div></div>
+  <div class="modal-actions"><button class="btn-primary" id="returnSend">Send return to Finance</button><button class="btn-secondary" data-close-modal="returnBg">Cancel</button></div></div></div>
 <div class="modal-overlay" id="holdBg"><div class="modal"><h3>Hold this sale</h3><p class="dim">Park it so you can serve another customer. You can resume it any time, even after a page refresh.</p>
   <label for="holdLabel">Customer name or note (optional)</label><input id="holdLabel" maxlength="40" autocomplete="off" placeholder="e.g. Mang Ben, blue truck">
-  <div class="modal-actions"><button class="btn-primary" id="holdOk">Hold sale</button><button class="btn-secondary" onclick="closeModal('holdBg')">Cancel</button></div></div></div>
+  <div class="modal-actions"><button class="btn-primary" id="holdOk">Hold sale</button><button class="btn-secondary" data-close-modal="holdBg">Cancel</button></div></div></div>
 <div class="modal-overlay" id="heldBg"><div class="modal" style="max-width:480px"><h3>Held sales</h3><p class="dim">Resuming one while you have items in the cart will hold the current sale automatically.</p>
   <div id="heldList"></div>
-  <div class="modal-actions"><button class="btn-secondary" onclick="closeModal('heldBg')">Close</button></div></div></div>
+  <div class="modal-actions"><button class="btn-secondary" data-close-modal="heldBg">Close</button></div></div></div>
 <div class="modal-overlay" id="priceBg"><div class="modal"><h3 id="priceTitle">Change price</h3><p class="dim" id="priceFor"></p>
   <div id="priceField"><label for="priceNew">Negotiated price per unit (₱)</label><input id="priceNew" data-money inputmode="decimal" autocomplete="off" placeholder="0.00"></div>
   <div id="priceAuth"><p class="faint" style="font-size:12.5px;margin-top:12px">A supervisor (finance account) must approve price changes. They can sign in right here; the password is not stored.</p>
     <label for="supEmail">Supervisor email</label><input id="supEmail" type="email" autocomplete="off">
     <label for="supPass">Supervisor password</label><input id="supPass" type="password" autocomplete="off"></div>
   <div class="err-text" id="priceErr"></div>
-  <div class="modal-actions"><button class="btn-primary" id="priceOk">Apply</button><button class="btn-secondary" onclick="closeModal('priceBg')">Cancel</button></div></div></div>
+  <div class="modal-actions"><button class="btn-primary" id="priceOk">Apply</button><button class="btn-secondary" data-close-modal="priceBg">Cancel</button></div></div></div>
 <div id="toast" role="status"></div>
 
 <script>window.ACCOUNT_CFG = { roleLabel: 'Cashier', idLabel: 'Employee ID', idPrefix: 'TEM', deptLabel: 'Department' };</script>
-<script src="cashier-customers.js?v=3"></script>
+<script src="cashier-customers.js?v=4"></script>
 <script src="input-rules.js?v=1"></script>
-<script src="password-change.js?v=1"></script>
+<script src="password-change.js?v=2"></script>
 <script src="account-menu.js?v=3"></script>
-<script src="quote-fields.js?v=10"></script>
-<script src="quote-desk-ui.js?v=11"></script>
-<script src="pos-delivery.js?v=1"></script>
+<script src="form-assist.js?v=3"></script>
+<script src="quote-fields.js?v=14"></script>
+<script src="quote-desk-ui.js?v=17"></script>
+<script src="pos-delivery.js?v=3"></script>
+<script src="pos-customer-account.js?v=1"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 /* ===== Role check: only cashiers belong here. Uses the session cookie from Login_Inventory.html ===== */
 const HOME = { finance: 'Finance_Inventory.html', cashier: 'POS_Cashier.html', customer: 'Shop_Customer.html' };
-let USER = { name: 'Demo Cashier', role: 'cashier' };           // used when the API is not reachable (preview mode)
+let USER = null;
 async function guard() {
-  try {
-    const r = await fetch('/api/auth/me', { credentials: 'same-origin' });
-    if (r.status === 401) { location.href = 'Login_Inventory.html'; return false; }
-    if (r.ok) { USER = await r.json(); if (USER.role !== 'cashier') { location.href = HOME[USER.role] || 'Login_Inventory.html'; return false; } }
-  } catch (e) { /* preview mode */ }
-  return true;
+  const u = await api('/api/auth/me');
+  if (u.role !== 'cashier') { location.href = HOME[u.role] || 'Login_Inventory.html'; return false; }
+  if (USER && String(USER.id) !== String(u.id)) { location.reload(); return false; }
+  USER = u; return true;
 }
 
-/* ===== BACKEND HOOKS — replace the bodies of these four functions with your real API calls ===== */
-const DEMO = [
-  {sku:'GIS-0412',name:'G.I. Sheet, Plain',category:'Sheets & Plates',unit:'sheet',spec:'4 × 8 ft · Ga. 24',price:845,available:140},
-  {sku:'MSP-1016',name:'Mild Steel Plate',category:'Sheets & Plates',unit:'sheet',spec:'4 × 8 ft · 6 mm',price:6480,available:18},
-  {sku:'BIP-0150',name:'Black Iron Pipe',category:'Pipes & Tubes',unit:'length',spec:'1-1/2" · Sch 40 · 6 m',price:1290,available:64},
-  {sku:'GIP-0100',name:'G.I. Pipe',category:'Pipes & Tubes',unit:'length',spec:'1" · Sch 20 · 6 m',price:720,available:0},
-  {sku:'DRB-1012',name:'Deformed Rebar',category:'Bars & Rods',unit:'length',spec:'12 mm · Grade 40 · 6 m',price:248,available:420},
-  {sku:'ANG-0203',name:'Angle Bar',category:'Angles & Channels',unit:'length',spec:'2 × 2 in · 3 mm · 6 m',price:710,available:88},
-  {sku:'RFR-0026',name:'Rib-Type Roofing',category:'Roofing',unit:'linear m',spec:'0.4 mm · Pre-painted',price:425,available:260},
-  {sku:'SSB-0010',name:'Stainless Flat Bar',category:'Bars & Rods',unit:'kg',spec:'304 · 25 × 3 mm',price:185.5,available:1200},
-  {sku:'FBT-0012',name:'Hex Bolt & Nut Set',category:'Fasteners',unit:'box',spec:'M12 × 50 · 50 pcs',price:580,available:8}];
+/* ----- authenticated API ----- */
 async function api(path, opts) {
-  const r = await fetch(path, Object.assign({ credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } }, opts));
+  let r;
+  try { r = await fetch(path, Object.assign({ credentials: 'same-origin', signal: AbortSignal.timeout(15000), headers: { 'Content-Type': 'application/json' } }, opts)); }
+  catch (e) { connectionState(false); stockStamp(); throw e; }
   if (r.status === 401) { location.href = 'Login_Inventory.html'; throw new Error('Not signed in'); }
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error || 'Request failed');
+  if (!r.ok) { const e = new Error(d.error || 'Request failed'); e.status = r.status; throw e; }
   return d;
 }
-async function loadProducts() {            // GET /api/pos/products — finished goods only, with price > 0
-  try { return await api('/api/pos/products'); }
-  catch (e) { if (e instanceof TypeError) return DEMO; toast(e.message, true); return []; }   // DEMO only when no server is reachable (file preview)
-}
+async function loadProducts() { return api('/api/pos/products'); }
 async function submitSale(sale) {          // server re-prices from the database and posts the stock-out
   const r = await api('/api/pos/sales', { method: 'POST', body: JSON.stringify({
     items: sale.items.map(i => i.override ? { sku: i.sku, qty: i.qty, price: i.price } : { sku: i.sku, qty: i.qty }), approvalToken: sale.approvalToken,
     method: sale.method, tendered: sale.tendered, cardRef: sale.cardRef, requestId: sale.requestId,
     customerName: sale.customerName, customerPhone: sale.customerPhone, fulfillment: sale.fulfillment, shipTo: sale.shipTo,
     quoteNo: window.QUOTE_HANDOVER || undefined }) });
-  if (window.QUOTE_HANDOVER) { window.QUOTE_HANDOVER = ''; loadPosQuotes(); }   // the receipt is linked to the quotation exactly once
+  if (window.QUOTE_HANDOVER) { window.QUOTE_HANDOVER = ''; loadPosQuotes(); }   // the invoice is linked to the quotation exactly once
   return r;
 }
 async function requestApproval(email, password) {   // finance login at the counter -> short-lived token for price overrides
@@ -536,12 +544,15 @@ const $ = id => document.getElementById(id);
 const peso = n => '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pesoShort = n => '₱' + Number(n).toLocaleString('en-PH', { maximumFractionDigits: 0 });
 const esc = s => String(s).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+let salesRequestBusy = false;
 let PRODUCTS = [], cart = [], sales = [], method = 'Cash', voidId = null, cat = '', view = 'grid';
 const TRASH = '<svg class="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>';
 
 function toast(msg, err) { const t = $('toast'); t.textContent = msg; t.className = (err ? 'err ' : '') + 'show'; clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 3000); }
-function closeModal(id) { $(id).classList.remove('show'); }
-const prod = sku => PRODUCTS.find(p => p.sku === sku);
+function closeModal(id, force = false) { if (!force && salesRequestBusy && ['returnBg','voidBg'].includes(id)) return; $(id).classList.remove('show'); if (window.FormAssist) FormAssist.validation.reset($(id)); }
+/* CSP: no inline onclick attributes — buttons carry data-close-modal and this one listener closes the modal */
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-close-modal]'); if (b) closeModal(b.dataset.closeModal); });
+const prod = sku => PRODUCTS.find(p => p.sku === sku) || payments.flatMap(p => p.items || []).filter(i => i.sku === sku).map(i => ({ ...i, name:i.sku, unit:'pcs', available:0 }))[0];
 const cents = n => Math.round((Number(n) + Number.EPSILON) * 100);                 // money is compared in whole centavos, never raw floats
 /* quantities: whole numbers for sheets / pcs / boxes, up to 2 decimals for kg / metres etc. */
 const MEASURED_RE = /^(kg|g|tonne|ton|lb|m|meter|metre|ft|foot|feet|liter|litre|l|linear m|linear meter|linear metre|lm)s?$/i;
@@ -561,7 +572,9 @@ const hasOverride = () => cart.some(l => l.price !== undefined);
 const parseMoney = v => { const n = parseFloat(String(v).replace(/[₱,\s]/g, '')); return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0; };
 const CARD_RE = /^[A-Z0-9-]{4,30}$/;
 const cardCode = () => $('cardRef').value.trim().toUpperCase();
-let busy = false;
+let busy = false, connected = false, refreshingStock = false, stockAt = null, initialized = false;
+let paymentsReady = false, payments = [], paymentDraft = null, recoveryBusy = false;
+const paymentBlocksSale = () => !paymentsReady || !!paymentDraft || payments.some(p => p.needsCartReview || ['pending','review','unknown'].includes(p.status));
 let pendingSaleRequestId = null;
 const saleRequestId = () => pendingSaleRequestId ||= (crypto.randomUUID ? crypto.randomUUID() : 'pos-' + Date.now() + '-' + Math.random().toString(36).slice(2));
 const inCart = sku => (cart.find(l => l.sku === sku) || {}).qty || 0;
@@ -574,7 +587,7 @@ const storeKey = () => 'tripleE.pos.' + (USER.id != null ? USER.id : (USER.name 
 const readStore = () => { try { return JSON.parse(localStorage.getItem(storeKey())) || {}; } catch (e) { return {}; } };
 function writeStore() {
   if (!ready) return;                                   // never overwrite saved data before it has been loaded
-  try { localStorage.setItem(storeKey(), JSON.stringify({ cart, held, seq: holdSeq, approval })); } catch (e) {}
+  try { localStorage.setItem(storeKey(), JSON.stringify({ cart, held, seq: holdSeq, approval, paymentIds: payments.map(p => String(p.paymentId)), paymentResults: payments.map(p => ({id:String(p.paymentId),status:p.status,needsCartReview:!!p.needsCartReview})), paymentDraft })); } catch (e) {}
 }
 const cleanLines = a => (Array.isArray(a) ? a : []).filter(l => l && typeof l.sku === 'string' && Number(l.qty) > 0).map(l => { const o = { sku: l.sku, qty: Math.round(Number(l.qty) * 100) / 100 }; if (Number(l.price) > 0) o.price = Math.round(Number(l.price) * 100) / 100; return o; });
 const approvalOk = () => !!(approval && approval.exp > Date.now() + 5000);
@@ -694,18 +707,19 @@ function renderProducts() {
 
 /* ----- cart + payment ----- */
 function renderCart() {
-  if (!busy) pendingSaleRequestId = null;
+  if (!busy && !paymentBlocksSale()) pendingSaleRequestId = null;
   $('lines').innerHTML = cart.length ? cart.map(l => { const p = prod(l.sku), ov = l.price !== undefined && l.price !== p.price, frac = isFrac(p); return `<div class="line">
     <div class="top"><div>${esc(p.name)}<div class="faint" style="font-size:12.5px;font-weight:400">${esc(p.sku)} · ${ov ? `<span class="was">${peso(p.price)}</span><span class="ovr">${peso(l.price)}</span>` : peso(p.price)} / ${esc(p.unit)}
       · <button class="link-btn" data-price="${esc(l.sku)}">${ov ? 'Edit price' : 'Change price'}</button>${ov ? ` · <button class="link-btn" data-priceoff="${esc(l.sku)}">Reset</button>` : ''}</div></div>
     <button class="icon-btn" data-rm="${esc(l.sku)}" title="Remove" aria-label="Remove ${esc(p.name)}">${TRASH}</button></div>
     <div class="bot"><div class="qty"><button data-dec="${esc(l.sku)}" aria-label="Less">−</button><input data-qty="${esc(l.sku)}" value="${l.qty}" inputmode="${frac ? 'decimal' : 'numeric'}" autocomplete="off" aria-label="Quantity of ${esc(p.name)}"><span class="u">${esc(p.unit)}</span><button data-inc="${esc(l.sku)}" aria-label="More">+</button></div>
     <span class="mono">${peso(lineAmt(l))}</span></div>
-    ${minQty(p) > 1 || p.available ? `<div class="faint" style="font-size:12px;margin-top:4px">Min. ${fmtQty(minQty(p))} · max ${fmtQty(p.available)} ${esc(p.unit)} (in stock)</div>` : ''}</div>`; }).join('')
+    ${minQty(p) > 1 || p.available ? `<div class="faint" style="font-size:12px;margin-top:4px">Min. ${fmtQty(minQty(p))} · max ${fmtQty(p.available)} ${esc(p.unit)} (in stock)${p.available <= (p.reorderLevel || 10) ? '<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;background:#fef3c7;color:#92400e;margin-left:6px">Low stock: ' + fmtQty(p.available) + ' ' + esc(p.unit) + '</span>' : ''}</div>` : ''}</div>`; }).join('')
     : '<div class="empty"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>Add products to start a sale.</div>';
   const t = total(), units = cart.length;
   $('total').textContent = peso(t); $('vat').textContent = peso(t * VAT_RATE / (1 + VAT_RATE));
   $('feeRow').hidden = fulfil !== 'Delivery'; $('feeAmt').textContent = PosDelivery.feeState().known ? peso(dlvFee()) : 'Choose the region';
+  if (fulfil === 'Delivery' && window.PosDelivery) PosDelivery.refresh();   // heavier cart = higher fee: ask again
   $('cartCount').textContent = units; $('clear').disabled = !cart.length;
   updatePay(); updateFab(); renderProducts(); updateHeldBtn(); writeStore();
 }
@@ -717,7 +731,7 @@ function updateFab() {
 function updatePay() {
   const t = total(), tend = parseMoney($('tendered').value);
   $('change').textContent = peso(cents(tend) > cents(t) ? (cents(tend) - cents(t)) / 100 : 0);
-  let ok = cart.length > 0 && !busy, msg = '';
+  let ok = cart.length > 0 && !busy, msg = !cart.length ? 'Add products to start a sale.' : '';
   const short = belowMin();
   if (short) { ok = false; msg = 'The minimum order for ' + prod(short.sku).name + ' is ' + fmtQty(minQty(prod(short.sku))) + ' ' + prod(short.sku).unit + '.'; }
   else if (cart.length && fulfil === 'Delivery') {
@@ -725,22 +739,31 @@ function updatePay() {
     if (!fs.known) { ok = false; msg = 'Choose the delivery region / province to see the delivery fee.'; }
     else if (!fs.available) { ok = false; msg = 'We do not deliver to this area yet. Choose another address or switch to Pickup.'; }
   }
-  if (cart.length && method === 'Cash' && cents(tend) < cents(t)) { ok = false; if (!msg) msg = $('tendered').value.trim() ? 'Cash received is less than the total.' : ''; }
+  if (cart.length && method === 'Cash' && cents(tend) < cents(t)) { ok = false; if (!msg) msg = $('tendered').value.trim() ? 'Cash received is less than the total.' : 'Enter the cash received to complete this sale.'; }
   if (cart.length && method === 'Card') {
     const c = cardCode();
-    if (!CARD_RE.test(c)) { ok = false; msg = c ? 'Reference must be 4–30 letters, numbers or dashes.' : ''; }
-    else if (!$('cardOk').checked) ok = false;
+    if (!CARD_RE.test(c)) { ok = false; msg = c ? 'Reference must be 4–30 letters, numbers or dashes.' : 'Enter the verified payment reference.'; }
+    else if (!$('cardOk').checked) { ok = false; msg = 'Confirm that you verified receipt of the full amount.'; }
   }
+  if (method === 'Xendit' && hasOverride()) { ok = false; msg = 'Online checkout requires catalogue prices. Reset the changed price or choose another payment method.'; }
+  if (paymentBlocksSale()) { ok = false; msg = paymentsReady ? 'Resolve the online payment above before collecting again.' : 'Checking for unfinished online payments. Use Refresh stock to retry.'; }
+  if (refreshingStock || !connected) { ok = false; msg = refreshingStock ? 'Refreshing stock…' : 'Connection lost. Reconnect before completing a sale; your cart is kept.'; }
+  if (busy) { ok = false; msg = 'Processing this sale. Please wait.'; }
+  $('clear').disabled = $('holdBtn').disabled = !cart.length || busy || paymentBlocksSale();
+  $('heldBtn').disabled = busy || paymentBlocksSale();
+  document.querySelectorAll('#lines input, #lines button, [data-m], [data-fulfil], #custName, #custPhone, #dlvHost input, #dlvHost select, #tendered, #cardRef, #cardOk, [data-cash]').forEach(el => { el.disabled = paymentBlocksSale() || busy; });
   $('payErr').textContent = msg; $('complete').disabled = !ok;
   if (method === 'Xendit') { $('complete').textContent = 'Generate QR / Bank checkout · ' + peso(t); return; }
-  $('complete').textContent = method === 'Card' && cart.length ? 'Complete sale · Paid by phone ' + peso(t) : 'Complete sale';
+  $('complete').textContent = method === 'Card' && cart.length ? 'Record verified manual payment · ' + peso(t) : 'Complete sale';
 }
 function addToCart(sku) {
+  if (busy || !connected || paymentBlocksSale()) return toast('Reconnect and resolve any online payment before changing the sale.',true);
   const p = prod(sku), l = cart.find(x => x.sku === sku), have = l ? l.qty : 0, step = l ? 1 : minQty(p);   // the first add brings the line up to the minimum order
   if (have + step > p.available) return toast('Only ' + fmtQty(p.available) + ' ' + p.unit + ' in stock.', true);
   if (l) l.qty = Math.round((l.qty + 1) * 100) / 100; else { cart.push({ sku, qty: step }); if (step > 1) toast('Minimum order for ' + p.name + ' is ' + fmtQty(step) + ' ' + p.unit + ' — added.'); } renderCart();
 }
-function stepDown(sku) {           // the − button: down by 1; removes the line if less than 1 would be left
+function stepDown(sku) {
+  if (paymentBlocksSale()) return;           // the − button: down by 1; removes the line if less than 1 would be left
   const l = cart.find(x => x.sku === sku); if (!l) return;
   const p = prod(sku), q = Math.round((l.qty - 1) * 100) / 100;
   if (p && q < minQty(p)) return toast('The minimum order for ' + p.name + ' is ' + fmtQty(minQty(p)) + ' ' + p.unit + '. Use the bin to remove the line.', true);
@@ -812,19 +835,19 @@ function renderSales() {
   $('stTotal').textContent = peso(sum(live)); $('stCount').textContent = live.length;
   $('stAvg').textContent = 'Avg ' + peso(live.length ? sum(live) / live.length : 0);
   $('stItems').textContent = live.reduce((n, s) => n + s.items.reduce((m, i) => m + i.qty, 0), 0);
-  $('stSplit').textContent = pesoShort(sum(live.filter(s => s.method === 'Cash'))) + ' / ' + pesoShort(sum(live.filter(s => s.method !== 'Cash')));
+  for (const [id, key] of [['stCash','Cash'],['stManual','Card'],['stOnline','Xendit']]) $(id).textContent = peso(sum(live.filter(s => s.method === key)));
   $('saleRows').innerHTML = sales.map(s => `<tr><td class="mono">${s.receiptNo}${s.fulfillment === 'Delivery' ? '<div class="dim" style="font-size:12px;font-family:inherit">Delivery</div>' : ''}</td><td class="dim">${new Date(s.createdAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}</td>
-    <td class="r">${s.items.reduce((n, i) => n + i.qty - (i.returnedQty || 0), 0)}</td><td class="r mono">${peso(s.total)}${s.refunded ? `<div class="dim" style="font-size:12px">returned −${peso(s.refunded)}</div>` : ''}</td><td>${s.method === 'Xendit' ? 'Online payment' : s.method}</td>
+    <td class="r">${s.items.reduce((n, i) => n + i.qty - (i.returnedQty || 0), 0)}</td><td class="r mono">${peso(s.total)}${s.refunded ? `<div class="dim" style="font-size:12px">returned −${peso(s.refunded)}</div>` : ''}</td><td>${s.method === 'Xendit' ? 'Online payment' : s.method === 'Card' ? 'Manual payment' : s.method}</td>
     <td><span class="status-pill ${s.returnPending ? 'warn' : s.status === 'Completed' ? 'ok' : s.status === 'Voided' ? 'bad' : 'warn'}">${s.returnPending ? 'Return pending' : s.status}</span></td>
     <td class="r" style="white-space:nowrap"><button class="btn-secondary btn-sm" data-reprint="${s.id}">Reprint</button>
     ${canReturn(s) ? ` <button class="btn-secondary btn-sm" data-return="${s.id}">Return…</button>` : ''}
     ${s.status === 'Completed' && !s.refunded && !s.returnPending ? ` <button class="btn-danger btn-sm" data-void="${s.id}">Void…</button>` : ''}</td></tr>`).join('');
 }
-/* ----- receipt as PNG (prints at 80 mm instead of a full A4 page) ----- */
+/* ----- invoice as PNG (prints at 80 mm instead of a full A4 page) ----- */
 let lastReceipt = null;
 async function receiptPng(s, reprint) {
   const W = 320, SC = 3, PAD = 18, MONO = '"IBM Plex Mono","Courier New",monospace';
-  try { await Promise.race([Promise.all([document.fonts.load('12px "IBM Plex Mono"'), document.fonts.load('700 12px "IBM Plex Mono"')]), new Promise(r => setTimeout(r, 1500))]); } catch (e) {}   // never block the receipt on a slow / offline font
+  try { await Promise.race([Promise.all([document.fonts.load('12px "IBM Plex Mono"'), document.fonts.load('700 12px "IBM Plex Mono"')]), new Promise(r => setTimeout(r, 1500))]); } catch (e) {}   // never block the invoice on a slow / offline font
   const font = (sz, bold) => (bold ? '700 ' : '400 ') + sz + 'px ' + MONO;
   const layout = (c, draw) => {
     let y = PAD;
@@ -845,7 +868,7 @@ async function receiptPng(s, reprint) {
     const gap = n => { y += n; };
 
     center('TRIPLE E METAL PRODUCTS', { bold: true, size: 15 });
-    center('Sales Transaction Record', { size: 12 });
+    center('SALES INVOICE', { bold: true, size: 12 });
     if (s.status === 'Voided') center('*** VOIDED ***', { bold: true, size: 14 });
     else if (s.status === 'Void Pending') center('*** VOID REQUESTED ***', { bold: true, size: 12 });
     else if (s.returnPending) center('*** RETURN PENDING ***', { bold: true, size: 12 });
@@ -866,8 +889,8 @@ async function receiptPng(s, reprint) {
     gap(4);
     if (s.method === 'Cash') { row('Cash', peso(s.tendered)); row('Change', peso(s.change || 0)); }
     else if (s.method === 'Xendit') { row('Online payment', peso(s.total)); row('Ref no.', s.cardRef || '—'); }
-    else { row('Card / Online', peso(s.total)); row('Ref no.', s.cardRef || '—'); }
-    rule(); gap(2); center('Thank you for your purchase!', { size: 11 }); center('Please keep this receipt.', { size: 10.5, color: '#555' });
+    else { row('Manual payment', peso(s.total)); row('Ref no.', s.cardRef || '—'); }
+    rule(); gap(2); center('Thank you for your purchase!', { size: 11 }); center('Please keep this invoice.', { size: 10.5, color: '#555' });
     y += PAD; return y;
   };
   const probe = document.createElement('canvas').getContext('2d');
@@ -880,65 +903,120 @@ async function receiptPng(s, reprint) {
 async function showReceipt(s, reprint) {
   if (!s) return;
   try { lastReceipt = { s, url: await receiptPng(s, !!reprint) }; }
-  catch (e) { return toast('Could not draw the receipt.', true); }
+  catch (e) { return toast('Could not draw the invoice.', true); }
   $('receiptImg').src = lastReceipt.url; $('receiptBg').classList.add('show');
 }
 $('rcSave').onclick = () => {
   if (!lastReceipt) return; const a = document.createElement('a');
-  a.href = lastReceipt.url; a.download = lastReceipt.s.receiptNo + '.png'; document.body.appendChild(a); a.click(); a.remove();
+  a.href = lastReceipt.url; a.download = 'Invoice-' + lastReceipt.s.receiptNo + '.png'; document.body.appendChild(a); a.click(); a.remove();
 };
-$('rcPrint').onclick = () => {                    // prints only the receipt image, 80 mm wide, in a hidden frame (no A4 page of dashboard)
+$('rcPrint').onclick = () => {                    // prints only the invoice image, 80 mm wide, in a hidden frame (no A4 page of dashboard)
   if (!lastReceipt) return;
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
   document.body.appendChild(f);
   const d = f.contentWindow.document; d.open();
-  d.write('<!doctype html><html><head><title>' + esc(lastReceipt.s.receiptNo) + '</title><style>@page{size:80mm auto;margin:0}html,body{margin:0;padding:0;background:#fff}img{display:block;width:80mm;height:auto}</style></head><body><img src="' + lastReceipt.url + '"></body></html>');
+  d.write('<!doctype html><html><head><title>Invoice ' + esc(lastReceipt.s.receiptNo) + '</title><style>@page{size:80mm auto;margin:0}html,body{margin:0;padding:0;background:#fff}img{display:block;width:80mm;height:auto}</style></head><body><img src="' + lastReceipt.url + '"></body></html>');
   d.close();
   const img = d.querySelector('img'), go = () => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { toast('Could not open the print dialog.', true); } setTimeout(() => f.remove(), 60000); };
   img.complete ? go() : (img.onload = go);
 };
 
-let xenditPayment = null, xenditPoll = null;
-async function checkXenditPayment() {
-  if (!xenditPayment) return;
+/* ----- recoverable online payments ----- */
+const cartSignature = () => JSON.stringify(cart.map(l => [l.sku,l.qty,l.price ?? null]).sort((a,b) => a[0].localeCompare(b[0])));
+const terminalPayment = p => ['paid','expired','error'].includes(p.status);
+function renderPayments() {
+  $('xenditPending').hidden = !payments.length && !paymentDraft;
+  $('paymentRecoveryList').innerHTML = payments.map(p => {
+    const id = esc(p.paymentId), pending = !terminalPayment(p);
+    const label = p.status === 'paid' ? 'Payment verified — invoice recorded' : p.status === 'review' ? 'Payment needs Finance review. Do not collect again.' : p.status === 'expired' ? 'Checkout expired' : p.status === 'error' ? 'Checkout failed' : 'Waiting for verified payment';
+    let url = ''; try { const u = new URL(p.checkoutUrl); if (['https:','http:'].includes(u.protocol)) url = u.href; } catch (_) {}
+    const tone = p.status === 'paid' ? 'ok' : p.status === 'expired' || p.status === 'error' ? 'bad' : 'wait';
+    return `<article class="pos-payment">
+      <div class="pos-payment-main">
+        <div class="pos-payment-head"><strong>Payment #${id}</strong><span class="pos-payment-amt">${peso(p.amount)}</span></div>
+        <span class="pos-payment-state ${tone}">${label}</span>
+        ${pending ? '<p class="pos-payment-warn">Do not collect a second payment while this is unresolved.</p>' : ''}
+        ${p.needsCartReview ? '<p class="pos-payment-warn">This payment belongs to another basket. Review the current sale before continuing.</p>' : ''}
+        <div class="pos-payment-actions">
+          ${url && p.status === 'pending' ? `<a class="btn-primary btn-sm" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open secure checkout</a>` : ''}
+          <button type="button" class="btn-secondary btn-sm" data-check-payment="${id}">Check payment</button>
+          ${terminalPayment(p) ? `<button type="button" class="btn-secondary btn-sm" data-dismiss-payment="${id}">${p.needsCartReview ? 'Keep current cart and dismiss result' : 'Dismiss result'}</button>` : ''}
+        </div>
+      </div>
+      ${url && p.status === 'pending' ? `<div class="pos-payment-qr"><div data-payment-qr="${id}"></div><small>Scan to pay</small></div>` : ''}</article>`;
+  }).join('') + (paymentDraft && !payments.some(p => p.requestId === paymentDraft.requestId) ? '<p>Recovering a checkout request. Keep this sale until its status is confirmed.</p><button type="button" class="btn-secondary btn-sm" id="retryCheckout">Retry original checkout</button>' : '');
+  if (window.QRCode) document.querySelectorAll('[data-payment-qr]').forEach(el => {
+    const p = payments.find(p => String(p.paymentId) === el.dataset.paymentQr);
+    if (p) new QRCode(el, { text:p.checkoutUrl, width:144, height:144 });
+  });
+  updatePay(); writeStore();
+}
+async function acceptPayment(p) {
+  const previous = payments.find(x => String(x.paymentId) === String(p.paymentId));
+  payments = payments.filter(x => String(x.paymentId) !== String(p.paymentId)); payments.push(p);
+  const linked = paymentDraft && p.requestId === paymentDraft.requestId;
+  const sameCart = linked ? paymentDraft.signature === cartSignature() :
+    Array.isArray(p.items) && p.items.length > 0 &&
+    JSON.stringify(cart.map(l=>[l.sku,l.qty]).sort()) === JSON.stringify(p.items.map(l=>[l.sku,l.qty]).sort());
+  if (linked && terminalPayment(p)) { paymentDraft = null; pendingSaleRequestId = null; }
+  if (p.status === 'paid' && (linked || previous?.status !== 'paid')) {
+    if (sameCart) resetSale(true);
+    else if (cart.length) p.needsCartReview = true;
+  } else if (previous?.needsCartReview) p.needsCartReview = true;
+  if (p.status === 'paid' && previous?.status !== 'paid') {
+    toast('Online payment verified. Invoice recorded.');
+    if (window.refreshCashShift) window.refreshCashShift();
+    const fresh = await loadTodaySales(); if (fresh) { sales = fresh; renderSales(); }
+    if (!refreshingStock) await refreshCatalogue();
+  }
+}
+async function recoverPayments() {
+  if (!USER || recoveryBusy) return;
+  recoveryBusy = true;
   try {
-    const p = await api('/api/pos/xendit-payments/' + encodeURIComponent(xenditPayment.paymentId));
-    if (p.status === 'paid') {
-      clearInterval(xenditPoll); xenditPoll = null; xenditPayment = null;
-      $('xenditPending').hidden = true; busy = false; resetSale(); updatePay();
-      toast('Online payment verified. Sale completed.');
-      if (window.refreshCashShift) window.refreshCashShift();
-      try { PRODUCTS = await loadProducts(); renderCats(); } catch (e) {}
-      const fresh = await loadTodaySales(); if (fresh) { sales = fresh; renderSales(); }
-      const done = (fresh || []).find(x => String(x.id) === String(p.sale_id));
-      if (done) showReceipt(done, false);
-    } else if (p.status === 'pending' && p.checkError) {
-      $('xenditState').textContent = 'Waiting for payment… (could not confirm with Xendit: ' + p.checkError + ')';
-    } else if (['expired','review','error'].includes(p.status)) {
-      clearInterval(xenditPoll); xenditPoll = null; busy = false;
-      $('xenditState').textContent = p.status === 'review' ? 'Paid, needs staff reconciliation. Do not collect again.' : 'Payment ' + p.status;
-      updatePay();
-    }
-  } catch(e) { $('xenditState').textContent = 'Could not check status; retry'; }
+    const ids = payments.map(p => p.paymentId).slice(0,50).join(',');
+    const rows = await api('/api/pos/xendit-payments?ids=' + encodeURIComponent(ids) + '&requests=' + encodeURIComponent(paymentDraft?.requestId || ''));
+    for (const p of rows) await acceptPayment(p);
+    // An uncertain POST must be retried using the SAME request id, never silently replaced.
+    if (paymentDraft && !rows.some(p => p.requestId === paymentDraft.requestId)) {
+      $('paymentRecoveryError').textContent = 'Checkout could not be found yet. Check again before collecting payment.';
+    } else $('paymentRecoveryError').textContent = '';
+    paymentsReady = true;
+  } catch (e) { paymentsReady = false; $('paymentRecoveryError').textContent = 'Could not recover payments. Retry connection before collecting again.'; }
+  finally { recoveryBusy = false; renderPayments(); }
+}
+const paymentChecks = new Set();
+async function checkXenditPayment(id) {
+  if (paymentChecks.has(String(id))) return;
+  paymentChecks.add(String(id));
+  try {
+    const p = await api('/api/pos/xendit-payments/' + encodeURIComponent(id));
+    const old = payments.find(x => String(x.paymentId) === String(id));
+    await acceptPayment({ ...old, ...p, paymentId:id });
+    $('paymentRecoveryError').textContent = p.checkError ? 'Payment could not be confirmed yet. Check again; do not collect twice.' : '';
+  } catch (e) { $('paymentRecoveryError').textContent = 'Could not check payment. Keep this sale and retry.'; }
+  finally { paymentChecks.delete(String(id)); renderPayments(); }
 }
 async function beginXendit(draft) {
-  if (xenditPayment) { $('xenditPending').hidden = false; return; }
-  busy = true; updatePay();
-  try {
-    const p = await api('/api/pos/xendit-checkout', {method:'POST',body:JSON.stringify({requestId:draft.requestId,customerName:draft.customerName,customerPhone:draft.customerPhone,fulfillment:draft.fulfillment,shipTo:draft.shipTo,items:draft.items.map(i=>i.override?{sku:i.sku,qty:i.qty,price:i.price}:{sku:i.sku,qty:i.qty})})});
-    xenditPayment = p;
-    $('xenditPending').hidden = false; $('xenditState').textContent = 'Waiting for verified payment';
-    $('xenditLink').href = p.checkoutUrl; $('xenditQR').replaceChildren();
-    if (window.QRCode) new QRCode($('xenditQR'),{text:p.checkoutUrl,width:192,height:192});
-    else $('xenditState').textContent = 'QR unavailable. Use checkout link below.';
-    xenditPoll = setInterval(checkXenditPayment,4000);
-  } catch(e) { busy = false; toast(e.message || 'Online payment checkout failed',true); }
-  updatePay();
+  draft = { ...draft, items:draft.items.map(i => i.override ? {sku:i.sku,qty:i.qty,price:i.price} : {sku:i.sku,qty:i.qty}) };
+  busy = true; paymentDraft = { requestId:draft.requestId, signature:paymentDraft?.signature || cartSignature(), payload:draft }; writeStore(); updatePay();
+  try { await acceptPayment(await api('/api/pos/xendit-checkout', {method:'POST',body:JSON.stringify(draft)})); }
+  catch (e) { if (e.status >= 400 && e.status < 500 && e.status !== 401) { paymentDraft = null; toast(e.message,true); } else toast('Checkout status is uncertain. Recovering the request before another payment can be collected.',true); }
+  finally { busy = false; await recoverPayments(); renderPayments(); }
 }
-$('xenditCheck').onclick = checkXenditPayment;
-$('xenditDismiss').onclick = () => { $('xenditPending').hidden = true; toast('Pending payment is still active. Do not collect a second payment.',true); };
+$('recoverPayments').onclick = recoverPayments;
+document.addEventListener('click', e => {
+  const button = e.target.closest('button'); if (!button) return;
+  if (button.id === 'retryCheckout' && !busy && paymentDraft?.payload) beginXendit(paymentDraft.payload);
+  if (button.dataset.checkPayment) checkXenditPayment(button.dataset.checkPayment);
+  if (button.dataset.dismissPayment) {
+    payments = payments.filter(p => String(p.paymentId) !== button.dataset.dismissPayment || !terminalPayment(p)); renderPayments();
+  }
+});
+setInterval(() => { if (!document.hidden && connected) payments.filter(p => p.status === 'pending').forEach(p => checkXenditPayment(p.paymentId)); }, 5000);
+
 async function completeSale() {
-  if (busy || !cart.length) return;
+  if (busy || !cart.length || !connected || refreshingStock || paymentBlocksSale()) return updatePay();
   const t = total(), tend = parseMoney($('tendered').value);
   if (method === 'Cash' && cents(tend) < cents(t)) return updatePay();
   if (method === 'Card' && (!CARD_RE.test(cardCode()) || !$('cardOk').checked)) return updatePay();
@@ -972,6 +1050,48 @@ function syncCart() {
 /* ----- delivery mode ----- */
 const DLV_PHONE_RE = /^(\+63|0)9\d{9}$/, DLV_NAME_RE = /^[\p{L}][\p{L}\p{M} .'’-]*$/u;
 function custErr(id, msg) { const b = $(id + 'Err'); if (b) b.textContent = msg || ''; $(id).classList.toggle('is-bad', !!msg); }
+/* Task 9 (form-assist.js): a phone number the shop already knows (account, earlier walk-in sale or quote) fills in the customer's name */
+(function () {
+  const FA = window.FormAssist; if (!FA) return;
+  let seq = 0;
+  async function doPhoneMatch() {
+    const phone = $('custPhone').value.replace(/[\s().-]/g, ''), my = ++seq;
+    FA.note($('custPhone'), '');
+    if (!DLV_PHONE_RE.test(phone)) return;
+    if (fulfil === 'Delivery') custErr('custPhone', '');
+    let r; try { r = await api('/api/customers/match?phone=' + encodeURIComponent(phone)); } catch (_) { return; }
+    const m = my === seq && r && (r.matches || [])[0]; if (!m) return;
+    const typed = $('custName').value.trim();
+    if (!typed) {
+      FA.setValue($('custName'), m.name);
+      if (fulfil === 'Delivery') custErr('custName', '');
+      FA.note($('custPhone'), 'Known customer: <b>' + esc(m.name) + '</b> \u2014 name filled in automatically.', 'ok');
+      return;
+    }
+    if (typed.toLowerCase() === String(m.name).toLowerCase()) return;
+    const n = FA.note($('custPhone'), 'This number is saved for <b>' + esc(m.name) + '</b>. <button type="button" class="fa-link">Use that name</button>', 'info');
+    n.querySelector('button').onclick = () => { FA.setValue($('custName'), m.name); FA.note($('custPhone'), ''); if (fulfil === 'Delivery') custErr('custName', ''); };
+  }
+  $('custPhone').addEventListener('blur', () => setTimeout(doPhoneMatch, 0));
+  $('custPhone').addEventListener('input', () => {
+    const raw = $('custPhone').value.replace(/[\s().-]/g, '');
+    if (raw.length === 11 && DLV_PHONE_RE.test(raw)) setTimeout(doPhoneMatch, 50);
+    if (fulfil === 'Delivery' && DLV_PHONE_RE.test(raw)) custErr('custPhone', '');
+  });
+  $('custName').addEventListener('input', () => {
+    const val = $('custName').value.trim();
+    if (fulfil === 'Delivery' && val.length >= 2 && DLV_NAME_RE.test(val)) custErr('custName', '');
+  });
+  FA.validation.bind($('custName'), value => {
+    const name = value.trim();
+    if (fulfil === 'Delivery') return name.length < 2 || name.length > 50 || !DLV_NAME_RE.test(name) ? 'Enter the customer’s full name (2–50 characters, letters only).' : '';
+    return name && (name.length < 2 || name.length > 80) ? 'Use 2–80 characters, or leave the name empty.' : '';
+  }, $('custNameErr'));
+  FA.validation.bind($('custPhone'), value => {
+    if (fulfil === 'Delivery') return DLV_PHONE_RE.test(value.replace(/[\s().-]/g, '')) ? '' : 'Enter a valid mobile number, e.g. 0917 123 4567.';
+    return !value.trim() || /^\+?[0-9][0-9 ()-]{5,18}[0-9]$/.test(value.trim()) ? '' : 'Enter a valid phone number, or leave it empty.';
+  }, $('custPhoneErr'));
+})();
 function setFulfil(f) {
   fulfil = f; document.querySelectorAll('[data-fulfil]').forEach(b => b.classList.toggle('on', b.dataset.fulfil === f));
   $('dlvHost').hidden = f !== 'Delivery';
@@ -992,14 +1112,15 @@ function readDelivery() {
   return ship;
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-fulfil]'); if (b) setFulfil(b.dataset.fulfil); });
-PosDelivery.init({ api, esc, toast, onChange: () => { if (ready) renderCart(); } });
+PosDelivery.init({ api, esc, toast, items: () => cart.map(l => ({ sku: l.sku, qty: l.qty })), onChange: () => { if (ready) renderCart(); } });
 PosDelivery.mount($('dlvHost'));
 
-function resetSale() { pendingSaleRequestId = null; cart = []; approval = null; $('custName').value = ''; $('custPhone').value = ''; setFulfil('Pickup'); PosDelivery.reset(); custErr('custName', ''); custErr('custPhone', ''); $('tendered').value = ''; $('cardRef').value = ''; $('cardOk').checked = false; renderCart(); }
+function resetSale(force = false) { if (!force && (busy || paymentBlocksSale())) return toast('Resolve the online payment before clearing the sale.',true); pendingSaleRequestId = null; cart = []; approval = null; $('custName').value = ''; $('custPhone').value = ''; if (window.FormAssist) FormAssist.note($('custPhone'), ''); setFulfil('Pickup'); PosDelivery.reset(); custErr('custName', ''); custErr('custPhone', ''); $('tendered').value = ''; $('cardRef').value = ''; $('cardOk').checked = false; renderCart(); }
 
 /* ----- events ----- */
 document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+  if ((paymentBlocksSale() || busy) && (d.add || d.inc || d.dec || d.rm || d.price || d.priceoff || d.fulfil || d.m || d.resume || ['clear','holdBtn','heldBtn'].includes(b.id))) return toast('Resolve the online payment before changing this sale.', true);
   if (d.add) addToCart(d.add);
   if (d.inc) addToCart(d.inc);
   if (d.dec) stepDown(d.dec);
@@ -1016,46 +1137,67 @@ document.addEventListener('click', e => {
   if (d.discard) discardHeld(d.discard);
   if (d.reprint) showReceipt(sales.find(s => s.id === d.reprint), true);
   if (d.return) openReturn(d.return);
-  if (d.void) { voidId = d.void; $('voidFor').textContent = 'Receipt ' + sales.find(s => s.id === voidId).receiptNo; $('voidReason').value = ''; $('voidDetails').value = ''; $('voidDetailsLbl').textContent = 'More details (optional)'; $('voidReason').classList.remove('is-bad'); $('voidDetails').classList.remove('is-bad'); $('voidErr').textContent = ''; $('voidBg').classList.add('show'); }
+  if (d.void) openVoid(d.void);
 });
 /* ----- partial return ----- */
 let returnSale = null;
 function openReturn(id, sale) {
+  if (salesRequestBusy) return;
   returnSale = sale || sales.find(s => s.id === id); if (!returnSale) return;
-  $('returnFor').textContent = 'Receipt ' + returnSale.receiptNo + ' · choose what the customer is bringing back';
+  $('returnFor').textContent = 'Invoice ' + returnSale.receiptNo + ' · choose what the customer is bringing back';
   $('returnRows').innerHTML = returnSale.items.filter(i => i.itemId).map(i => { const left = leftToReturn(i);
     return `<tr><td>${esc(i.name)}<div class="dim" style="font-size:12px">${esc(i.sku)} · ${peso(i.price)} / ${esc(i.unit)}</div></td><td class="r">${i.qty}</td><td class="r">${left}</td>
     <td class="r"><input type="number" class="ret-qty" data-item="${esc(i.itemId)}" min="0" max="${left}" step="${i.fractional ? '0.01' : '1'}" inputmode="decimal" placeholder="0" ${left > 0 ? '' : 'disabled'} style="width:84px;text-align:right"></td></tr>`; }).join('');
-  $('returnHow').textContent = returnSale.method === 'Cash' ? 'Cash refund: after Finance approves, pay the customer from your drawer. It is taken off your expected cash.' : 'Paid by ' + (returnSale.method === 'Xendit' ? 'online payment' : 'card') + ': Finance refunds the original payment method. No cash leaves your drawer.';
+  $('returnHow').textContent = returnSale.method === 'Cash' ? 'Cash refund: after Finance approves, pay the customer from your drawer. It is taken off your expected cash.' : 'Paid by ' + (returnSale.method === 'Xendit' ? 'online payment' : 'manual card / bank / wallet payment') + ': Finance refunds the original payment method. No cash leaves your drawer.';
   $('returnReason').value = ''; $('returnDetails').value = ''; $('returnDetailsLbl').textContent = 'More details (optional)';
   ['returnReason', 'returnDetails'].forEach(x => $(x).classList.remove('is-bad')); $('returnErr').textContent = '';
   updateReturnTotal(); $('returnBg').classList.add('show');
 }
-const returnLines = () => [...document.querySelectorAll('#returnRows .ret-qty')].map(el => ({ itemId: el.dataset.item, qty: Number(el.value) || 0 })).filter(x => x.qty > 0);
+function readReturnSelection() {
+  const lines = [];
+  for (const input of document.querySelectorAll('#returnRows .ret-qty')) {
+    if (input.disabled) continue;
+    const raw = input.value.trim(), qty = Number(raw), it = returnSale.items.find(i => i.itemId === input.dataset.item);
+    let error = '';
+    if (input.validity.badInput || (raw && (!/^\d+(?:\.\d{1,2})?$/.test(raw) || !Number.isFinite(qty) || qty > 1e6))) error = 'Enter a quantity from 0 to 1,000,000 with at most 2 decimals.';
+    else if (!it) error = 'This item is no longer on the invoice. Reopen the return.';
+    else if (qty > leftToReturn(it) + 1e-9) error = 'Only ' + leftToReturn(it) + ' ' + it.unit + ' of ' + it.name + ' can still be returned.';
+    else if (!it.fractional && !Number.isInteger(qty)) error = it.name + ' is sold in whole ' + it.unit + ' only.';
+    if (error) return { lines: [], input, error };
+    if (qty > 0) lines.push({ itemId: input.dataset.item, qty });
+  }
+  return { lines };
+}
 function updateReturnTotal() {
-  let cents = 0; for (const l of returnLines()) { const it = returnSale.items.find(i => i.itemId === l.itemId); if (it) cents += lineCents(it.price, l.qty); }
+  const selected = readReturnSelection();
+  if (selected.error) { selected.input.classList.add('is-bad'); $('returnTotal').textContent = '—'; $('returnErr').textContent = selected.error; return; }
+  let cents = 0; for (const l of selected.lines) { const it = returnSale.items.find(i => i.itemId === l.itemId); if (it) cents += lineCents(it.price, l.qty); }
   $('returnTotal').textContent = peso(cents / 100);
 }
 $('returnRows').addEventListener('input', e => { if (e.target.classList.contains('ret-qty')) { e.target.classList.remove('is-bad'); $('returnErr').textContent = ''; updateReturnTotal(); } });
 $('returnReason').onchange = () => { $('returnDetailsLbl').textContent = $('returnReason').value === 'other' ? 'Please explain (required)' : 'More details (optional)'; $('returnReason').classList.remove('is-bad'); $('returnErr').textContent = ''; };
 $('returnSend').onclick = async () => {
-  const lines = returnLines(), code = $('returnReason').value, details = $('returnDetails').value.trim(), err = m => $('returnErr').textContent = m;
+  if (salesRequestBusy || !returnSale) return;
+  const selected = readReturnSelection(), lines = selected.lines, sale = returnSale;
+  const code = $('returnReason').value, details = $('returnDetails').value.trim(), err = m => $('returnErr').textContent = m;
+  if (selected.error) { selected.input.classList.add('is-bad'); selected.input.focus(); return err(selected.error); }
   if (!lines.length) return err('Enter how many of at least one item are being returned.');
-  for (const l of lines) { const it = returnSale.items.find(i => i.itemId === l.itemId), left = leftToReturn(it);
-    if (l.qty > left + 1e-9) { document.querySelector(`.ret-qty[data-item="${l.itemId}"]`).classList.add('is-bad'); return err('Only ' + left + ' ' + it.unit + ' of ' + it.name + ' can still be returned.'); }
-    if (!it.fractional && !Number.isInteger(l.qty)) { document.querySelector(`.ret-qty[data-item="${l.itemId}"]`).classList.add('is-bad'); return err(it.name + ' is sold in whole ' + it.unit + ' only.'); } }
   if (!code) { $('returnReason').classList.add('is-bad'); $('returnReason').focus(); return err('Please choose a reason.'); }
   if (code === 'other' && details.length < 5) { $('returnDetails').classList.add('is-bad'); $('returnDetails').focus(); return err('Please explain the reason (at least 5 characters).'); }
-  $('returnSend').disabled = true;
-  try { await requestReturn(returnSale.id, lines, code, details); }
-  catch (e) { $('returnSend').disabled = false; return err(e.message); }
-  $('returnSend').disabled = false; closeModal('returnBg');
-  const fresh = await loadTodaySales(); if (fresh) sales = fresh; renderSales(); if (window.refreshCashShift) window.refreshCashShift();
-  toast('Return sent to Finance.');
+  salesRequestBusy = true; $('returnSend').disabled = true; $('returnSend').textContent = 'Sending…';
+  try {
+    await requestReturn(sale.id, lines, code, details);
+    sale.returnPending = true;
+    const listed = sales.find(s => s.id === sale.id); if (listed) listed.returnPending = true;
+    closeModal('returnBg', true); renderSales(); toast('Return sent to Finance for approval.');
+    const fresh = await loadTodaySales(); if (fresh) sales = fresh; renderSales();
+    if (window.refreshCashShift) window.refreshCashShift();
+  } catch (e) { err(e.message); }
+  finally { salesRequestBusy = false; $('returnSend').disabled = false; $('returnSend').textContent = 'Send return to Finance'; }
 };
 $('rcFind').onsubmit = async (e) => {
-  e.preventDefault(); const no = $('rcFindNo').value.trim();
-  if (!no) return toast('Type the receipt number first.', true);
+  e.preventDefault(); if (salesRequestBusy) return; const no = $('rcFindNo').value.trim();
+  if (!no) return toast('Type the invoice number first.', true);
   try {
     const s = await lookupReceipt(no);
     if (!canReturn(s)) return toast(s.status !== 'Completed' ? s.receiptNo + ' is ' + s.status.toLowerCase() + ', so nothing can be returned.' : s.returnPending ? s.receiptNo + ' already has a return waiting for Finance.' : 'Everything on ' + s.receiptNo + ' was already returned.', true);
@@ -1063,16 +1205,46 @@ $('rcFind').onsubmit = async (e) => {
   } catch (err) { toast(err.message, true); }
 };
 
+function openVoid(id) {
+  if (salesRequestBusy) return;
+  const sale = sales.find(s => s.id === id); if (!sale) return;
+  voidId = id; $('voidFor').textContent = 'Invoice ' + sale.receiptNo;
+  $('voidReason').value = ''; $('voidDetails').value = ''; $('voidDetailsLbl').textContent = 'More details (optional)';
+  $('voidReason').classList.remove('is-bad'); $('voidDetails').classList.remove('is-bad'); $('voidErr').textContent = ''; $('voidBg').classList.add('show');
+}
 $('voidReason').onchange = () => { $('voidDetailsLbl').textContent = $('voidReason').value === 'other' ? 'Please explain (required)' : 'More details (optional)'; $('voidReason').classList.remove('is-bad'); $('voidErr').textContent = ''; };
 $('voidDetails').oninput = () => { $('voidDetails').classList.remove('is-bad'); $('voidErr').textContent = ''; };
+if (window.FormAssist) {
+  ['void', 'return'].forEach(prefix => {
+    FormAssist.validation.bind($(prefix + 'Reason'), value => value ? '' : 'Please choose a reason.');
+    const check = FormAssist.validation.bind($(prefix + 'Details'), value => $(prefix + 'Reason').value === 'other' && value.trim().length < 5 ? 'Please explain the reason (at least 5 characters).' : '');
+    $(prefix + 'Reason').addEventListener('change', () => check(true));
+  });
+  FormAssist.validation.bind($('priceNew'), value => {
+    const n = parseMoney(value); return !(n > 0) ? 'Enter a price above zero.' : n > 10000000 ? 'That price is too large.' : '';
+  });
+  FormAssist.validation.bind($('supEmail'), value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) ? '' : 'Enter the supervisor email.');
+  FormAssist.validation.bind($('supPass'), value => value ? '' : 'Enter the supervisor password.');
+  FormAssist.validation.bind($('cardRef'), value => CARD_RE.test(value.trim()) ? '' : 'Reference must be 4–30 letters, numbers or dashes.');
+  FormAssist.validation.bind($('tendered'), value => cart.length && method === 'Cash' && cents(parseMoney(value)) < cents(total()) ? 'Cash received is less than the total.' : '');
+  $('lines').addEventListener('input', e => {
+    const input = e.target.closest('[data-qty]'), p = input && prod(input.dataset.qty); if (!p) return;
+    const n = Number(input.value), message = !input.value.trim() || !Number.isFinite(n) || n < minQty(p) ? 'Enter at least ' + fmtQty(minQty(p)) + ' ' + p.unit + '.' : n > p.available ? 'Only ' + fmtQty(p.available) + ' ' + p.unit + ' available.' : !isFrac(p) && !Number.isInteger(n) ? 'Use a whole number.' : Math.abs(n * 100 - Math.round(n * 100)) > 1e-6 ? 'Use at most 2 decimals.' : '';
+    FormAssist.validation.show(input, message);
+  });
+}
 $('voidSend').onclick = async () => {
-  const code = $('voidReason').value, details = $('voidDetails').value.trim();
+  if (salesRequestBusy || !voidId) return;
+  const id = voidId, code = $('voidReason').value, details = $('voidDetails').value.trim();
   if (!code) { $('voidReason').classList.add('is-bad'); $('voidReason').focus(); return $('voidErr').textContent = 'Please choose a reason.'; }
   if (code === 'other' && details.length < 5) { $('voidDetails').classList.add('is-bad'); $('voidDetails').focus(); return $('voidErr').textContent = 'Please explain the reason (at least 5 characters).'; }
-  $('voidSend').disabled = true;
-  try { await requestVoid(voidId, code, details); } catch (e) { $('voidSend').disabled = false; return $('voidErr').textContent = e.message; }
-  $('voidSend').disabled = false;
-  sales.find(s => s.id === voidId).status = 'Void Pending'; closeModal('voidBg'); renderSales(); toast('Void request sent to admin.');
+  salesRequestBusy = true; $('voidSend').disabled = true; $('voidSend').textContent = 'Sending…';
+  try {
+    await requestVoid(id, code, details);
+    const sale = sales.find(s => s.id === id); if (sale) sale.status = 'Void Pending';
+    closeModal('voidBg', true); renderSales(); toast('Void request sent to Finance for approval.');
+  } catch (e) { $('voidErr').textContent = e.message; }
+  finally { salesRequestBusy = false; $('voidSend').disabled = false; $('voidSend').textContent = 'Send void to Finance'; }
 };
 
 $('q').oninput = renderProducts;
@@ -1084,10 +1256,13 @@ $('q').onkeydown = e => {                                   // scanner / keyboar
   if (hit && hit.available > 0) { addToCart(hit.sku); $('q').value = ''; renderProducts(); }
   else if (hit) toast(hit.name + ' is out of stock.', true);
 };
-document.addEventListener('keydown', e => { if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); showPage('terminal'); $('q').focus(); }
-  if (e.key === 'Escape') { setNav(false); closeModal('receiptBg'); closeModal('voidBg'); closeModal('returnBg'); closeModal('holdBg'); closeModal('heldBg'); closeModal('priceBg'); $('userDropdown').classList.remove('open'); } });
+document.addEventListener('keydown', e => {
+  if ((e.key === '/' || e.key === 'F2') && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); showPage('terminal'); $('q').focus(); }
+  if (e.key === 'F4' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); if (cart.length) { $('tendered').focus(); } }
+  if (e.key === 'Escape') { setNav(false); closeModal('receiptBg'); closeModal('voidBg'); closeModal('returnBg'); closeModal('holdBg'); closeModal('heldBg'); closeModal('priceBg'); $('userDropdown').classList.remove('open'); }
+});
 $('cardOk').onchange = updatePay; $('tendered').oninput = updatePay; $('cardRef').oninput = () => { $('cardRef').value = $('cardRef').value.toUpperCase().replace(/[^A-Z0-9-]/g, ''); updatePay(); };
-$('complete').onclick = completeSale; $('clear').onclick = resetSale;
+$('complete').onclick = completeSale; $('clear').onclick = () => resetSale();
 $('priceOk').onclick = applyPrice;
 $('priceBg').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); applyPrice(); } };
 document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.qty) typeQty(e.target); });
@@ -1097,20 +1272,65 @@ $('holdLabel').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); c
 $('cartFab').onclick = () => $('cartPane').scrollIntoView({ behavior: 'smooth', block: 'start' });
 $('logout').onclick = async () => { try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {} location.href = 'Login_Inventory.html'; };
 addEventListener('scroll', () => document.querySelector('.topbar').classList.toggle('scrolled', scrollY > 4), { passive: true });
-const tick = () => $('clock').textContent = new Date().toLocaleTimeString('en-PH');
+const tick = () => { const t = new Date().toLocaleTimeString('en-PH'); $('clock').textContent = t; const h = $('heroClock'); if (h) h.textContent = t; };
 tick(); setInterval(tick, 1000);
 
+/* ----- connection and stock freshness ----- */
+function connectionState(ok, message) {
+  connected = ok;
+  $('posConnection').hidden = ok;
+  $('posConnectionText').textContent = message || 'Connection lost. Your saved sale is kept. Reconnect before collecting payment.';
+  updatePay();
+}
+function stockStamp() {
+  $('stockUpdated').textContent = stockAt ? 'Stock updated ' + new Date(stockAt).toLocaleTimeString('en-PH', { hour:'numeric', minute:'2-digit', second:'2-digit' }) + (!connected ? ' · connection lost' : '') : 'Stock has not loaded.';
+}
+async function refreshCatalogue() {
+  if (refreshingStock || busy) return;
+  refreshingStock = true; $('refreshStock').disabled = true; updatePay();
+  try {
+    const rows = await loadProducts();
+    if (!Array.isArray(rows)) throw new Error('Invalid catalogue response');
+    PRODUCTS = rows; stockAt = Date.now(); connectionState(true);
+    if (!ready) {
+      const st = readStore(); held = Array.isArray(st.held) ? st.held : []; holdSeq = Number(st.seq) || 0;
+      approval = st.approval?.exp > Date.now() ? st.approval : null;
+      cart = cleanLines(st.cart);
+      payments = (Array.isArray(st.paymentIds) ? st.paymentIds : []).filter(id => /^\d{1,18}$/.test(String(id))).slice(0,50).map(paymentId => {
+        const saved = Array.isArray(st.paymentResults) ? st.paymentResults.find(p => p.id === String(paymentId)) : null;
+        return { paymentId, status:['paid','expired','error'].includes(saved?.status) ? saved.status : 'unknown', amount:0, needsCartReview:!!saved?.needsCartReview };
+      });
+      paymentDraft = st.paymentDraft && /^[a-zA-Z0-9-]{12,100}$/.test(st.paymentDraft.requestId) ? st.paymentDraft : null;
+      ready = true;
+    }
+    renderCats();
+    // A pending invoice owns its original basket; leave it intact until the server confirms its result.
+    await recoverPayments();
+    if (!paymentBlocksSale()) syncCart(); else renderCart();
+  } catch (e) { connectionState(false, 'Could not load stock. Your sale is kept. Check the connection and retry.'); }
+  finally { refreshingStock = false; $('refreshStock').disabled = false; stockStamp(); updatePay(); }
+}
+async function connectCashier() {
+  if (refreshingStock || busy) return;
+  try {
+    if (!(await guard())) return;
+    const ini = (USER.name || 'C').trim().charAt(0).toUpperCase();
+    $('uname').textContent = $('dName').textContent = USER.name; $('avatar').textContent = $('dAvatar').textContent = ini;
+    if (window.AccountMenu) AccountMenu.setUser(USER);
+    await refreshCatalogue();
+    if (!initialized && connected) { initialized = true; sales = (await loadTodaySales()) || []; renderSales(); renderPosQuoteForm(); loadPosQuotes(); }
+    if (window.refreshCashShift) window.refreshCashShift();
+  } catch (e) { connectionState(false, 'Could not verify your session. Check the connection and retry.'); }
+}
+$('posRetry').onclick = connectCashier;
+$('refreshStock').onclick = refreshCatalogue;
+addEventListener('offline', () => { connectionState(false); stockStamp(); });
+addEventListener('online', connectCashier);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) connectCashier(); });
+addEventListener('focus', () => { if (initialized && !document.hidden) connectCashier(); });
 $('prodGrid').innerHTML = '<div class="skeleton"></div>'.repeat(6);
-(async () => {
-  if (!(await guard())) return;
-  const ini = (USER.name || 'C').trim().charAt(0).toUpperCase();
-  $('uname').textContent = $('dName').textContent = USER.name; $('avatar').textContent = $('dAvatar').textContent = ini;
-  if (window.AccountMenu) AccountMenu.setUser(USER);
-  PRODUCTS = await loadProducts(); sales = (await loadTodaySales()) || [];
-  const st = readStore(); held = Array.isArray(st.held) ? st.held : []; holdSeq = Number(st.seq) || held.reduce((m, h) => Math.max(m, h.no || 0), 0);
-  if (st.approval && st.approval.token && st.approval.exp > Date.now()) approval = st.approval;
-  if (PRODUCTS.length) { cart = cleanLines(st.cart); ready = true; }      // if the catalogue failed to load, leave the saved data untouched
-  renderCats(); renderProducts(); syncCart(); renderSales(); renderPosQuoteForm(); loadPosQuotes();
+connectCashier();
+(() => {
   setInterval(() => { if (!document.hidden) loadPosQuotes(); }, 60000);
   // pick up Finance's decisions on returns / voids without a page reload (skipped while a dialog is open so nothing jumps under the cashier)
   setInterval(async () => {
@@ -1119,9 +1339,10 @@ $('prodGrid').innerHTML = '<div class="skeleton"></div>'.repeat(6);
   }, 20000);
 })();
 </script>
-<script src="cash-shift-ui.js?v=8"></script>
+<script src="cash-shift-ui.js?v=11"></script>
 <script src="notification-center.js?v=8"></script>
-<script src="page-memory.js?v=1"></script>
-<script src="cashier-orders.js?v=8"></script>
+<script src="page-memory.js?v=2"></script>
+<script src="cashier-orders.js?v=11"></script>
+<script src="table-pagination.js"></script>
 </body>
 </html>

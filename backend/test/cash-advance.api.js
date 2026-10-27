@@ -12,6 +12,7 @@ const sql = (q) => execSync(`psql -At postgres://triplee:x@localhost:5432/triple
 async function session(email) {
   const r = await fetch(B + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'StrongP@ss1' }) });
   const cookie = (r.headers.get('set-cookie') || '').split(';')[0];
+  if (!cookie) throw new Error('Sign-in answered ' + r.status + '. Start this DEV server with LOGIN_OTP=off: the walk-through cannot type a one-time code.');
   return async (method, path, body, extra) => { const x = await fetch(B + path, { method, headers: Object.assign({ 'Content-Type': 'application/json', cookie }, extra || {}), body: body ? JSON.stringify(body) : undefined }); return { status: x.status, body: await x.json().catch(() => ({})) }; };
 }
 const rid = () => 'test-' + Math.random().toString(36).slice(2, 14) + Date.now();
@@ -30,14 +31,17 @@ const automation = () => fetch(B + '/api/automation/run', { method: 'POST', head
   console.log('\nRules:', JSON.stringify(rules.body));
   ok('defaults: ₱200 pickup down payment, 48-hour hold, ₱200 COD down payment', rules.body.copDeposit === 200 && rules.body.copHoldHours === 48 && rules.body.codDeposit === 200, rules.body);
 
-  console.log('\n1. Cash on Pickup: ₱200 down payment online, the rest in cash at the counter');
+  // the price of 20 elbows comes from the product (finished goods are priced unit cost + markup, so it is read, not assumed)
+  const SUB = Math.round(Number(sql(`SELECT selling_price FROM products WHERE sku='FG-FB02'`)) * 20 * 100) / 100, BAL = Math.round((SUB - 200) * 100) / 100;
+  const ph = (n) => n.toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  console.log('\n1. Cash on Pickup: ₱200 down payment online, the rest in cash at the counter (20 pcs = ₱' + ph(SUB) + ')');
   let r = await cu('POST', '/api/shop/orders', { requestId: rid(), fulfillment: 'Pickup', method: 'Cash on Pickup', phone: '09171234567', items: [{ sku: 'FG-FB02', qty: 20 }] });
   ok('order placed', r.status === 201, r.body);
   const cop = r.body;
-  ok('it asks for a ₱200 down payment now, ₱4,600 in cash later', cop.advance && cop.advance.kind === 'deposit' && cop.advance.amount === 200 && cop.dueNow === 200 && cop.advance.cash === 4600, cop);
+  ok('it asks for a ₱200 down payment now, the rest (₱' + ph(BAL) + ') in cash later', cop.advance && cop.advance.kind === 'deposit' && cop.advance.amount === 200 && cop.dueNow === 200 && cop.advance.cash === BAL, cop);
   r = await ca('POST', '/api/orders/' + cop.id + '/confirm', {});
   ok('the counter cannot confirm it before the down payment is paid', r.status === 400 && /down payment has not been paid/.test(JSON.stringify(r.body)), r.body);
-  ok('a wrong amount from the gateway is not accepted', (await webhook(cop.id, 4800)) >= 400 || sql(`SELECT paid_amount FROM orders WHERE order_no='${cop.id}'`) === '0.00');
+  ok('a wrong amount from the gateway is not accepted', (await webhook(cop.id, SUB)) >= 400 || sql(`SELECT paid_amount FROM orders WHERE order_no='${cop.id}'`) === '0.00');
   ok('the ₱200 paid online is recorded', (await webhook(cop.id, 200)) === 200 && sql(`SELECT paid_amount FROM orders WHERE order_no='${cop.id}'`) === '200.00');
   ok('…and the order confirms itself', sql(`SELECT status FROM orders WHERE order_no='${cop.id}'`) === 'Paid');
   r = await cu('POST', '/api/shop/orders/' + cop.id + '/xendit-checkout', {});
@@ -56,10 +60,10 @@ const automation = () => fetch(B + '/api/automation/run', { method: 'POST', head
   r = await cu('POST', '/api/shop/orders', { requestId: rid(), fulfillment: 'Pickup', method: 'Cash on Pickup', phone: '09171234567', items: [{ sku: 'FG-FB02', qty: 20 }] });
   const cop2 = r.body; await webhook(cop2.id, 200);
   for (const st of ['Packed', 'Ready for Pickup']) await ca('POST', '/api/orders/' + cop2.id + '/status', { status: st });
-  r = await ca('POST', '/api/orders/' + cop2.id + '/status', { status: 'Picked Up', receivedBy: 'Carlo Customer', pickupIdType: 'National ID', pickupIdLast4: '1234', cashReceived: '4599', requestId: rid() });
-  ok('the cashier must take the full ₱4,600 balance', r.status === 400 && /4,600/.test(JSON.stringify(r.body)), r.body);
-  r = await ca('POST', '/api/orders/' + cop2.id + '/status', { status: 'Picked Up', receivedBy: 'Carlo Customer', pickupIdType: 'National ID', pickupIdLast4: '1234', cashReceived: '4600', requestId: rid() });
-  ok('picked up with ₱4,600 cash', r.status === 200 && r.body.amount === 4600 && r.body.balance === 0, r.body);
+  r = await ca('POST', '/api/orders/' + cop2.id + '/status', { status: 'Picked Up', receivedBy: 'Carlo Customer', pickupIdType: 'National ID', pickupIdLast4: '1234', cashReceived: String(BAL - 1), requestId: rid() });
+  ok('the cashier must take the full ₱' + ph(BAL) + ' balance', r.status === 400 && JSON.stringify(r.body).includes(BAL.toLocaleString('en-PH')), r.body);
+  r = await ca('POST', '/api/orders/' + cop2.id + '/status', { status: 'Picked Up', receivedBy: 'Carlo Customer', pickupIdType: 'National ID', pickupIdLast4: '1234', cashReceived: String(BAL), requestId: rid() });
+  ok('picked up with ₱' + ph(BAL) + ' cash', r.status === 200 && r.body.amount === BAL && r.body.balance === 0, r.body);
 
   console.log('\n3. Cash on Delivery: the delivery fee online, the goods in cash to the rider');
   const ship = { recipient: 'Carlo Customer', phone: '09171234567', addressLine: 'Blk 5 Lot 12 Sampaguita St.', region: 'National Capital Region (NCR)', province: 'Metro Manila', city: 'City of Valenzuela', barangay: 'Malinta', zip: '1440' };

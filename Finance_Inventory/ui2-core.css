@@ -1,0 +1,304 @@
+/* =========================================================
+   ui2-core.css — shared "modern" look for admin pages
+   Matches the landing page: Oswald headings, IBM Plex Mono
+   eyebrows, 14px radius, blue glow, faint grid backdrop.
+
+   OPT-IN PER PAGE: add class="ui2" to a page <section>.
+   Pages without .ui2 are not affected at all.
+   Colours come from the existing palette (--blue-bright,
+   --card, --border, --text …), so dark/light keep working.
+========================================================= */
+
+/* ---------- tokens ---------- */
+html .ui2 {
+    --u-r: 14px;
+    --u-r-sm: 10px;
+
+    --u-surface: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.012)), var(--card);
+    --u-surface-flat: rgba(255,255,255,.03);
+    --u-line: var(--border);
+    --u-line-soft: rgba(143,161,176,.16);
+    --u-shadow: 0 20px 44px -30px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.02) inset;
+    --u-hover: rgba(74,144,217,.09);
+    --u-chip-bg: rgba(74,144,217,.13);
+    --u-chip-line: rgba(74,144,217,.34);
+    --u-track: rgba(255,255,255,.09);
+    --u-grid: rgba(74,144,217,.07);
+    --u-glow: rgba(30,95,168,.30);
+    --u-head-bg: rgba(255,255,255,.025);
+
+    --u-cyan: #6fd3f5;
+    --u-ok-fg: #6fe3a4;   --u-ok-bg: rgba(67,196,122,.14);   --u-ok-line: rgba(67,196,122,.34);
+    --u-bad-fg: #ff9d9b;  --u-bad-bg: rgba(227,91,91,.14);   --u-bad-line: rgba(227,91,91,.36);
+    --u-warn-fg: #f2c872; --u-warn-bg: rgba(217,164,65,.15); --u-warn-line: rgba(217,164,65,.36);
+}
+
+html[data-theme="light"] .ui2 {
+    --u-surface: linear-gradient(180deg, #ffffff, #f8fafc);
+    --u-surface-flat: #f4f7fa;
+    --u-line: #d6e0ea;
+    --u-line-soft: #e3eaf1;
+    --u-shadow: 0 1px 2px rgba(20,45,70,.05), 0 14px 30px -22px rgba(20,45,70,.28);
+    --u-hover: rgba(31,111,184,.07);
+    --u-chip-bg: rgba(31,111,184,.09);
+    --u-chip-line: rgba(31,111,184,.26);
+    --u-track: #e2e9f0;
+    --u-grid: rgba(31,111,184,.08);
+    --u-glow: rgba(31,111,184,.14);
+    --u-head-bg: #f3f6f9;
+
+    --u-cyan: #0e86a8;
+    --u-ok-fg: #14753f;   --u-ok-bg: rgba(31,157,87,.11);   --u-ok-line: rgba(31,157,87,.30);
+    --u-bad-fg: #b42e2e;  --u-bad-bg: rgba(214,69,69,.09);  --u-bad-line: rgba(214,69,69,.30);
+    --u-warn-fg: #86560a; --u-warn-bg: rgba(183,121,31,.11); --u-warn-line: rgba(183,121,31,.32);
+}
+
+/* ---------- page backdrop: soft glow + fading grid (like the landing hero) ---------- */
+html .ui2 { position: relative; isolation: isolate; }
+html .ui2::before {
+    content: "";
+    position: absolute;
+    inset: -14px -28px auto -28px;
+    height: 460px;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse 70% 70% at 12% 0%, var(--u-glow), transparent 65%),
+        linear-gradient(var(--u-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--u-grid) 1px, transparent 1px);
+    background-size: auto, 30px 30px, 30px 30px;
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0,0,0,.55) 55%, transparent 100%);
+            mask-image: linear-gradient(180deg, #000 0%, rgba(0,0,0,.55) 55%, transparent 100%);
+}
+
+/* ---------- hero header ---------- */
+html .ui2 .ui2-hero {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin: 4px 0 22px;
+}
+html .ui2 .ui2-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 2.2px;
+    text-transform: uppercase;
+    color: var(--blue-bright);
+    margin-bottom: 8px;
+}
+html .ui2 .ui2-live {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 0 rgba(67,196,122,.55);
+    animation: ui2Ping 2.2s infinite;
+}
+@keyframes ui2Ping {
+    0%   { box-shadow: 0 0 0 0 rgba(67,196,122,.55); }
+    70%  { box-shadow: 0 0 0 9px rgba(67,196,122,0); }
+    100% { box-shadow: 0 0 0 0 rgba(67,196,122,0); }
+}
+html .ui2 .ui2-hero h1 {
+    font-family: "Oswald", sans-serif;
+    font-weight: 600;
+    font-size: clamp(26px, 3vw, 38px);
+    line-height: 1.12;
+    letter-spacing: .2px;
+    background: linear-gradient(90deg, var(--text) 0%, var(--text) 35%, var(--blue-bright) 100%);
+    -webkit-background-clip: text;
+            background-clip: text;
+    -webkit-text-fill-color: transparent;
+            color: transparent;
+}
+html .ui2 .ui2-hero p {
+    margin-top: 8px;
+    font-size: 15.5px;
+    color: var(--text-dim);
+    max-width: 62ch;
+}
+html .ui2 .ui2-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 99px;
+    background: var(--u-chip-bg);
+    border: 1px solid var(--u-chip-line);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    letter-spacing: .6px;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+html .ui2 .ui2-chip .ico { width: 15px; height: 15px; vertical-align: 0; color: var(--blue-bright); }
+
+/* ---------- panels ---------- */
+html .ui2 .panel {
+    background: var(--u-surface);
+    border: 1px solid var(--u-line);
+    border-radius: var(--u-r);
+    box-shadow: var(--u-shadow);
+    padding: 22px 24px;
+}
+html .ui2 .panel-head { margin-bottom: 18px; }
+html .ui2 .panel > .panel-sub { margin-bottom: 18px; }
+html .ui2 .panel-title {
+    font-family: "Oswald", sans-serif;
+    font-weight: 600;
+    font-size: 18px;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+    color: var(--text);
+}
+html .ui2 .panel-sub {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin-top: 4px;
+}
+
+/* ---------- stat cards ---------- */
+html .ui2 .stat-card {
+    --accent: var(--blue-bright);
+    position: relative;
+    overflow: hidden;
+    background: var(--u-surface);
+    border: 1px solid var(--u-line);
+    border-radius: var(--u-r);
+    box-shadow: var(--u-shadow);
+    padding: 20px 22px 18px;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+html .ui2 .stat-card::before {                 /* corner glow in the card's accent colour */
+    content: "";
+    position: absolute;
+    top: -46px; right: -46px;
+    width: 150px; height: 150px;
+    border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 26%, transparent), transparent 68%);
+    opacity: .85;
+    transition: opacity .18s ease;
+    pointer-events: none;
+}
+html .ui2 .stat-card::after {                  /* thin accent line along the top edge */
+    content: "";
+    position: absolute;
+    left: 18px; right: 18px; top: 0;
+    height: 2px;
+    border-radius: 0 0 4px 4px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: .7;
+    pointer-events: none;
+}
+html .ui2 .stat-card:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--u-line));
+    box-shadow: var(--u-shadow), 0 18px 36px -22px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+html .ui2 .stat-card:hover::before { opacity: 1; }
+html .ui2 .stat-card > * { position: relative; z-index: 1; }
+
+html .ui2 .stat-card .ui2-ico {
+    width: 40px; height: 40px;
+    display: grid; place-items: center;
+    margin-bottom: 16px;
+    border-radius: 12px;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+}
+html .ui2 .stat-card .ui2-ico .ico { width: 20px; height: 20px; vertical-align: 0; }
+
+html .ui2 .stat-label {
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+}
+html .ui2 .stat-value {
+    font-size: clamp(30px, 2.6vw, 40px);
+    line-height: 1;
+    margin-top: 10px;
+    letter-spacing: .3px;
+}
+html .ui2 .stat-foot {
+    font-size: 13.5px;
+    line-height: 1.4;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--u-line-soft);
+}
+
+/* ---------- tables ---------- */
+html .ui2 .table-wrapper {
+    border: 1px solid var(--u-line-soft);
+    border-radius: 12px;
+    background: var(--u-surface-flat);
+}
+html .ui2 thead th {
+    font-size: 11.5px;
+    letter-spacing: 1.5px;
+    padding: 13px 16px;
+    color: var(--text-dim);
+    background: var(--u-head-bg);
+    border-bottom: 1px solid var(--u-line-soft);
+}
+html .ui2 tbody td {
+    font-size: 14.5px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--u-line-soft);
+}
+html .ui2 tbody tr { transition: background .12s ease; }
+html .ui2 tbody tr:hover { background: var(--u-hover); }
+html .ui2 tbody td.mono { font-size: 13px; letter-spacing: .3px; }
+
+/* ---------- status pills → soft chips ---------- */
+html .ui2 .status-pill {
+    gap: 7px;
+    padding: 4px 11px 4px 9px;
+    border-radius: 99px;
+    font-size: 12.5px;
+    letter-spacing: .3px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+html .ui2 .status-pill::before { width: 7px; height: 7px; }
+html .ui2 .status-pill.in,
+html .ui2 .status-pill.ok,
+html .ui2 .status-pill.active,
+html .ui2 .status-pill.paid     { color: var(--u-ok-fg);   background: var(--u-ok-bg);   border-color: var(--u-ok-line); }
+html .ui2 .status-pill.out,
+html .ui2 .status-pill.low      { color: var(--u-bad-fg);  background: var(--u-bad-bg);  border-color: var(--u-bad-line); }
+html .ui2 .status-pill.watch,
+html .ui2 .status-pill.partial  { color: var(--u-warn-fg); background: var(--u-warn-bg); border-color: var(--u-warn-line); }
+
+/* ---------- buttons inside ui2 pages ---------- */
+html .ui2 .btn-secondary {
+    border-radius: 10px;
+    border: 1px solid var(--u-line);
+    background: var(--u-surface-flat);
+    color: var(--text);
+    font-weight: 600;
+    transition: border-color .15s, background .15s, transform .15s;
+}
+html .ui2 .btn-secondary:hover {
+    border-color: var(--blue-bright);
+    background: var(--u-hover);
+    transform: translateY(-1px);
+}
+
+/* ---------- focus + motion ---------- */
+html .ui2 :focus-visible { outline: 2px solid var(--blue-bright); outline-offset: 3px; border-radius: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+    html .ui2 *, html .ui2 *::before { animation: none !important; transition: none !important; }
+}
+
+@media (max-width: 700px) {
+    html .ui2 .panel { padding: 18px 16px; }
+    html .ui2::before { inset: -14px -16px auto -16px; }
+    html .ui2 thead th, html .ui2 tbody td { padding-left: 12px; padding-right: 12px; }
+}

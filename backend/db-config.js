@@ -30,11 +30,11 @@ module.exports = function dbConfig() {
     return { connectionString: url, ssl, max };
   }
   return {
-    host: process.env.DB_HOST || 'localhost',
-    port: Number(process.env.DB_PORT) || 5432,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
+    host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
+    port: Number(process.env.PGPORT || process.env.DB_PORT) || 5432,
+    user: process.env.PGUSER || process.env.DB_USER,
+    password: process.env.PGPASSWORD || process.env.DB_PASSWORD,
+    database: process.env.PGDATABASE || process.env.DB_NAME,
     ssl, max
   };
 };

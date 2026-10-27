@@ -15,7 +15,8 @@ const mailer = require('./mailer');
 
 const INVITE_TTL_HOURS = Math.min(Math.max(Number(process.env.INVITE_TTL_HOURS) || 72, 1), 24 * 14);
 // Finance can also set up a CUSTOMER account (User Management); the customer chooses their own password from the link
-const INVITE_ROLES = { finance: 'Finance-Admin Officer', cashier: 'Sales Staff / Cashier', customer: 'Customer (online shop)' };
+// Staff only: customers register themselves on the sign-in page, so Finance cannot invite them.
+const INVITE_ROLES = { finance: 'Finance-Admin Officer', cashier: 'Sales Staff / Cashier' };
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const NAME_RE = /^\p{L}[\p{L}\p{M} ]*$/u;          // letters and spaces only (no digits, symbols, dots, dashes)
 const titleCase = (v) => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase().replace(/(^|\s)(\p{L})/gu, (m, sp, ch) => sp + ch.toUpperCase());
@@ -250,6 +251,16 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
     catch (err) { if (err instanceof ValidationError) return res.json({ available: false, message: err.message }); throw err; }
     const r = await pool.query('SELECT email_verified_at FROM users WHERE email = $1', [email]);
     res.json({ available: !r.rowCount, message: r.rowCount ? emailTakenMsg(r.rows[0]) : '' });
+  }));
+
+  // live "is this mobile number already on an account?" check (a warning on the form, not a block: a shared business line is allowed)
+  app.get('/api/signup/check-phone', limit('check-phone', 40, 10 * 60 * 1000), wrap(async (req, res) => {
+    const m = phMobile(str(req.query.phone));
+    if (m.error) return res.json({ valid: false, used: false, message: m.error });
+    const key = m.value.replace(/\D/g, '').slice(-10);
+    const r = await pool.query(`SELECT 1 FROM users WHERE right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 10) = $1 LIMIT 1`, [key]);
+    res.json({ valid: true, phone: m.value, used: r.rowCount > 0,
+      message: r.rowCount ? 'This mobile number is already on another account. If it is yours, sign in instead (or use Forgot password).' : '' });
   }));
 
   app.post('/api/signup/customer', limit('signup', 10, 60 * 60 * 1000), wrap(async (req, res) => {

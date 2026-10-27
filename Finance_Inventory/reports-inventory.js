@@ -33,12 +33,12 @@
   }
   const REASON = { supplier_receipt: 'Received from supplier', customer_return: 'Returned by customer', produced_batch: 'Produced \u2014 new batch', production_output: 'Produced in-house', count_correction_up: 'Stock count correction (+)', count_correction_down: 'Stock count correction (\u2212)',
     rust_corrosion: 'Rust / corrosion', damaged: 'Damaged', damage: 'Damaged', scrap_cutting_waste: 'Scrap / cutting waste', production_use: 'Used in production', quality_rejection: 'Failed quality inspection', lost_missing: 'Lost / missing', returned_to_supplier: 'Returned to supplier',
-    sale: 'POS sale', online_order: 'Online order', return: 'Return restocked', refund: 'Cancelled / refunded order restocked', correction: 'Correction', write_off: 'Write-off', other: 'Other' };
+    sale: 'POS sale', online_order: 'Online order', return: 'Return restocked', refund: 'Cancelled / refunded order restocked', correction: 'Correction', opening_balance: 'Opening balance', write_off: 'Write-off', other: 'Other' };
   const GROUPS = ['Supplier receipts', 'Finished goods produced', 'Returns and restocking', 'Stock adjustments', 'Sales', 'Material consumption', 'Losses and write-offs', 'Returned to supplier', 'Other'];
   
   const state = { preset: '30d', from: '', to: '', grain: '', dept: 'all', type: 'all', group: 'all', search: '', page: 1, data: null, loading: false, error: '', seq: 0, built: false, loadedOnce: false, timer: null };
 
-  const qs = (extra) => 'from=' + encodeURIComponent(state.from) + '&to=' + encodeURIComponent(state.to) + (state.grain ? '&grain=' + state.grain : '') + '&dept=' + encodeURIComponent(state.dept) + '&type=' + state.type + '&group=' + encodeURIComponent(state.group) + '&q=' + encodeURIComponent(state.search) + '&page=' + state.page + '&pageSize=25' + (extra || '');
+  const qs = (extra) => 'from=' + encodeURIComponent(state.from) + '&to=' + encodeURIComponent(state.to) + (state.grain ? '&grain=' + state.grain : '') + '&dept=' + encodeURIComponent(state.dept) + '&type=' + state.type + '&group=' + encodeURIComponent(state.group) + '&q=' + encodeURIComponent(state.search) + '&page=' + state.page + '&pageSize=10' + (extra || '');
   async function getJson(path) {
     const res = await fetch('/api' + path, { credentials: 'same-origin' });
     if (res.status === 401) { window.location.href = 'Login_Inventory.html'; throw new Error('Not signed in'); }

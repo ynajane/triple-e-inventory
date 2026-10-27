@@ -8,7 +8,7 @@
    (editable "actual used"), and saving goes through POST /api/production, which deducts them in one transaction. */
 (function () {
   'use strict';
-  const B = () => window.TripleEBridge;
+  const B = () => (typeof window !== "undefined" ? window.TripleEBridge : null);
   const $ = (id) => document.getElementById(id);
   let item = null, type = 'in', step = 'form', busy = false, overlay = null;
   const PRODUCED = 'produced_batch';
@@ -21,7 +21,7 @@
   const prodQtyOk = (n) => Number.isFinite(n) && n > 0 && n <= 1e6 && Math.abs(n * 100 - Math.round(n * 100)) <= 1e-6;
 
   const num = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 3 });
-  const esc = (v) => B().esc(v);
+  const esc = (v) => (B() && B().esc ? B().esc(v) : String(v == null ? "" : v).replace(/[&<>"']/g, ""));
 
   function build() {
     if (overlay) return;
@@ -37,12 +37,86 @@
   }
   function close() { if (overlay) overlay.classList.remove('open'); item = null; step = 'form'; }
 
+  function calcSuggestedStockIn(it) {
+    if (!it) return null;
+    const onHand = Number(it.onHand) || 0;
+    const reorder = Number(it.reorderLevel) || 0;
+    const unit = it.unit || 'units';
+
+    let baseQty = 0;
+    let reason = '';
+    let isShortage = false;
+
+    if (reorder > 0 && onHand <= reorder) {
+      isShortage = true;
+      const deficit = Math.max(1, Math.round(reorder - onHand));
+      baseQty = deficit;
+      reason = 'Replenish deficit (' + num(deficit) + ' ' + esc(unit) + ' to reorder level)';
+    } else {
+      // Stock is healthy: supplier standard order batch / standard pallet / MOQ calculation
+      if (reorder >= 1000) {
+        baseQty = Math.round((reorder * 0.5) / 50) * 50;
+      } else if (reorder >= 200) {
+        baseQty = Math.round((reorder * 0.5) / 25) * 25;
+      } else if (reorder >= 50) {
+        baseQty = Math.round((reorder * 0.5) / 10) * 10;
+      } else if (reorder > 0) {
+        baseQty = Math.max(5, Math.round(reorder));
+      } else {
+        const u = String(unit).toLowerCase();
+        if (u === 'kg') baseQty = 500;
+        else if (u === 'g') baseQty = 1000;
+        else if (u === 't' || u.indexOf('ton') !== -1) baseQty = 1;
+        else if (u === 'm' || u.indexOf('meter') !== -1) baseQty = 50;
+        else if (u === 'l' || u.indexOf('liter') !== -1) baseQty = 100;
+        else baseQty = 50;
+      }
+      baseQty = Math.max(1, baseQty);
+      reason = 'Supplier standard batch (' + num(baseQty) + ' ' + esc(unit) + ')';
+    }
+
+    const half = Math.max(1, Math.round(baseQty * 0.5));
+    const dbl = Math.max(1, Math.round(baseQty * 2));
+    const rawLots = [half, baseQty, dbl];
+    const lots = [];
+    for (let i = 0; i < rawLots.length; i++) {
+      if (lots.indexOf(rawLots[i]) === -1) lots.push(rawLots[i]);
+    }
+    lots.sort((a, b) => a - b);
+
+    return {
+      qty: baseQty,
+      isShortage: isShortage,
+      reason: reason,
+      lots: lots
+    };
+  }
+
   const reasons = () => B().reasonsFor(type, item.department).map((r) => r.key === PRODUCED ? Object.assign({}, r, { label: 'Produced Internally', help: PRODUCED_HINT }) : r);
 
   function renderForm(keep) {
     keep = keep || {};
+    const suggestion = type === 'in' ? calcSuggestedStockIn(item) : null;
+    if (type === 'in' && !keep.qty && suggestion) {
+      keep.qty = suggestion.qty;
+    }
     const rs = reasons();
     const modal = $('qsModal');
+
+    let suggestHtml = '';
+    if (suggestion) {
+      suggestHtml =
+        '<div class="qs-suggest-bar" id="qsSuggestBar">' +
+        '<span class="qs-suggest-label">Suggested:</span>' +
+        '<button type="button" class="qs-suggest-chip" id="qsUseSuggested" title="Click to use suggested standard quantity" data-qty="' + suggestion.qty + '">' +
+        '<strong>' + num(suggestion.qty) + ' ' + esc(item.unit) + '</strong>' +
+        '</button>' +
+        '<span class="qs-suggest-reason">(' + esc(suggestion.reason) + ')</span>' +
+        '<div class="qs-chips" aria-label="Quick batch lots">' +
+        suggestion.lots.map((q) => '<button type="button" class="qs-chip-sm" data-qs-fill="' + q + '" title="Set ' + num(q) + ' ' + esc(item.unit) + '">' + num(q) + '</button>').join('') +
+        '</div></div>';
+    }
+
     modal.innerHTML =
       '<button type="button" class="modal-close" id="qsClose" aria-label="Close">×</button>' +
       '<div class="qs-head"><div class="modal-eyebrow">Quick stock entry</div><h2>' + esc(item.name) + '</h2>' +
@@ -53,6 +127,7 @@
       '<div class="qs-row"><div class="form-group"><label class="form-label" for="qsQty">Quantity <span class="required-mark">*</span></label>' +
       '<input type="number" inputmode="decimal" id="qsQty" class="form-input" min="0" step="any" placeholder="e.g. 500" value="' + esc(keep.qty || '') + '"></div>' +
       '<div class="form-group"><label class="form-label" for="qsUnit">Unit</label><input type="text" id="qsUnit" class="form-input" readonly tabindex="-1" value="' + esc(item.unit) + '"></div></div>' +
+      suggestHtml +
       '<div class="form-group"><label class="form-label" for="qsReason">Reason <span class="required-mark">*</span></label>' +
       '<select id="qsReason" class="form-select"><option value="">' + (type === 'out' ? 'Why is this stock going out?' : 'Why is this stock coming in?') + '</option>' +
       rs.map((r) => '<option value="' + esc(r.key) + '"' + (keep.reason === r.key ? ' selected' : '') + '>' + esc(r.label) + '</option>').join('') + '</select>' +
@@ -76,12 +151,53 @@
     $('qsReason').onchange = sync; $('qsQty').oninput = sync; $('qsSupplier').onchange = clearErr;
     $('qsInvoice').oninput = clearErr; $('qsNote').oninput = clearErr;
     $('qsForm').onsubmit = (e) => { e.preventDefault(); toConfirm(); };
+    if (window.FormAssist) {
+      const rules = {
+        qsQty: () => {
+          const v = read();
+          if (!$('qsQty').value || !isFinite(v.qty) || v.qty <= 0) return 'Enter a quantity greater than zero.';
+          if (v.produced && !prodQtyOk(v.qty)) return 'Quantity produced can have at most 2 decimals.';
+          return type === 'out' && v.qty > item.onHand ? 'Only ' + num(item.onHand) + ' ' + item.unit + ' on hand — cannot take out ' + num(v.qty) + '.' : '';
+        },
+        qsReason: () => $('qsReason').value ? '' : type === 'out' ? 'Choose why this stock is going out.' : 'Choose why this stock is coming in.',
+        qsSupplier: () => type === 'in' && $('qsReason').value === 'supplier_receipt' && !$('qsSupplier').value ? 'Choose the supplier this delivery came from.' : '',
+        qsNote: () => B().noteRequired($('qsReason').value) && read().note.length < 3 ? 'Please explain this entry in the note.' : '',
+        qsInvoice: () => $('qsInvoice').value.trim().length > 40 ? 'Invoice / delivery no. must be at most 40 characters.' : ''
+      };
+      const checks = Object.fromEntries(Object.keys(rules).map((id) => [id, FormAssist.validation.bind($(id), rules[id])]));
+      $('qsReason').addEventListener('change', () => Object.values(checks).forEach((check) => check(false)));
+      $('qsForm').addEventListener('submit', () => Object.values(checks).forEach((check) => check(true)), true);
+    }
+
+    const suggestBar = $('qsSuggestBar');
+    if (suggestBar) {
+      suggestBar.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-qs-fill], #qsUseSuggested');
+        if (!btn) return;
+        const val = btn.dataset.qsFill || btn.dataset.qty;
+        if (val) {
+          const inp = $('qsQty');
+          inp.value = val;
+          sync();
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+          inp.focus();
+          inp.select();
+        }
+      });
+    }
+
     sync();
     if (keep.supplier && $('qsSupplier').querySelector('option[value="' + keep.supplier + '"]')) $('qsSupplier').value = keep.supplier;
-    setTimeout(() => $('qsQty').focus(), 30);
+    setTimeout(() => {
+      const q = $('qsQty');
+      if (q) {
+        q.focus();
+        if (q.value) q.select();
+      }
+    }, 30);
   }
 
-  const clearErr = () => { const e = $('qsError'); if (e) e.textContent = ''; };
+    const clearErr = () => { const e = $('qsError'); if (e) e.textContent = ''; };
 
   // show / hide the supplier + note boxes for the chosen reason and update the "after" figure
   function sync() {
@@ -253,10 +369,19 @@
     overlay.classList.add('open');
   }
 
-  document.addEventListener('dblclick', (e) => {
-    const row = e.target.closest && e.target.closest('#stockLevelsTableBody tr[data-sku]');
-    if (!row) return;
-    const sel = window.getSelection && window.getSelection(); if (sel) sel.removeAllRanges();      // double-click also selects a word: clear it
-    open(row.dataset.sku);
-  });
+  if (typeof document !== "undefined") {
+    document.addEventListener('dblclick', (e) => {
+      const row = e.target.closest && e.target.closest('#stockLevelsTableBody tr[data-sku]');
+      if (!row) return;
+      const sel = window.getSelection && window.getSelection(); if (sel) sel.removeAllRanges();      // double-click also selects a word: clear it
+      open(row.dataset.sku);
+    });
+  }
+
+  if (typeof window !== "undefined") {
+    window.QuickStock = { open, calcSuggestedStockIn };
+  }
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = { calcSuggestedStockIn };
+  }
 })();

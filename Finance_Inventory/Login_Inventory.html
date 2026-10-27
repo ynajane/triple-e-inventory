@@ -683,10 +683,110 @@
     .stepper li.active{ font-size:10px; gap:6px; }
     h1{ font-size:23px; }
   }
+
+  /* ===== Match the landing page (LandingPage_Inventory-1.html): same navy palette, nav bar, 14-16px corners, Oswald / Inter / Plex Mono ===== */
+  :root{ --bg:#0a0c0e; --panel:#0d1a26; --border:#1c3244; --r:14px; }
+  html{ scroll-behavior:smooth; }
+  body{
+    display:block; padding:0; min-height:100vh; line-height:1.55; -webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(ellipse 80% 50% at 15% -5%, rgba(30,95,168,.28), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 100% 35%, rgba(15,41,66,.55), transparent 60%),
+      var(--bg);
+  }
+  body::before{
+    position:fixed; z-index:0;
+    background-image:linear-gradient(rgba(74,144,217,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(74,144,217,.07) 1px, transparent 1px);
+    background-size:28px 28px;
+    -webkit-mask-image:radial-gradient(ellipse 70% 80% at 50% 30%, #000, transparent 75%);
+    mask-image:radial-gradient(ellipse 70% 80% at 50% 30%, #000, transparent 75%);
+  }
+  :focus-visible{ outline:2px solid var(--blue-bright); outline-offset:3px; border-radius:6px; }
+
+  /* top bar, same as the landing page */
+  .site-nav{ position:sticky; top:0; z-index:40; background:rgba(7,17,26,.9); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid var(--border); }
+  .site-nav-in{ display:flex; align-items:center; justify-content:space-between; gap:16px; height:72px; max-width:1360px; margin:0 auto; padding:0 clamp(16px,3vw,28px); }
+  .site-brand{ display:flex; align-items:center; gap:11px; color:var(--text); text-decoration:none; }
+  .site-brand img{ width:36px; height:36px; border-radius:9px; }
+  .site-brand b{ display:block; font-family:'Oswald',sans-serif; font-weight:600; font-size:17px; letter-spacing:.8px; text-transform:uppercase; line-height:1; }
+  .site-brand small{ display:block; font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:1.8px; color:var(--text-dim); margin-top:3px; text-transform:uppercase; }
+  .site-links{ display:flex; align-items:center; gap:6px; }
+  .site-links a{ padding:8px 14px; border-radius:8px; font-size:14px; font-weight:500; color:var(--text-dim); text-decoration:none; transition:color .15s, background .15s; }
+  .site-links a:hover{ color:var(--text); background:rgba(255,255,255,.06); }
+  .site-links a.cta{ font-family:'Oswald',sans-serif; font-weight:600; font-size:13px; letter-spacing:1.1px; text-transform:uppercase; border:1px solid var(--steel); background:rgba(255,255,255,.04); color:var(--text); }
+  .site-links a.cta:hover{ background:rgba(74,144,217,.12); border-color:var(--blue-bright); }
+
+  /* the sign-in card = the landing page's "window" panel */
+  .wrap{ z-index:1; max-width:452px; margin:clamp(22px,6vh,56px) auto clamp(28px,6vh,56px); padding:0 16px; }
+  .wrap.wide{ max-width:532px; }
+  .ticks, .rivet{ display:none; }
+  .card{
+    border-radius:16px; border:1px solid var(--steel); padding:30px 36px 28px;
+    background:linear-gradient(180deg, var(--panel-blue), var(--dark-blue) 55%, #0b1c2e);
+    box-shadow:0 40px 70px -28px rgba(0,0,0,.85), 0 0 0 1px rgba(255,255,255,.03) inset;
+  }
+  .brand-mark .mark{ display:none; }                 /* the logo is in the top bar now */
+  .brand-mark{ margin-bottom:0; }
+  .eyebrow{ font-size:11.5px; letter-spacing:2.2px; }
+  .eyebrow.live{ display:inline-flex; align-items:center; gap:9px; padding:6px 13px 6px 10px; border-radius:99px; background:rgba(74,144,217,.12); border:1px solid rgba(74,144,217,.35); color:#bcd9f5; font-family:'Inter',sans-serif; font-size:12.5px; font-weight:500; letter-spacing:0; text-transform:none; }
+  .eyebrow.live i{ width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 0 0 rgba(74,217,145,.6); animation:ping 2s infinite; }
+  @keyframes ping{ 70%{ box-shadow:0 0 0 9px rgba(74,217,145,0); } 100%{ box-shadow:0 0 0 0 rgba(74,217,145,0); } }
+  h1{ font-size:clamp(24px,4vw,30px); }
+  .sub{ font-size:14px; }
+
+  /* fields and buttons use the landing page's 10px corners */
+  input, select{ border-radius:10px; background:rgba(7,17,26,.55); }
+  .otp-digit{ border-radius:10px; }
+  button.submit{ border-radius:10px; padding:13px 20px; box-shadow:0 10px 24px -10px rgba(74,144,217,.7); }
+  button.submit.alt-btn{ box-shadow:none; }
+  .notice, .form-error, .countdown{ border-radius:10px; }
+  .legal-box{ border-radius:16px; }
+  .mail-icon{ border-radius:50%; }
+  .site-foot{ position:relative; z-index:1; text-align:center; padding:0 16px 22px; margin-top:auto; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--steel-light); }
+  .site-foot a{ color:var(--blue-bright); text-decoration:none; }
+  .site-foot a:hover{ text-decoration:underline; }
+
+  /* fill the page: the card sits in the middle of the screen next to a short intro, and the footer stays at the bottom */
+  body{ display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; }
+  .shell{ flex:1; display:flex; align-items:flex-start; justify-content:center; padding:clamp(28px,6vh,64px) clamp(16px,4vw,48px) clamp(24px,4vh,40px); position:relative; z-index:1; }
+  .shell .wrap{ margin:0; flex:0 1 452px; width:100%; padding:0; }
+  .shell .wrap.wide{ flex-basis:532px; }
+  /* big desktop screens: scale the whole page (bar, card, footer) up together so it is not a small card in a sea of empty space */
+  .shell{ align-items:center; }
+  @media (min-width:1400px){ .site-nav, .shell, .site-foot{ zoom:1.08; } }
+  @media (min-width:1700px){ .site-nav, .shell, .site-foot{ zoom:1.15; } }
+  @media (min-width:2200px){ .site-nav, .shell, .site-foot{ zoom:1.45; } }
+  @media (max-width:640px){
+    .site-links a:not(.cta){ display:none; }
+    .site-brand small{ display:none; }
+  }
+  @media (max-width:520px){
+    body{ padding:0; }
+    .wrap{ padding:0 12px; }
+    .card{ padding:26px 18px 22px; border-radius:14px; }
+  }
+  @media (prefers-reduced-motion:reduce){ .eyebrow.live i{ animation:none; } html{ scroll-behavior:auto; } }
 </style>
+
+<link rel="stylesheet" href="form-layout.css?v=2">
 </head>
 <body>
 
+  <!-- top bar: same look as the landing page -->
+  <header class="site-nav">
+    <div class="site-nav-in">
+      <a href="LandingPage_Inventory-1.html" class="site-brand" aria-label="Triple E Metal Products home">
+        <img src="favicon.svg" alt="" width="36" height="36">
+        <div><b>Triple E Metal</b></div>
+      </a>
+      <nav class="site-links" aria-label="Primary">
+        <a href="Shop_Info.html">Help</a>
+        <a href="LandingPage_Inventory-1.html" class="cta">Back to Home</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="shell">
   <div class="wrap" id="wrap">
     <div class="ticks">
       <span></span><span></span><span></span><span></span><span></span>
@@ -750,6 +850,13 @@
       </div>
 
       <!-- ===== FORGOT PASSWORD: email -> choose email or text message -> code + new password ===== -->
+      <div class="screen" id="alreadyScreen">
+        <h1>You are already signed in</h1>
+        <p class="sub" id="alreadyText">This browser is signed in. Sign in only once per browser, so two tabs never act as different people.</p>
+        <button type="button" class="submit" id="alreadyContinue">Continue</button>
+        <button type="button" class="submit alt-btn" id="alreadyLogout" style="margin-top:10px">Sign out first</button>
+      </div>
+
       <div class="screen" id="forgotScreen">
         <div class="brand-mark">
           <div class="mark">3<span class="cursive-e">E</span></div>
@@ -977,6 +1084,42 @@
         </div>
       </div>
 
+      <!-- ===== SIGN-IN CODE (second step of every sign-in: email or text message) ===== -->
+      <div class="screen" id="loginOtpScreen">
+        <div class="brand-mark">
+          <div class="mark">3<span class="cursive-e">E</span></div>
+          <span class="eyebrow">Two-Step Sign-In</span>
+        </div>
+        <h1 style="margin-top:10px">Confirm it&rsquo;s you</h1>
+        <p class="sub" id="loSub">Choose where to send your one-time sign-in code.</p>
+        <p class="form-error" id="loMsg" role="status"></p>
+
+        <div id="loChoose">
+          <button type="button" class="submit alt-btn" id="loPickEmail" style="margin-bottom:10px">Email me a code<br><small id="loEmailMask"></small></button>
+          <button type="button" class="submit alt-btn" id="loPickSms">Text me a code<br><small id="loSmsMask"></small></button>
+        </div>
+
+        <div id="loEnter" hidden>
+          <p class="hint">We sent a 6-digit code to <b id="loDest">your device</b>. It is only valid for a few minutes.</p>
+          <div class="otp-row" id="loOtpRow">
+            <input class="otp-digit" inputmode="numeric" autocomplete="one-time-code" maxlength="1" aria-label="Digit 1">
+            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 2">
+            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 3">
+            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 4">
+            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 5">
+            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 6">
+          </div>
+          <p class="otp-error" id="loOtpError" role="alert"></p>
+          <div class="otp-meta">
+            <span>Code expires in <span class="timer" id="loTimer">--:--</span></span>
+            <button type="button" class="link-btn" id="loResend">Resend code</button>
+          </div>
+          <button type="button" class="submit" id="loVerify">Verify and sign in</button>
+          <p class="back-row"><a href="#" class="link" id="loChange">Use a different method</a></p>
+        </div>
+        <p class="back-row"><a href="#" class="link" id="loCancel">Back to sign in</a></p>
+      </div>
+
       <!-- ===== VERIFY RESULT / LINK PROBLEMS ===== -->
       <div class="screen" id="noticeScreen">
         <div class="brand-mark">
@@ -991,6 +1134,7 @@
       <p class="footnote" id="cardFootnote">Quality Metal Products Since 1999</p>
     </div>
   </div>
+  </main>
 
   <!-- Terms / Privacy window -->
   <div class="legal-overlay" id="legalOverlay" role="dialog" aria-modal="true" aria-labelledby="legalTitle">
@@ -1001,6 +1145,9 @@
     </div>
   </div>
 
+  <p class="site-foot">&copy; Triple E Metal Products</p>
+
+<script src="form-assist.js?v=3"></script>
 <script>
 (function(){
   'use strict';
@@ -1020,6 +1167,17 @@
     $('wrap').classList.toggle('wide', id === 'signupScreen');
     window.scrollTo(0, 0);
   }
+  /* Already signed in (this tab or another one of this browser)? Do not show the form: signing in again would replace the
+     session the other tab is using. Offer to continue, or to sign out first. */
+  function showAlready(who){
+    const home = HOME_BY_ROLE[who.role];
+    $('alreadyText').textContent = 'This browser is already signed in as ' + (who.name || 'an account') + (who.roleLabel ? ' (' + who.roleLabel + ')' : '') + '. Signing in again would replace that session in your other tabs.';
+    $('alreadyContinue').hidden = !home;
+    $('alreadyContinue').onclick = () => { if (home) window.location.replace(home); };
+    $('alreadyLogout').onclick = async () => { $('alreadyLogout').disabled = true; await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {}); window.location.reload(); };
+    showScreen('alreadyScreen');
+  }
+  fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(who => { if (who && who.id != null) showAlready(who); }).catch(() => {});
   async function api(method, url, body){
     const res = await fetch(url, {
       method, credentials: 'same-origin',
@@ -1063,6 +1221,10 @@
     if (cdEmail && clean($('email').value).toLowerCase() !== cdEmail) stopCountdown();   // the countdown belongs to the account that was locked
   });
   $('password').addEventListener('input', clearLoginState);
+  [['email', () => emailPattern.test(clean($('email').value)) ? '' : 'Enter a valid email address.'], ['password', () => $('password').value ? '' : 'Enter your password.']].forEach(([id, rule]) => {
+    const check = FormAssist.validation.bind($(id), rule, $(id + 'Error'));
+    ['input', 'blur'].forEach(event => $(id).addEventListener(event, () => $(id + 'Field').classList.toggle('invalid', !!check(true))));
+  });
 
   /* ---------- locked account: 3 wrong passwords -> unlock link by email -> countdown starts when the link is opened ---------- */
   const cdBox = $('loginCountdown'), cdTime = $('cdTime'), cdText = $('cdText'), cdBar = $('cdBar');
@@ -1139,6 +1301,11 @@
         window.location.replace(home);                       // go straight to this role's page
         return;
       }
+      if (r.status === 403 && r.data.code === 'OTP_REQUIRED'){          // password was right: now the one-time code (email or text)
+        $('password').value = '';
+        openLoginOtp(r.data);
+        return;
+      }
       if (r.status === 403 && r.data.code === 'VERIFICATION_REQUIRED'){
         $('password').value = '';
         openVerifyScreen({ email: r.data.email || emailValue, token: r.data.pendingToken, emailVerified: r.data.emailVerified, phoneVerified: r.data.phoneVerified });
@@ -1159,6 +1326,15 @@
       showLoginError('Could not reach the server. Check your connection and try again.');
     } finally { btn.disabled = !!lockTimer; btn.textContent = 'SIGN IN'; }
   });
+
+  /* the server leaves a 2-minute "signedout" note when it ends a session because the account signed in elsewhere (or its password changed) */
+  (function signedOutNotice(){
+    const m = document.cookie.match(/(?:^|; )signedout=([^;]*)/); if (!m) return;
+    document.cookie = 'signedout=; Max-Age=0; path=/; SameSite=Lax';
+    if (decodeURIComponent(m[1]) !== 'replaced') return;
+    loginNotice.textContent = 'You were signed out because this account signed in on another device, or its password was changed. Sign in again to continue.';
+    loginNotice.classList.add('show');
+  })();
 
   /* =====================================================
      REGISTRATION (3 steps)
@@ -1247,7 +1423,7 @@
     $('suStrengthBar').style.width = lv[1]; $('suStrengthBar').style.background = lv[2];
     $('suStrengthLabel').textContent = 'Strength: ' + lv[0];
   }
-  ['suPass','suConfirm'].forEach(id => $(id).addEventListener('input', () => { paintPassword(); setErr(id, ''); if (id === 'suPass' && $('suConfirm').value) setErr('suConfirm', ''); }));
+  ['suPass','suConfirm'].forEach(id => $(id).addEventListener('input', () => { paintPassword(); setErr(id, V[id]()); if (id === 'suPass' && $('suConfirm').value) setErr('suConfirm', V.suConfirm()); }));
 
   /* ---------- duplicate-email check (while typing) ---------- */
   let emailCheck = { email: '', ok: null, msg: '' }, emailTimer = null, emailPending = null;
@@ -1269,12 +1445,27 @@
   $('suEmail').addEventListener('input', () => {
     setErr('suEmail', ''); hint.className = 'hint'; hint.textContent = 'We\u2019ll send a verification link to this address.';
     emailCheck = { email: '', ok: null, msg: '' };
+    setErr('suEmail', V.suEmail());
     clearTimeout(emailTimer); emailTimer = setTimeout(checkEmailNow, 600);
   });
   $('suEmail').addEventListener('blur', () => { $('suEmail').value = clean($('suEmail').value).toLowerCase(); clearTimeout(emailTimer); checkEmailNow(); });
 
   /* ---------- little input niceties ---------- */
-  $('suPhone').addEventListener('input', function(){ const n = this.value.replace(/[^\d+\s().-]/g, ''); if (n !== this.value) this.value = n; setErr('suPhone', ''); });
+  $('suPhone').addEventListener('input', function(){ const n = this.value.replace(/[^\d+\s().-]/g, ''); if (n !== this.value) this.value = n; setErr('suPhone', V.suPhone()); });
+  /* ---------- Task 9: one phone format, "already on an account?" (a warning, not a block), Enter moves on, unsaved warning ---------- */
+  const FA = window.FormAssist;
+  let phoneSeq = 0;
+  $('suPhone').addEventListener('blur', () => {
+    if (!FA || mode === 'invite') return;
+    const v = clean($('suPhone').value), my = ++phoneSeq;
+    FA.note($('suPhone'), '');
+    if (!v || mobileProblem(v)) return;
+    api('GET', '/api/signup/check-phone?phone=' + encodeURIComponent(v)).then(r => {
+      if (my !== phoneSeq || r.status !== 200 || !r.data) return;
+      FA.note($('suPhone'), r.data.used ? r.data.message : '', 'warn');
+    }).catch(() => {});
+  });
+  if (FA) { FA.keyboard($('signupForm')); FA.guard($('signupForm')); }
   // Names: Title Case while typing + a message the moment something wrong is typed (and it stays until it is fixed)
   ['suFirst','suLast','suMiddle'].forEach(id => {
     const el = $(id);
@@ -1286,15 +1477,15 @@
         el.value = fixed;
         try { el.setSelectionRange(left.length, left.length); } catch (_) {}
       }
-      setErr(id, el.value === '' ? '' : V[id]());
+      setErr(id, V[id]());
     });
     el.addEventListener('blur', () => { el.value = clean(el.value); setErr(id, id === 'suMiddle' && !el.value ? '' : V[id]()); });
   });
   ['suSuffix','suGender'].forEach(id => $(id).addEventListener('change', () => { setErr(id, ''); $(id).classList.toggle('placeholder', !$(id).value); }));
   // Birthdate: required, 18 or older. Checked as soon as a full date is typed or picked, and again when the field is left.
-  ['input','change'].forEach(ev => $('suBirth').addEventListener(ev, () => { setErr('suBirth', $('suBirth').value ? V.suBirth() : ''); }));
+  ['input','change'].forEach(ev => $('suBirth').addEventListener(ev, () => { setErr('suBirth', V.suBirth()); }));
   $('suBirth').addEventListener('blur', () => setErr('suBirth', V.suBirth()));
-  ['suTerms','suPrivacy'].forEach(id => $(id).addEventListener('change', () => setErr(id, '')));
+  ['suTerms','suPrivacy'].forEach(id => $(id).addEventListener('change', () => setErr(id, V[id]())));
   $('suBirth').max = adultCutoffISO();                 // the date picker stops at "18 years ago"
   // show a field's problem as soon as the person leaves it
   Object.keys(V).forEach(id => { if (['suTerms','suPrivacy','suEmail','suConfirm','suFirst','suLast','suMiddle','suBirth'].includes(id)) return; $(id).addEventListener('blur', () => { if ($(id).value !== '') setErr(id, V[id]()); }); });
@@ -1326,6 +1517,7 @@
 
   function resetSignup(){
     $('signupForm').reset(); clearAllErr(); signupError.classList.remove('show');
+    if (window.FormAssist) window.FormAssist.note($('suPhone'), '');
     emailCheck = { email: '', ok: null, msg: '' }; hint.className = 'hint'; hint.textContent = 'We\u2019ll send a verification link to this address.';
     ['suSuffix','suGender'].forEach(id => $(id).classList.add('placeholder'));
     ['suPass','suConfirm'].forEach(id => { $(id).type = 'password'; const b = $(id).parentNode.querySelector('.toggle-vis'); if (b){ b.classList.remove('showing'); b.setAttribute('aria-label', 'Show password'); } });
@@ -1436,6 +1628,16 @@
     if (pw !== cf) return ['fpConf', 'Passwords do not match.'];
     return null;
   }
+  ['fpEmail', 'fpCode', 'fpNew', 'fpConf'].forEach(id => {
+    const check = () => {
+      if (id === 'fpEmail') return fpSet(id, emailPattern.test(clean($(id).value)) ? '' : 'Enter a valid email address.');
+      if (id === 'fpCode') return fpSet(id, /^\d{6}$/.test($(id).value) ? '' : 'Enter the 6-digit code.');
+      const pw = $('fpNew').value, cf = $('fpConf').value, problem = fpPwProblem(pw, pw);
+      if (id === 'fpNew') { fpSet(id, problem ? problem[1] : ''); if (cf) fpSet('fpConf', pw === cf ? '' : 'Passwords do not match.'); }
+      else fpSet(id, !cf ? 'Re-enter your new password.' : pw === cf ? '' : 'Passwords do not match.');
+    };
+    ['input', 'blur'].forEach(event => $(id).addEventListener(event, check));
+  });
   async function fpSendCode(){
     fpShow(''); fpNote('');
     const email = $('fpEmail').value.trim().toLowerCase();
@@ -1514,11 +1716,11 @@
     otpExp = setInterval(() => { left--; if (left <= 0){ clearInterval(otpExp); t.textContent = 'expired'; t.classList.add('expired'); } else draw(); }, 1000);
   }
   const otpValue = () => otpBoxes.map(i => i.value).join('');
-  function otpError(msg){ const e = $('otpError'); e.textContent = msg || ''; e.classList.toggle('show', !!msg); $('otpRow').classList.toggle('invalid', !!msg); }
+  function otpError(msg){ const e = $('otpError'); e.textContent = msg || ''; e.classList.toggle('show', !!msg); e.setAttribute('aria-live', 'polite'); $('otpRow').classList.toggle('invalid', !!msg); otpBoxes.forEach(box => { box.setAttribute('aria-invalid', String(!!msg)); box.setAttribute('aria-describedby', e.id); }); }
   function otpClear(){ otpBoxes.forEach(i => { i.value = ''; i.classList.remove('filled'); }); otpError(''); }
   otpBoxes.forEach((box, i) => {
     box.addEventListener('input', () => {
-      box.value = box.value.replace(/\D/g, '').slice(-1); box.classList.toggle('filled', !!box.value); otpError('');
+      box.value = box.value.replace(/\D/g, '').slice(-1); box.classList.toggle('filled', !!box.value); otpError(otpValue().length === 6 ? '' : 'Enter all 6 digits of the code.');
       if (box.value && i < 5) otpBoxes[i + 1].focus();
       if (otpValue().length === 6) $('cpVerify').click();
     });
@@ -1527,6 +1729,7 @@
       const d = ((e.clipboardData || window.clipboardData).getData('text') || '').replace(/\D/g, '').slice(0, 6);
       if (!d) return; e.preventDefault();
       otpBoxes.forEach((b, k) => { b.value = d[k] || ''; b.classList.toggle('filled', !!b.value); });
+      otpError(d.length === 6 ? '' : 'Enter all 6 digits of the code.');
       (otpBoxes[Math.min(d.length, 5)]).focus();
       if (d.length === 6) $('cpVerify').click();
     });
@@ -1613,6 +1816,99 @@
     startResendCooldown(60);
   });
   $('ceToLogin').addEventListener('click', () => { clearInterval(pollTimer); $('email').value = pendingEmail; $('password').value = ''; clearLoginState(); showScreen('loginScreen'); });
+
+  /* ---------- sign-in code screen: the second step of EVERY sign-in. The person chooses email or text message. ---------- */
+  let loToken = '', loChannel = '', loCd = null, loExp = null, loOptions = {};
+  const loBoxes = Array.from(document.querySelectorAll('#loOtpRow .otp-digit'));
+  const loValue = () => loBoxes.map(i => i.value).join('');
+  function loError(msg){ const e = $('loOtpError'); e.textContent = msg || ''; e.classList.toggle('show', !!msg); e.setAttribute('aria-live', 'polite'); $('loOtpRow').classList.toggle('invalid', !!msg); loBoxes.forEach(box => { box.setAttribute('aria-invalid', String(!!msg)); box.setAttribute('aria-describedby', e.id); }); }
+  function loDigitsClear(){ loBoxes.forEach(i => { i.value = ''; i.classList.remove('filled'); }); }
+  function loMsg(text){ const m = $('loMsg'); m.classList.toggle('show', !!text); m.textContent = text || ''; }
+  function loCooldown(sec){
+    const b = $('loResend'); clearInterval(loCd); b.disabled = true;
+    let left = sec; b.textContent = 'Resend code (' + left + 's)';
+    loCd = setInterval(() => { left--; if (left <= 0){ clearInterval(loCd); b.disabled = false; b.textContent = 'Resend code'; } else b.textContent = 'Resend code (' + left + 's)'; }, 1000);
+  }
+  function loExpiry(sec){
+    const t = $('loTimer'); clearInterval(loExp); t.classList.remove('expired');
+    let left = sec;
+    const draw = () => { t.textContent = String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0'); };
+    draw();
+    loExp = setInterval(() => { left--; if (left <= 0){ clearInterval(loExp); t.textContent = 'expired'; t.classList.add('expired'); } else draw(); }, 1000);
+  }
+  loBoxes.forEach((box, i) => {
+    box.addEventListener('input', () => {
+      box.value = box.value.replace(/\D/g, '').slice(-1); box.classList.toggle('filled', !!box.value); loError(loValue().length === 6 ? '' : 'Enter all 6 digits of the code.');
+      if (box.value && i < 5) loBoxes[i + 1].focus();
+      if (loValue().length === 6) $('loVerify').click();
+    });
+    box.addEventListener('keydown', (e) => { if (e.key === 'Backspace' && !box.value && i > 0) loBoxes[i - 1].focus(); });
+    box.addEventListener('paste', (e) => {
+      const d = ((e.clipboardData || window.clipboardData).getData('text') || '').replace(/\D/g, '').slice(0, 6);
+      if (!d) return; e.preventDefault();
+      loBoxes.forEach((b, k) => { b.value = d[k] || ''; b.classList.toggle('filled', !!b.value); });
+      loError(d.length === 6 ? '' : 'Enter all 6 digits of the code.');
+      loBoxes[Math.min(d.length, 5)].focus();
+      if (d.length === 6) $('loVerify').click();
+    });
+  });
+  function loBack(message){                                   // back to the password form (session expired, or the person cancelled)
+    clearInterval(loCd); clearInterval(loExp); loToken = ''; loChannel = '';
+    $('password').value = ''; clearLoginState(); showScreen('loginScreen');
+    if (message) showLoginError(message);
+  }
+  function loShowChoice(){
+    clearInterval(loCd); clearInterval(loExp); loChannel = '';
+    $('loChoose').hidden = false; $('loEnter').hidden = true; loDigitsClear(); loError('');
+    $('loSub').textContent = 'Choose where to send your one-time sign-in code.';
+  }
+  function openLoginOtp(d){
+    loToken = d.challengeToken || ''; loOptions = { email: d.email || null, sms: d.sms || null };
+    $('loPickEmail').hidden = !loOptions.email; $('loPickSms').hidden = !loOptions.sms;
+    $('loEmailMask').textContent = loOptions.email ? loOptions.email.masked : '';
+    $('loSmsMask').textContent = loOptions.sms ? loOptions.sms.masked : '';
+    loMsg(''); loShowChoice(); showScreen('loginOtpScreen');
+  }
+  async function loSend(channel){
+    loMsg(''); loError('');
+    const r = await api('POST', '/api/auth/login-otp/send', { token: loToken, channel }).catch(() => null);
+    if (!r){ loMsg('Could not reach the server. Try again.'); return; }
+    if (r.status === 401) return loBack(r.data.error || 'Your sign-in session expired. Please sign in again.');
+    if (r.ok){
+      loChannel = r.data.channel || channel;                       // where the live code really went (differs when a code was sent a moment ago by the other method)
+      $('loChoose').hidden = true; $('loEnter').hidden = false;
+      $('loDest').textContent = (loOptions[loChannel] && loOptions[loChannel].masked) || 'your device';
+      $('loSub').textContent = 'Enter the 6-digit code to finish signing in.';
+      if (!r.data.recent) loDigitsClear();
+      loMsg(r.data.message || '');
+      loCooldown(r.data.waitSeconds || 60); loExpiry(r.data.expiresIn || 300); loBoxes[0].focus();
+      return;
+    }
+    if (r.status === 429 && !$('loEnter').hidden){ loError(r.data.error); loCooldown(Math.min(r.data.waitSeconds || 60, 3600)); return; }
+    loMsg(r.data.error || 'Could not send the code. Try again.');
+  }
+  $('loPickEmail').addEventListener('click', () => loSend('email'));
+  $('loPickSms').addEventListener('click', () => loSend('sms'));
+  $('loResend').addEventListener('click', () => { $('loResend').disabled = true; loSend(loChannel || 'email'); });
+  $('loChange').addEventListener('click', (e) => { e.preventDefault(); loMsg(''); loShowChoice(); });
+  $('loCancel').addEventListener('click', (e) => { e.preventDefault(); loBack(''); });
+  $('loVerify').addEventListener('click', async () => {
+    const code = loValue();
+    if (code.length !== 6){ loError('Enter the 6-digit code.'); return; }
+    const b = $('loVerify'); if (b.disabled) return; b.disabled = true; b.textContent = 'Checking…';
+    const r = await api('POST', '/api/auth/login-otp/verify', { token: loToken, code }).catch(() => null);
+    b.disabled = false; b.textContent = 'Verify and sign in';
+    if (!r){ loError('Could not reach the server. Try again.'); return; }
+    if (r.ok){
+      const home = HOME_BY_ROLE[r.data.role];
+      if (!home){ loError('Your account has no access set up yet. Please contact the store.'); return; }
+      window.location.replace(home);
+      return;
+    }
+    if (r.status === 401) return loBack(r.data.error || 'Your sign-in session expired. Please sign in again.');
+    loError(r.data.error || 'That code did not work.');
+    loDigitsClear(); loBoxes[0].focus();
+  });
 
   /* ---------- generic notice screen ---------- */
   function notice(eyebrow, title, text, buttonText){

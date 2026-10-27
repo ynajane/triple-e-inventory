@@ -1,0 +1,262 @@
+/* =========================================================
+   ui2-inventory.css — Inventory Monitoring page only (#inventory.ui2)
+   Needs ui2-core.css loaded before it.
+   (Uses #inventory so it wins over inventory-priority.css.)
+========================================================= */
+
+/* ---------- KPI cards ---------- */
+#inventory .stats {
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 16px;
+    margin: 0 0 22px;
+}
+#inventory .stats .stat-card:nth-child(2) { --accent: var(--red); }
+#inventory .stats .stat-card:nth-child(3) { --accent: var(--amber); }
+#inventory .stats .stat-card:nth-child(4) { --accent: var(--green); }
+
+#inventory .stat-foot.up       { color: var(--u-ok-fg); }
+#inventory .stat-foot.warn     { color: var(--u-warn-fg); }
+#inventory .stat-foot.low-foot { color: var(--u-bad-fg); }
+
+/* clickable KPI cards (script.js adds .inv-kpi / .is-active) */
+#inventory .stat-card.inv-kpi { cursor: pointer; }
+#inventory .stat-card.inv-kpi:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--u-line)); }
+#inventory .stat-card.inv-kpi.is-active {
+    border-color: var(--accent);
+    box-shadow:
+        0 0 0 1px var(--accent),
+        0 20px 40px -20px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+#inventory .stat-card.inv-kpi.is-active::after { left: 0; right: 0; opacity: 1; height: 3px; }
+#inventory .stat-card.inv-kpi.is-active::before { opacity: 1; }
+
+/* the Below Reorder card glows red when something needs restocking */
+#inventory .stat-card.inv-stat-low {
+    border-color: var(--u-bad-line);
+    background:
+        linear-gradient(0deg, var(--u-bad-bg), var(--u-bad-bg)),
+        var(--u-surface);
+    box-shadow: var(--u-shadow), 0 18px 36px -24px rgba(227,91,91,.8);
+}
+#inventory .stat-card.inv-stat-low .stat-value { color: var(--u-bad-fg); }
+#inventory .stat-card.inv-stat-low:hover { border-color: var(--red); }
+#inventory .stat-card.inv-stat-low.is-active {
+    border-color: var(--red);
+    box-shadow: 0 0 0 1px var(--red), 0 20px 40px -20px rgba(227,91,91,.8);
+}
+
+/* ---------- "needs restocking" banner ---------- */
+#inventory .inv-priority {
+    position: relative;
+    overflow: hidden;
+    margin: 0 0 22px;
+    padding: 18px 22px;
+    border-radius: var(--u-r);
+    border: 1px solid var(--u-line);
+    background: var(--u-surface);
+    box-shadow: var(--u-shadow);
+}
+#inventory .inv-priority.is-alert {
+    border-color: var(--u-bad-line);
+    background:
+        linear-gradient(110deg, var(--u-bad-bg), transparent 70%),
+        var(--u-surface);
+    box-shadow: var(--u-shadow), inset 4px 0 0 var(--red);
+}
+#inventory .inv-priority.is-clear {
+    border-color: var(--u-ok-line);
+    background:
+        linear-gradient(110deg, var(--u-ok-bg), transparent 70%),
+        var(--u-surface);
+    box-shadow: var(--u-shadow), inset 4px 0 0 var(--green);
+}
+#inventory .inv-pri-icon { width: 44px; height: 44px; border-radius: 12px; }
+#inventory .is-alert .inv-pri-icon { background: var(--u-bad-bg); color: var(--u-bad-fg); border: 1px solid var(--u-bad-line); }
+#inventory .is-clear .inv-pri-icon { background: var(--u-ok-bg);  color: var(--u-ok-fg);  border: 1px solid var(--u-ok-line); }
+#inventory .inv-pri-title {
+    font-family: "Oswald", sans-serif;
+    font-weight: 600;
+    font-size: 18px;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+}
+#inventory .is-alert .inv-pri-title { color: var(--u-bad-fg); }
+#inventory .is-clear .inv-pri-title { color: var(--u-ok-fg); }
+#inventory .inv-pri-sub { font-size: 14px; margin-top: 3px; }
+#inventory .inv-pri-out {
+    margin-left: 10px;
+    padding: 3px 11px;
+    border-radius: 99px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px; letter-spacing: .8px; text-transform: none;
+    color: #fff;
+    background: linear-gradient(180deg, #e86a6a, #c94444);
+    vertical-align: 2px;
+}
+#inventory .inv-chips { gap: 12px; margin-top: 16px; }
+#inventory .inv-chip {
+    min-width: 190px;
+    padding: 11px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--u-bad-line);
+    background: var(--u-surface-flat);
+    transition: transform .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+#inventory .inv-chip:hover {
+    transform: translateY(-2px);
+    border-color: var(--red);
+    background: var(--u-bad-bg);
+    box-shadow: 0 16px 28px -22px rgba(227,91,91,.9);
+}
+#inventory .inv-chip.is-out { background: var(--u-bad-bg); border-color: var(--red); }
+#inventory .inv-chip-name { font-size: 14.5px; }
+#inventory .inv-chip-qty,
+#inventory .inv-short { color: var(--u-bad-fg); }
+
+/* ---------- Stock levels panel ---------- */
+#inventory .panel-head {
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px 18px;
+    flex-wrap: wrap;
+}
+#inventory #invPanelSub strong { color: var(--text); }
+#inventory .inv-clear {
+    border-radius: 99px;
+    border-color: var(--u-chip-line);
+    background: var(--u-chip-bg);
+    padding: 2px 12px;
+}
+#inventory .inv-clear:hover { border-color: var(--blue-bright); }
+
+/* filters: pill search with icon + soft selects */
+#inventory .inv-filters { gap: 10px; }
+#inventory .inv-search,
+#inventory .inv-select {
+    min-height: 42px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background-color: var(--u-surface-flat);
+    color: var(--text);
+    transition: border-color .15s, box-shadow .15s, background-color .15s;
+}
+#inventory .inv-search {
+    min-width: 240px;
+    padding: 8px 16px 8px 42px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238fa1b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 15px 50%;
+    background-size: 17px 17px;
+}
+#inventory .inv-select { padding: 8px 14px; color: var(--text-dim); }
+#inventory .inv-search:hover,
+#inventory .inv-select:hover { border-color: var(--u-chip-line); }
+#inventory .inv-search:focus,
+#inventory .inv-select:focus {
+    border-color: var(--blue-bright);
+    box-shadow: 0 0 0 3px var(--u-chip-bg);
+    outline: none;
+}
+
+/* the double-click tip becomes a quiet hint chip */
+#inventory .qs-tip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 6px 13px;
+    border-radius: 99px;
+    background: var(--u-chip-bg);
+    border: 1px solid var(--u-chip-line);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: .3px;
+    color: var(--text-dim);
+}
+#inventory .qs-tip::before {
+    content: "";
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--blue-bright);
+    flex: none;
+}
+
+/* ---------- table ---------- */
+#inventory .table-wrapper { overflow-x: auto; }
+#inventory #stockLevelsTableBody tr.inv-row { cursor: pointer; }
+#inventory #stockLevelsTableBody tr.inv-row td:first-child { font-weight: 600; color: var(--text); }
+#inventory #stockLevelsTableBody tr.inv-row.low   { background: var(--u-bad-bg); box-shadow: inset 4px 0 0 var(--red); }
+#inventory #stockLevelsTableBody tr.inv-row.low:hover { background: color-mix(in srgb, var(--red) 18%, transparent); }
+#inventory #stockLevelsTableBody tr.inv-row.watch { background: color-mix(in srgb, var(--amber) 6%, transparent); box-shadow: inset 4px 0 0 var(--amber); }
+#inventory #stockLevelsTableBody tr.inv-row.watch:hover { background: var(--u-warn-bg); }
+#inventory #stockLevelsTableBody tr.inv-row.ok { opacity: 1; }
+#inventory #stockLevelsTableBody tr.inv-row.ok:hover { background: var(--u-hover); }
+#inventory #stockLevelsTableBody tr.inv-row.low .stock-level-text { color: var(--u-bad-fg); }
+#inventory #stockLevelsTableBody td.dim { color: var(--text-dim); }
+
+/* stock-level bar: thicker, rounded, animated */
+#inventory .stock-level-cell { min-width: 150px; }
+#inventory .stock-level-text { font-size: 14px; margin-bottom: 8px; }
+#inventory .stock-bar-track,
+#inventory #stockLevelsTableBody tr.inv-row.low .stock-bar-track {
+    height: 6px;
+    border-radius: 99px;
+    background: var(--u-track);
+}
+#inventory .stock-bar-fill {
+    border-radius: 99px;
+    animation: ui2Bar .9s cubic-bezier(.2,.8,.2,1) both;
+    transform-origin: left center;
+}
+#inventory .stock-bar-fill.low   { background: linear-gradient(90deg, #c94444, var(--red)); }
+#inventory .stock-bar-fill.watch { background: linear-gradient(90deg, #b88a2c, var(--amber)); }
+#inventory .stock-bar-fill.ok    { background: linear-gradient(90deg, #2f9c5e, var(--green)); }
+@keyframes ui2Bar { from { transform: scaleX(0); } }
+
+/* status pills: soft chips like the rest of ui2 (overrides the solid red one) */
+#inventory #stockLevelsTableBody .status-pill.low {
+    padding: 4px 11px 4px 9px;
+    border-radius: 99px;
+    background: var(--u-bad-bg);
+    color: var(--u-bad-fg);
+    border: 1px solid var(--u-bad-line);
+}
+#inventory #stockLevelsTableBody .status-pill.low .ico { width: 14px; height: 14px; }
+
+/* ---------- legend ---------- */
+#inventory .inv-legend {
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px dashed var(--u-line-soft);
+}
+#inventory .legend-item {
+    gap: 8px;
+    padding: 6px 13px 6px 11px;
+    border-radius: 99px;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line-soft);
+    font-size: 13.5px;
+}
+#inventory .legend-dot { width: 8px; height: 8px; }
+#inventory .legend-dot.low   { box-shadow: 0 0 0 3px var(--u-bad-bg); }
+#inventory .legend-dot.watch { box-shadow: 0 0 0 3px var(--u-warn-bg); }
+#inventory .legend-dot.ok    { box-shadow: 0 0 0 3px var(--u-ok-bg); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+    #inventory .inv-filters { width: 100%; }
+    #inventory .inv-search { flex: 1 1 220px; min-width: 0; }
+}
+@media (max-width: 700px) {
+    #inventory .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    #inventory .stat-card { padding: 16px 14px 14px; }
+    #inventory .stat-card .ui2-ico { width: 34px; height: 34px; margin-bottom: 12px; }
+    #inventory .stat-label { letter-spacing: 1.2px; font-size: 11px; }
+    #inventory .stat-value { font-size: 28px; }
+    #inventory .stat-foot  { font-size: 12.5px; }
+    #inventory .inv-priority { padding: 16px; }
+    #inventory .inv-select { flex: 1 1 140px; }
+}
+@media (max-width: 420px) {
+    #inventory .stats { grid-template-columns: 1fr; }
+}

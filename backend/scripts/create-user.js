@@ -16,15 +16,7 @@ if (!['finance', 'cashier', 'customer'].includes(roleKey)) problems.push('Role m
 if (problems.length) { console.error('Cannot create user:\n - ' + problems.join('\n - ')); process.exit(1); }
 
 (async () => {
-  const pool = new Pool(process.env.DATABASE_URL
-    ? { connectionString: process.env.DATABASE_URL }
-    : {
-        host: process.env.DB_HOST || 'localhost',
-        port: Number(process.env.DB_PORT) || 5432,
-        user: process.env.DB_USER,
-        password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME
-      });
+  const pool = new Pool(require('../db-config')());
   const hash = await bcrypt.hash(password, 12);
   const r = await pool.query(
     `INSERT INTO users (full_name, username, email, password_hash, role_id)

@@ -19,7 +19,7 @@
    - Refunds/returns are deducted from the sale they belong to, so net sales and the product ranking agree.
    - Money collected on an order = the larger of (ledger payments in) and (legacy invoice flag => full total).
      Using the larger, never the sum, is what stops an order that exists in both records being counted twice.
-   - A quotation is never a sale. Its money is counted once, on the order or POS receipt it becomes.        */
+   - A quotation is never a sale. Its money is counted once, on the order or POS invoice it becomes.        */
 
 const MAX_DAYS = 1100;
 const TZ_NAME = 'Asia/Manila';
@@ -294,7 +294,7 @@ const REASON_GROUPS = {
   'Supplier receipts': { in: ['supplier_receipt'] },
   'Finished goods produced': { in: ['produced_batch', 'production_output'] },
   'Returns and restocking': { in: ['return', 'refund', 'customer_return'] },
-  'Stock adjustments': { in: ['count_correction_up', 'correction'], out: ['count_correction_down'] },
+  'Stock adjustments': { in: ['count_correction_up', 'correction', 'opening_balance'], out: ['count_correction_down'] },
   'Sales': { out: ['sale', 'online_order'] },
   'Material consumption': { out: ['production_use'] },
   'Losses and write-offs': { out: ['rust_corrosion', 'damaged', 'damage', 'scrap_cutting_waste', 'quality_rejection', 'lost_missing', 'write_off'] },
@@ -475,7 +475,7 @@ async function quotationReport(q, dx, p) {
     acceptedValue: r2(num(get('accepted').value)), quotedValue: r2(num(get('quoted').value)),
     sources: bySource.map((r) => ({ source: r.source, count: num(r.n) })), trend,
     rows: detail.map((r) => ({ ref: r.ref, status: r.status, bucket: r.bucket, customer: r.customer || '', product: r.product || '', amount: r.amount == null ? null : r2(num(r.amount)), validUntil: r.valid_until ? String(r.valid_until).slice(0, 10) : null, day: r.day, convertedTo: r.converted_to })),
-    note: 'Accepted includes quotations already converted. Converted quotations are counted once as sales, on the order or POS receipt they became.'
+    note: 'Accepted includes quotations already converted. Converted quotations are counted once as sales, on the order or POS invoice they became.'
   };
 }
 

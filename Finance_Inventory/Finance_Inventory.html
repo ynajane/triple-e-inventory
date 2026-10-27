@@ -9,11 +9,18 @@
 
     <script>try{var t=localStorage.getItem("tripleE.theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
     <script>try{if(localStorage.getItem("tripleE.sidebarRail")==="1")document.documentElement.classList.add("sb-rail");document.documentElement.classList.add("sb-noanim")}catch(e){}</script>
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=14">
     <link rel="stylesheet" href="production.css?v=2">
     <link rel="stylesheet" href="notifications.css?v=7">
-    <link rel="stylesheet" href="sidebar.css?v=2">
+<script src="session-guard.js?v=2"></script>
+    <link rel="stylesheet" href="sidebar.css?v=6">
     <link rel="stylesheet" href="customers.css?v=6">
+    <link rel="stylesheet" href="table-pagination.css">
+    <link rel="stylesheet" href="operations-schedule.css">
+    <link rel="stylesheet" href="ui2-core.css?v=1">
+    <link rel="stylesheet" href="ui2-dashboard.css?v=1">
+    <link rel="stylesheet" href="ui2-inventory.css?v=1">
+    <link rel="stylesheet" href="ui2-stockflow.css?v=1">
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -38,6 +45,7 @@
 .np-thumb button{position:absolute;top:3px;right:3px;width:22px;height:22px;border:0;border-radius:50%;background:#000a;color:#fff;cursor:pointer;line-height:22px;padding:0}
 .np-thumb .cover{position:absolute;left:0;bottom:0;right:0;background:#000a;color:#fff;font-size:11px;text-align:center;padding:2px 0}
 </style>
+<link rel="stylesheet" href="form-layout.css?v=2">
 </head>
 
 <body>
@@ -68,64 +76,31 @@
              Top links are always visible. Each section below can be collapsed; the section that
              contains the current page opens automatically (see sidebar.js). Keep every button's
              data-page value: script.js and the other admin scripts use it. -->
-        <nav id="sidebarNav" aria-label="Primary">
-
-            <div class="nav-group nav-top">
-                <button type="button" class="nav-item active" data-page="dashboard"><span class="dot"></span> Dashboard</button>
-                <button type="button" class="nav-item" data-page="notifications"><span class="dot"></span> Notifications</button>
-                <button type="button" class="nav-item" data-page="reports"><span class="dot"></span> Reports</button>
-            </div>
-
-            <div class="nav-group" data-group="inventory">
-                <button type="button" class="nav-group-toggle" aria-expanded="false" aria-controls="navg-inventory">
-                    <span class="ngt-label">Inventory</span>
-                    <span class="ngt-ind" hidden></span>
-                    <svg class="ngt-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
-                </button>
-                <div class="nav-items" id="navg-inventory">
-                    <div class="nav-items-inner">
-                        <button type="button" class="nav-item" data-page="inventory"><span class="dot"></span> Inventory Monitoring</button>
-                        <button type="button" class="nav-item" data-page="stockflow"><span class="dot"></span> Stock In / Out</button>
-                        <button type="button" class="nav-item" data-page="products"><span class="dot"></span> Products</button>
-                        <button type="button" class="nav-item" data-page="suppliers"><span class="dot"></span> Suppliers</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="nav-group sales-nav-group" data-group="sales">
-                <button type="button" class="nav-group-toggle" aria-expanded="false" aria-controls="navg-sales">
-                    <span class="ngt-label">Sales</span>
-                    <span class="ngt-ind" hidden></span>
-                    <svg class="ngt-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
-                </button>
-                <div class="nav-items" id="navg-sales">
-                    <div class="nav-items-inner">
-                        <div class="nav-sub" role="presentation">Monitor</div>
-                        <button type="button" class="nav-item sales-parent" data-page="sales-overview" data-title="Sales Overview"><span class="nav-symbol icon-chart" aria-hidden="true"></span> Overview</button>
-                        <button type="button" class="nav-item" data-page="orders" data-title="Online Orders"><span class="nav-symbol icon-bag" aria-hidden="true"></span> Online Orders</button>
-                        <button type="button" class="nav-item" data-page="sales" data-title="POS Sales &amp; Shifts"><span class="nav-symbol icon-pos" aria-hidden="true"></span> POS Sales &amp; Shifts</button>
-                        <button type="button" class="nav-item" data-page="quotes" data-title="Quote Approvals"><span class="nav-symbol icon-quote" aria-hidden="true"></span> Quote Approvals</button>
-                        <div class="nav-sub" role="presentation">Payments</div>
-                        <button type="button" class="nav-item" data-page="payment-terms" data-title="Payment Terms"><span class="nav-symbol icon-coins" aria-hidden="true"></span> Payment Terms</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="nav-group" data-group="admin">
-                <button type="button" class="nav-group-toggle" aria-expanded="false" aria-controls="navg-admin">
-                    <span class="ngt-label">Admin</span>
-                    <span class="ngt-ind" hidden></span>
-                    <svg class="ngt-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
-                </button>
-                <div class="nav-items" id="navg-admin">
-                    <div class="nav-items-inner">
-                        <button type="button" class="nav-item" data-page="usermgmt"><span class="dot"></span> User Management</button>
-                        <button type="button" class="nav-item" data-page="auditlog"><span class="dot"></span> Audit Log</button>
-                    </div>
-                </div>
-            </div>
-
-        </nav>
+<nav id="sidebarNav" aria-label="Primary">
+<div class="nav-section" data-group="main" role="group" aria-labelledby="navl-main">
+<div class="nav-label-head" id="navl-main"><span>Main Menu</span></div>
+<button type="button" class="nav-item active" data-page="dashboard" data-label="Dashboard" title="Dashboard"><span class="dot"></span><span class="nav-text">Dashboard</span></button>
+<button type="button" class="nav-item" data-page="reports" data-label="Reports" title="Reports"><span class="dot"></span><span class="nav-text">Reports</span></button>
+<button type="button" class="nav-item" data-page="notifications" data-label="Notifications" title="Notifications"><span class="dot"></span><span class="nav-text">Notifications</span></button>
+</div>
+<div class="nav-section" data-group="inventory" role="group" aria-labelledby="navl-inventory">
+<div class="nav-label-head" id="navl-inventory"><span>Inventory</span></div>
+<button type="button" class="nav-item" data-page="inventory" data-label="Inventory Monitoring" title="Inventory Monitoring"><span class="dot"></span><span class="nav-text">Inventory Monitoring</span></button>
+<button type="button" class="nav-item" data-page="stockflow" data-label="Stock In / Out" title="Stock In / Out"><span class="dot"></span><span class="nav-text">Stock In / Out</span></button>
+<button type="button" class="nav-item" data-page="stockcount" data-label="Stock Count" title="Stock Count"><span class="dot"></span><span class="nav-text">Stock Count</span></button>
+<button type="button" class="nav-item" data-page="products" data-label="Products" title="Products"><span class="dot"></span><span class="nav-text">Products</span></button>
+<button type="button" class="nav-item" data-page="suppliers" data-label="Suppliers" title="Suppliers"><span class="dot"></span><span class="nav-text">Suppliers</span></button>
+</div>
+<div class="nav-section" data-group="sales" role="group" aria-labelledby="navl-sales">
+<div class="nav-label-head" id="navl-sales"><span>Sales &amp; Transactions</span></div>
+<button type="button" class="nav-item" data-page="sales-hub" data-label="Sales" title="Sales"><span class="dot"></span><span class="nav-text">Sales</span><span class="ngt-ind attn" id="salesNavAttention" hidden>0</span></button>
+</div>
+<div class="nav-section" data-group="admin" role="group" aria-labelledby="navl-admin">
+<div class="nav-label-head" id="navl-admin"><span>Administration</span></div>
+<button type="button" class="nav-item" data-page="usermgmt" data-label="User Management" title="User Management"><span class="dot"></span><span class="nav-text">User Management</span></button>
+<button type="button" class="nav-item" data-page="auditlog" data-label="Audit Log" title="Audit Log"><span class="dot"></span><span class="nav-text">Audit Log</span></button>
+</div>
+</nav>
 
         <div class="sidebar-foot">
             <button type="button" class="rail-toggle" id="railToggle" aria-pressed="false" aria-label="Collapse sidebar">
@@ -149,6 +124,9 @@
             <button type="button" class="burger" id="burgerBtn" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">
                 <span class="burger-bar"></span><span class="burger-bar"></span><span class="burger-bar"></span>
             </button>
+
+            <!-- Page name: filled in by navigateToPage() in script.js -->
+            <div class="topbar-title" id="pageTitle">Dashboard</div>
 
             <div class="topbar-right">
 
@@ -270,28 +248,30 @@
 
         <div class="content">
 
-            <!-- Sales pages share one tab strip (shown only on those pages: see navigateToPage in script.js) -->
-            <div class="sales-page-tabs" id="salesTabs" role="tablist" aria-label="Sales sections" hidden>
-                <button type="button" class="sales-tab" role="tab" data-page="sales-overview">Overview</button>
-                <button type="button" class="sales-tab" role="tab" data-page="orders">Online Orders</button>
-                <button type="button" class="sales-tab" role="tab" data-page="sales">POS Sales &amp; Shifts</button>
-                <button type="button" class="sales-tab" role="tab" data-page="payment-terms">Payment Terms</button>
-            </div>
-
-
-            <!-- =================================================
+                        <!-- =================================================
                  DASHBOARD
             ================================================== -->
 
-            <section id="dashboard" class="page active-page">
+            <section id="dashboard" class="page active-page ui2">
 
-                <div class="welcome">
+                <div class="welcome ui2-hero">
 
-                    <h1 id="welcomeName">Welcome back</h1>
+                    <div>
 
-                    <p>
-                        Here's what's happening across Triple E Metal Products right now.
-                    </p>
+                        <div class="ui2-eyebrow"><span class="ui2-live"></span> Operations overview</div>
+
+                        <h1 id="welcomeName">Welcome back</h1>
+
+                        <p>
+                            Here's what's happening across Triple E Metal Products right now.
+                        </p>
+
+                    </div>
+
+                    <div class="ui2-chip" id="dashDateChip">
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                        <span id="dashDateText">Today</span>
+                    </div>
 
                 </div>
 
@@ -301,6 +281,8 @@
                 <div class="stats">
 
                     <div class="stat-card">
+
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div>
 
                         <div class="stat-label">
                             Total SKUs
@@ -319,6 +301,8 @@
 
                     <div class="stat-card" id="dashLowCard">
 
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+
                         <div class="stat-label">
                             Low Stock
                         </div>
@@ -335,6 +319,8 @@
 
 
                     <div class="stat-card nc-stat" id="ncStatCard" role="button" tabindex="0" title="Open Notification Center">
+
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
 
                         <div class="stat-label">
                             Unread Alerts
@@ -353,6 +339,8 @@
 
                     <div class="stat-card">
 
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg></div>
+
                         <div class="stat-label">
                             Movements (7d)
                         </div>
@@ -369,6 +357,8 @@
 
 
                     <div class="stat-card">
+
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg></div>
 
                         <div class="stat-label">
                             Total Orders
@@ -481,6 +471,10 @@
 
                 </div>
 
+                <script>
+                    (function(){var e=document.getElementById("dashDateText");if(e)e.textContent=new Date().toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});})();
+                </script>
+
             </section>
 
 
@@ -488,20 +482,34 @@
                  INVENTORY MONITORING
             ================================================== -->
 
-            <section id="inventory" class="page">
+            <section id="inventory" class="page ui2">
 
-                <div class="welcome">
+                <div class="ui2-hero">
 
-                    <h1>
-                        Inventory Monitoring
-                    </h1>
+                    <div>
+
+                        <div class="ui2-eyebrow"><span class="ui2-live"></span> Inventory monitoring</div>
+
+                        <h1>Stock Levels</h1>
+
+                        <p>
+                            Track what's on hand against reorder levels. Low stock is always listed first.
+                        </p>
+
+                    </div>
+
+                    <div class="ui2-chip">
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+                        <span>Click a card to filter the table</span>
+                    </div>
 
                 </div>
 
-
-                <div class="stats">
+<div class="stats">
 
                     <div class="stat-card">
+
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div>
 
                         <div class="stat-label">
                             Total SKUs
@@ -520,6 +528,8 @@
 
                     <div class="stat-card">
 
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></div>
+
                         <div class="stat-label">
                             Below Reorder
                         </div>
@@ -537,6 +547,8 @@
 
                     <div class="stat-card">
 
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+
                         <div class="stat-label">
                             Near Reorder
                         </div>
@@ -553,6 +565,8 @@
 
 
                     <div class="stat-card">
+
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></div>
 
                         <div class="stat-label">
                             Healthy Stock
@@ -702,15 +716,31 @@
                  STOCK IN / OUT
             ================================================== -->
 
-            <section id="stockflow" class="page">
+            <section id="stockflow" class="page ui2">
 
-                <div class="welcome">
+                <div class="ui2-hero">
 
-                    <h1>
-                        Stock In / Out
-                    </h1>
+                    <div>
+
+                        <div class="ui2-eyebrow"><span class="ui2-live"></span> Stock in / out</div>
+
+                        <h1>Stock Movements</h1>
+
+                        <p>
+                            Record what comes in and goes out, then review the full log and production history.
+                        </p>
+
+                    </div>
+
+                    <div class="ui2-chip">
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>
+                        <span>Click a log row for details</span>
+                    </div>
 
                 </div>
+
+
+                
 
 
                 <div class="stockflow-grid">
@@ -884,6 +914,16 @@
                                     </div>
                                 </div>
                                 <div class="field-hint" id="movementCostHint"></div>
+                                <div class="form-row" style="margin-top:10px">
+                                    <div class="form-group">
+                                        <label class="form-label" for="movementOrderDate">Order / PO date <span class="q-optional" style="font-weight:400;color:var(--text-faint)">(optional)</span></label>
+                                        <input type="date" id="movementOrderDate" class="form-input" autocomplete="off">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label" for="movementDeliveryTiming">Delivery timeliness</label>
+                                        <div id="movementDeliveryTiming" style="padding:8px 12px;background:var(--surface-sunken, #f8fafc);border:1px solid var(--border-subtle, #e2e8f0);border-radius:6px;font-size:12.5px;min-height:38px;display:flex;align-items:center"><span class="faint">Select supplier &amp; order date to check timing</span></div>
+                                    </div>
+                                </div>
                             </div>
 
 <div id="productionPreview" class="prod-preview" style="display:none"></div>
@@ -1031,7 +1071,7 @@
                                         <th>Reason</th>
                                         <th>Qty</th>
                                         <th>Dept.</th>
-                                        <th>Supplier / cost</th>
+                                        <th>Unit Cost</th>
                                         <th>Handled By</th>
                                         <th>Time</th>
                                     </tr>
@@ -1054,6 +1094,7 @@
                         <div>
                             <div class="panel-title">Production history</div>
                             <div class="panel-sub" id="prodHistSub">Confirmed production records and the materials they used</div>
+                            <div class="faint" style="font-size:12px;color:var(--text-dim);margin-top:3px">Click any production row to view material breakdown and stock refs</div>
                         </div>
                         <div class="inv-filters">
                             <input type="text" id="prodHistSearch" class="inv-search" placeholder="Search ref or product..." autocomplete="off">
@@ -1077,59 +1118,28 @@
                  PRODUCTS
             ================================================== -->
 
-            <section id="products" class="page">
+            <section id="products" class="page ui2">
 
-                <div class="catalog-header">
+                <div class="ui2-hero">
 
                     <div>
 
-                        <div class="catalog-eyebrow">
-                            Catalog
-                        </div>
+                        <div class="ui2-eyebrow"><span class="ui2-live"></span> Product catalog</div>
 
-                        <h1 class="catalog-title">
-                            Products
-                        </h1>
+                        <h1>Products</h1>
 
+                        <p>
+                            Raw materials, finishing supplies and finished goods in one catalog, with cost, price and margin side by side.
+                        </p>
 
+                    </div>
+
+                    <div class="ui2-chip">
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V6a3 3 0 0 1 6 0v5"/><path d="M5 11h14l-1 9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z"/></svg>
+                        <span>Click a row for details, BOM recipe, edit or delete</span>
                     </div>
 
                 </div>
-
-
-                <div class="catalog-toolbar">
-
-                    <div class="prod-toolbar-left">
-                        <div class="prod-view-toggle" id="prodViewToggle" role="group" aria-label="Show active or archived products">
-                            <button type="button" class="pill-btn active" data-view="active" aria-pressed="true">Active<span class="count">0</span></button>
-                            <button type="button" class="pill-btn" data-view="archived" aria-pressed="false">Archived<span class="count">0</span></button>
-                        </div>
-                        <div
-                            class="category-pills"
-                            id="categoryPills"
-                        ></div>
-                    </div>
-
-
-                    <div class="catalog-toolbar-right">
-
-                        <input
-                            type="text"
-                            id="catalogSearch"
-                            class="inv-search"
-                            placeholder="Search catalog..." autocomplete="off">
-
-                        <button
-                            class="btn-primary"
-                            id="newProductBtn"
-                        >
-                            + New product
-                        </button>
-
-                    </div>
-
-                </div>
-
 
                 <div class="panel">
 
@@ -1152,6 +1162,38 @@
 
                     </div>
 
+                    <div class="catalog-toolbar">
+
+                        <div class="prod-toolbar-left">
+                            <div class="prod-view-toggle" id="prodViewToggle" role="group" aria-label="Show active or deleted products">
+                                <button type="button" class="pill-btn active" data-view="active" aria-pressed="true">Active<span class="count">0</span></button>
+                                <button type="button" class="pill-btn" data-view="archived" aria-pressed="false">Deleted<span class="count">0</span></button>
+                            </div>
+                            <div
+                                class="category-pills"
+                                id="categoryPills"
+                            ></div>
+                        </div>
+
+                        <div class="catalog-toolbar-right">
+
+                            <input
+                                type="text"
+                                id="catalogSearch"
+                                class="inv-search"
+                                placeholder="Search catalog..." autocomplete="off">
+
+                            <button
+                                class="btn-primary"
+                                id="newProductBtn"
+                            >
+                                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                New product
+                            </button>
+
+                        </div>
+
+                    </div>
 
                     <div class="table-wrapper">
 
@@ -1168,7 +1210,6 @@
                                     <th>Margin</th>
                                     <th>Source</th>
                                     <th>Status</th>
-                                    <th></th>
                                 </tr>
 
                             </thead>
@@ -1188,130 +1229,114 @@
                  SUPPLIERS
             ================================================== -->
 
-            <section id="suppliers" class="page">
+            <section id="suppliers" class="page ui2">
 
-                <div class="catalog-header">
-
+                <div class="ui2-hero">
                     <div>
-
-                        <div class="catalog-eyebrow">
-                            Catalog
-                        </div>
-
-                        <h1 class="catalog-title">
-                            Suppliers
-                        </h1>
-
-
+                        <div class="ui2-eyebrow"><span class="ui2-live"></span> Supplier management</div>
+                        <h1>Suppliers</h1>
+                        <p>Who you buy raw materials and finishing supplies from, where they are, how to reach them and what they provide.</p>
                     </div>
-
-                </div>
-
-
-                <div
-                    class="catalog-toolbar"
-                    style="margin-top: 24px;"
-                >
-
-                    <div
-                        class="category-pills"
-                        id="warehousePills"
-                    ></div>
-
-
-                    <div class="catalog-toolbar-right">
-
-                        <select id="supplierLocationFilter" class="inv-select" aria-label="Filter by location"></select>
-
-                        <input
-                            type="text"
-                            id="supplierSearch"
-                            class="inv-search"
-                            placeholder="Search suppliers..." autocomplete="off">
-
-                        <button
-                            class="btn-primary"
-                            id="onboardSupplierBtn"
-                        >
-                            + Add New Supplier
-                        </button>
-
+                    <div class="ui2-chip">
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11V6a3 3 0 0 1 6 0v5"/><path d="M5 11h14l-1 9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z"/></svg>
+                        <span>Click a row for details, linked materials, edit or delete</span>
                     </div>
-
                 </div>
-
 
                 <div class="panel">
 
                     <div class="panel-head">
-
                         <div>
-
-                            <div class="panel-title">
-                                Supplier List
-                            </div>
-
-                            <div
-                                class="panel-sub"
-                                id="supplierCount"
-                            >
-                                7 suppliers
-                            </div>
-
+                            <div class="panel-title">Supplier List</div>
+                            <div class="panel-sub" id="supplierCount">7 suppliers</div>
                         </div>
-
                     </div>
 
+                    <div class="catalog-toolbar">
+                        <div class="category-pills" id="warehousePills"></div>
+
+                        <div class="catalog-toolbar-right">
+                            <select id="supplierLocationFilter" class="inv-select" aria-label="Filter by location"></select>
+                            <input type="text" id="supplierSearch" class="inv-search" placeholder="Search suppliers" autocomplete="off">
+                            <button class="btn-primary" id="onboardSupplierBtn">
+                                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                Add supplier
+                            </button>
+                        </div>
+                    </div>
 
                     <div class="table-wrapper">
-
                         <table>
-
                             <thead>
-
                                 <tr>
                                     <th>Supplier</th>
                                     <th>Location</th>
                                     <th>Contact</th>
                                     <th>Supplies</th>
                                     <th>Status</th>
-                                    <th></th>
                                 </tr>
-
                             </thead>
-
                             <tbody id="supplierTableBody"></tbody>
-
                         </table>
-
                     </div>
 
                 </div>
-
             </section>
 
 
-            <!-- =================================================
-                 SALES & TRANSACTIONS OVERVIEW
+<!-- =================================================
+                 SALES: ONE scrollable page.
+                 Header bar (chips) jumps to each section and follows your scroll (see sales-hub.js).
+                 The sections keep their old ids (sales-overview, orders, sales, quotes, payments, customers, payment-terms)
+                 because the scripts that fill them look them up by id; navigateToPage('orders') etc. still work
+                 and simply open this page scrolled to that section.
             ================================================== -->
-            <section id="sales-overview" class="page">
-                <div class="catalog-header"><div><div class="catalog-eyebrow">Sales / Overview</div>
+                        <section id="sales-hub" class="page ui2">
+
+                <div class="ui2-hero">
+                    <div>
+                        <div class="ui2-eyebrow"><span class="ui2-live"></span> Sales &amp; transactions</div>
+                        <h1>Sales</h1>
+                        <p>Quote approvals, online orders, POS sales, cash shifts, payments and balances, customers and policies on one page. Use the tabs to jump between sections.</p>
+                    </div>
+                    <div class="ui2-chip">
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                        <span>Click any row for the full order or invoice</span>
+                    </div>
+                </div>
+
+                <nav class="rep-nav" id="salesHubTabs" aria-label="Sales sections">
+                    <div class="rep-nav-links">
+                        <button type="button" class="rep-tab active" data-stab="sales-overview" data-target="sales-overview" aria-current="true">Overview</button>
+                        <button type="button" class="rep-tab" data-stab="quotes" data-target="quotes">Quote Approvals</button>
+                        <button type="button" class="rep-tab" data-stab="orders" data-target="orders">Online Orders</button>
+                        <button type="button" class="rep-tab" data-stab="sales" data-target="sales">POS Sales &amp; Shifts</button>
+                        <button type="button" class="rep-tab" data-stab="payments" data-target="payments">Payments &amp; Balances</button>
+                        <button type="button" class="rep-tab" data-stab="customers" data-target="customers">Customer Profiles</button>
+                        <button type="button" class="rep-tab" data-stab="payment-terms" data-target="payment-terms">Policies &amp; Rates</button>
+                    </div>
+                    <div class="rep-nav-period" title="The section you are reading"><span class="rep-nav-dot" aria-hidden="true"></span><span id="shNavStatus">Realtime activity</span></div>
+                    <div class="sh-pending" id="shPendingBar" role="status" aria-live="polite" hidden></div>
+                </nav>
+
+                <div class="sales-flow" id="salesFlow">
+
+<section id="sales-overview" class="page sales-sec">
+                <div class="catalog-header"><div><div class="catalog-eyebrow">Sales &amp; Transactions</div>
                     <h1 class="catalog-title">Sales Overview</h1>
                     <div class="panel-sub">Every POS sale and online order in one read-only ledger. The cashier processes them; you monitor, and approve the requests sent to you.</div>
                 </div><button class="btn-secondary btn-sm" type="button" id="saOverviewRefresh">Refresh summary</button></div>
                 <div id="salesAdminRoot"></div>
-                <div class="panel sales-log-panel" style="margin-top:20px"><div class="panel-head"><div><div class="panel-title">Payment Summary (POS + Online)</div><div class="panel-sub" id="soPaySub">Loading…</div></div></div><div id="soPay" style="padding:0 18px 18px"></div></div>
+                <div class="panel sales-log-panel" style="margin-top:20px"><div class="panel-head"><div><div class="panel-title">Payment Summary (POS + Online)</div><div class="panel-sub" id="soPaySub">Loading…</div></div><button type="button" class="btn-secondary btn-sm" id="soPayRefreshBtn">Refresh</button></div><div id="soPay" style="padding:0 18px 18px"></div></div>
             </section>
 
-            <!-- =================================================
-                 SALES TRANSACTIONS
-            ================================================== -->
+<section id="quotes" class="page sales-sec"></section>
 
-            <section id="orders" class="page">
+<section id="orders" class="page sales-sec">
 
                 <div class="catalog-header">
                     <div>
-                        <div class="catalog-eyebrow">Sales / Online Orders</div>
+                        <div class="catalog-eyebrow">Sales &amp; Transactions</div>
                         <h1 class="catalog-title">Online Orders</h1>
                     </div>
                     <button class="btn-secondary btn-sm so-refresh" type="button">Refresh</button>
@@ -1323,6 +1348,7 @@
                         <div>
                             <div class="panel-title">Online Orders</div>
                             <div class="panel-sub" id="soSub">Loading&hellip;</div>
+                            <div class="faint" style="font-size:12px;color:var(--text-dim);margin-top:3px">Click any order row to view complete order card, address, items, and tracking details</div>
                         </div>
                         <div class="inv-filters">
                             <input type="text" id="soSearch" class="inv-search" placeholder="Search order, customer or product..." autocomplete="off">
@@ -1354,12 +1380,11 @@
 
             </section>
 
-
-            <section id="sales" class="page">
+<section id="sales" class="page sales-sec">
 
                 <div class="catalog-header">
                     <div>
-                        <div class="catalog-eyebrow">Sales / POS</div>
+                        <div class="catalog-eyebrow">Sales &amp; Transactions</div>
                         <h1 class="catalog-title">POS Sales &amp; Cash Shifts</h1>
                     </div>
                     <button class="btn-secondary btn-sm so-refresh" type="button">Refresh</button>
@@ -1374,6 +1399,7 @@
                         <div>
                             <div class="panel-title">POS Sales</div>
                             <div class="panel-sub" id="soPosSub">Loading&hellip;</div>
+                            <div class="faint" style="font-size:12px;color:var(--text-dim);margin-top:3px">Click any sale row to view complete invoice card, items, tender breakdown, and void/return requests</div>
                         </div>
                         <div class="pos-history-toolbar" aria-label="Filter POS sales by date">
                             <div class="pos-date-fields">
@@ -1389,7 +1415,7 @@
                                 <button type="button" class="pos-period-btn" data-pos-period="all">All history</button>
                                 <button type="button" class="pos-export-btn" id="soPosExport">Download CSV</button>
                             </div>
-                            <input type="search" id="soPosSearch" class="inv-search pos-history-search" placeholder="Search receipt, customer, cashier or product..." autocomplete="off" aria-label="Search POS sales">
+                            <input type="search" id="soPosSearch" class="inv-search pos-history-search" placeholder="Search invoice, customer, cashier or product..." autocomplete="off" aria-label="Search POS sales">
                         </div>
                     </div>
                     <div class="table-wrapper">
@@ -1405,17 +1431,11 @@
                     <div class="panel sales-log-panel" style="margin-top:20px"><div class="panel-head"><div><div class="panel-title">Cash Shifts</div><div class="panel-sub" id="soShiftSub">Loading…</div></div></div><div id="soShifts" style="padding:0 18px 18px"></div></div>
                 </div>
             </section>
-            <!-- =================================================
-                 USER MANAGEMENT
-            ================================================== -->
 
-            <!-- Quote requests and product reviews: filled in by shop-extras-admin.js -->
-            <section id="quotes" class="page"></section>
-            <section id="reviews" class="page"></section>
-            <!-- Payment terms policy, approvals, receivables and the payment ledger: filled in by payment-terms-admin.js -->
-            <section id="payment-terms" class="page"></section>
 
-            <section id="customers" class="page">
+<section id="payments" class="page sales-sec"></section>
+
+<section id="customers" class="page sales-sec">
               <div class="catalog-header"><div><div class="catalog-eyebrow">Customer Management</div><h1 class="catalog-title">Customer Profiles</h1></div></div>
               <div class="customer-tabs" role="tablist" aria-label="Customer type"><button type="button" role="tab" class="customer-tab active" id="custTabReg" aria-selected="true" data-cust-tab="reg">Registered customers</button><button type="button" role="tab" class="customer-tab" id="custTabWalk" aria-selected="false" data-cust-tab="walk">Walk-in customers</button></div>
               <div class="panel customer-directory" id="registeredDirectory"><div class="panel-head"><div><div class="panel-title">Registered Customers</div><div class="panel-sub" id="customerCount">Loading customers…</div></div><button type="button" class="btn-secondary" id="customerRefresh">↻ Refresh</button></div>
@@ -1426,59 +1446,84 @@
               <div class="customer-toolbar"><label class="customer-search-label" for="walkinSearch">Search walk-in customers</label><input class="inv-search" id="walkinSearch" placeholder="Search by name, phone or address…" autocomplete="off"></div>
               <div class="table-wrapper customer-table-scroll"><table class="customer-table"><thead><tr><th>Customer</th><th>Phone</th><th>Delivery address</th><th>Purchases</th><th>Total spent</th><th>Last purchase</th></tr></thead><tbody id="walkinRows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div><div class="customer-table-foot"><span id="walkinShowing">—</span><span>Built from POS sales where the cashier entered customer details. Not an account: nothing to edit or disable.</span></div></div>
               <div class="customer-modal" id="customerProfileModal" hidden><div class="customer-modal-backdrop" data-close-customer></div><div class="customer-modal-card" role="dialog" aria-modal="true" aria-labelledby="customerProfileTitle" tabindex="-1"><div class="customer-modal-head"><div><div class="catalog-eyebrow">Customer Management</div><h2 id="customerProfileTitle">Customer Profile</h2></div><button class="customer-modal-close" type="button" id="customerProfileClose" aria-label="Close profile">×</button></div><div id="customerProfileContent" class="customer-modal-content"></div><div class="customer-modal-footer"><span>Read-only customer information</span><button class="btn-secondary" type="button" data-close-customer>Close</button></div></div></div>
-              <div class="customer-modal" id="customerEditModal" hidden><div class="customer-modal-backdrop" data-close-customer-edit></div><div class="customer-modal-card customer-edit-card" role="dialog" aria-modal="true" aria-labelledby="customerEditTitle" tabindex="-1"><form id="customerEditForm" novalidate><div class="customer-modal-head"><div><div class="catalog-eyebrow">Customer Management</div><h2 id="customerEditTitle">Edit Customer Profile</h2></div><button class="customer-modal-close" type="button" data-close-customer-edit aria-label="Close">×</button></div><div class="customer-modal-content"><div id="customerEditMount"></div><p class="customer-edit-error" id="customerEditError" role="alert" hidden style="margin-top:12px"></p></div><div class="customer-modal-footer"><span>Password is not changed here</span><span class="customer-edit-actions"><button class="btn-secondary" type="button" data-close-customer-edit>Cancel</button><button class="btn-primary" type="submit" id="customerEditSave">Save changes</button></span></div></form></div></div>
             </section>
-            <section id="usermgmt" class="page">
 
-                <div class="catalog-header">
+<section id="payment-terms" class="page sales-sec"></section>
 
-                    <div>
-
-                        <div class="catalog-eyebrow">
-                            Administration
-                        </div>
-
-                        <h1 class="catalog-title">
-                            User Account Management
-                        </h1>
-
-
-                    </div>
-
-                    <div class="catalog-actions">
-
-                        <button
-                            class="btn-primary"
-                            id="inviteUserBtn"
-                        >
-                            + Invite User
-                        </button>
-
-                    </div>
+                    <!-- Quote requests: filled in by shop-extras-admin.js -->
+                    <!-- Payment terms policy, approvals, receivables and the payment ledger: filled in by payment-terms-admin.js -->
 
                 </div>
 
+            </section>
+
+            <!-- =================================================
+                 USER MANAGEMENT
+            ================================================== -->
+
+            <!-- Quote requests and product reviews: filled in by shop-extras-admin.js -->
+            
+            <section id="reviews" class="page"></section>
+            <!-- Payment terms policy, approvals, receivables and the payment ledger: filled in by payment-terms-admin.js -->
+            
+
+            
+            <section id="usermgmt" class="page ui2">
+
+                <div class="ui2-hero">
+                    <div>
+                        <div class="ui2-eyebrow"><span class="ui2-live"></span> Administration</div>
+                        <h1>User Management</h1>
+                        <p>Manage staff, cashiers and shop customers. Invite staff, change roles, manage sign-in access, or delete and restore accounts.</p>
+                    </div>
+                    <div class="ui2-actions">
+                        <button class="btn-primary" id="inviteUserBtn" type="button">
+                            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                            Invite User
+                        </button>
+                    </div>
+                </div>
+
+                <div class="stats">
+                    <div class="stat-card" style="--accent:var(--blue-bright)">
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+                        <div class="stat-label">CURRENT ACCOUNTS</div>
+                        <div class="stat-value" id="umKpiTotal">&mdash;</div>
+                        <div class="stat-foot" id="umKpiTotalFoot">Loading...</div>
+                    </div>
+                    <div class="stat-card" style="--accent:var(--u-cyan)">
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></div>
+                        <div class="stat-label">STAFF</div>
+                        <div class="stat-value" id="umKpiStaff">&mdash;</div>
+                        <div class="stat-foot" id="umKpiStaffFoot">Loading...</div>
+                    </div>
+                    <div class="stat-card" style="--accent:var(--green)">
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg></div>
+                        <div class="stat-label">CUSTOMERS</div>
+                        <div class="stat-value" id="umKpiCustomers">&mdash;</div>
+                        <div class="stat-foot" id="umKpiCustomersFoot">Loading...</div>
+                    </div>
+                    <div class="stat-card" style="--accent:var(--amber)">
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></div>
+                        <div class="stat-label">PENDING INVITES</div>
+                        <div class="stat-value" id="umKpiPending">&mdash;</div>
+                        <div class="stat-foot" id="umKpiPendingFoot">Loading...</div>
+                    </div>
+                </div>
 
                 <div class="panel um-panel">
-
                     <div class="panel-head">
-
                         <div>
-
-                            <div class="panel-title">
-                                Accounts
-                            </div>
-
-                            <div
-                                class="panel-sub"
-                                id="accountCount"
-                            >
-                                2 accounts
-                            </div>
-
+                            <div class="panel-title">Accounts</div>
+                            <div class="panel-sub" id="accountCount">2 accounts</div>
+                            <div class="um-hint">Click an account to view details, manage access, delete or restore</div>
                         </div>
 
-                        <!-- role filter sits on the right of the Accounts header, under "+ Invite User" -->
+                        <div class="pill-bar" id="accountViewToggle" role="group" aria-label="Account view">
+                            <button type="button" class="pill-btn active" data-view="current" aria-pressed="true">Current<span class="count">0</span></button>
+                            <button type="button" class="pill-btn" data-view="deleted" aria-pressed="false">Deleted<span class="count">0</span></button>
+                        </div>
+                        <!-- role + status filters -->
                         <div class="inv-filters">
                             <select id="accountRoleFilter" class="inv-select" aria-label="Filter accounts by role">
                                 <option value="all">All roles</option>
@@ -1493,60 +1538,35 @@
                                 <option value="disabled">Disabled accounts</option>
                             </select>
                         </div>
-
                     </div>
 
                     <div class="table-wrapper">
-
-                        <table>
-
+                        <table class="um-accounts">
                             <thead>
-
                                 <tr>
                                     <th>Name</th>
                                     <th>Email</th>
                                     <th>Role</th>
                                     <th>Status</th>
                                     <th>Last Login</th>
-                                    <th>Actions</th>
                                 </tr>
-
                             </thead>
-
                             <tbody id="accountsTableBody"></tbody>
-
                         </table>
-
                     </div>
-
                 </div>
 
-
                 <div class="panel um-panel">
-
                     <div class="panel-head">
-
                         <div>
-
-                            <div class="panel-title">
-                                Pending invitations
-                            </div>
-
-                            <div class="panel-sub">
-                                Awaiting signup
-                            </div>
-
+                            <div class="panel-title">Pending invitations</div>
+                            <div class="panel-sub">Awaiting signup</div>
                         </div>
-
                     </div>
 
-
                     <div class="table-wrapper">
-
-                        <table>
-
+                        <table class="um-pending">
                             <thead>
-
                                 <tr>
                                     <th>Name</th>
                                     <th>Email</th>
@@ -1555,15 +1575,10 @@
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
-
                             </thead>
-
                             <tbody id="pendingInvitesTableBody"></tbody>
-
                         </table>
-
                     </div>
-
                 </div>
 
             </section>
@@ -1573,145 +1588,93 @@
                  AUDIT LOG
             ================================================== -->
 
-            <section id="auditlog" class="page">
+            <section id="auditlog" class="page ui2">
 
-                <div class="catalog-header">
-
+                <div class="ui2-hero">
                     <div>
-
-                        <div class="catalog-eyebrow">
-                            Administration
-                        </div>
-
-                        <h1 class="catalog-title">
-                            Audit Log
-                        </h1>
-
-
+                        <div class="ui2-eyebrow"><span class="ui2-live"></span> Administration</div>
+                        <h1>Audit Log</h1>
+                        <p>A permanent record of who did what and when: sign-ins, record changes, price and cost overrides, returns and cash shifts.</p>
                     </div>
-
+                    <div class="ui2-chip" id="auditLatestChip">
+                        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                        <span id="auditLatest">Waiting for activity</span>
+                    </div>
                 </div>
 
+                <div class="stats">
+                    <div class="stat-card" style="--accent:var(--blue-bright)">
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></div>
+                        <div class="stat-label">TOTAL ENTRIES</div>
+                        <div class="stat-value" id="auKpiTotal">&mdash;</div>
+                        <div class="stat-foot" id="auKpiTotalFoot">Loading...</div>
+                    </div>
+                    <div class="stat-card" style="--accent:var(--green)">
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg></div>
+                        <div class="stat-label">TODAY</div>
+                        <div class="stat-value" id="auKpiToday">&mdash;</div>
+                        <div class="stat-foot" id="auKpiTodayFoot">Loading...</div>
+                    </div>
+                    <div class="stat-card" style="--accent:var(--u-cyan)">
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+                        <div class="stat-label">PEOPLE LOGGED</div>
+                        <div class="stat-value" id="auKpiPeople">&mdash;</div>
+                        <div class="stat-foot" id="auKpiPeopleFoot">Loading...</div>
+                    </div>
+                    <div class="stat-card" style="--accent:var(--amber)">
+                        <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></svg></div>
+                        <div class="stat-label">RECORD CHANGES</div>
+                        <div class="stat-value" id="auKpiChanges">&mdash;</div>
+                        <div class="stat-foot" id="auKpiChangesFoot">Loading...</div>
+                    </div>
+                </div>
 
-                <div class="panel um-panel">
-
+                <div class="panel au-panel">
                     <div class="panel-head">
-
                         <div>
-
-                            <div class="panel-title">
-                                Activity log
-                            </div>
-
-                            <div
-                                class="panel-sub"
-                                id="auditCount"
-                            >
-                                7 of 7 entries
-                            </div>
-
+                            <div class="panel-title">Activity log</div>
+                            <div class="panel-sub" id="auditCount">0 of 0 entries</div>
                         </div>
 
-
+                        <!-- same ids as before: script.js reads them -->
                         <div class="inv-filters">
-
-                            <select
-                                id="auditRoleFilter"
-                                class="inv-select"
-                            >
-
-                                <option value="all">
-                                    All roles
-                                </option>
-
-                                <option value="Finance-Admin">
-                                    Finance-Admin
-                                </option>
-
-                                <option value="Cashier">
-                                    Cashier
-                                </option>
-
-                                <option value="Customer">
-                                    Customer
-                                </option>
-
+                            <label class="au-search">
+                                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                                <input type="text" id="auditSearch" placeholder="Search person, action or detail" autocomplete="off" aria-label="Search the audit log">
+                            </label>
+                            <select id="auditRoleFilter" class="inv-select" aria-label="Filter by role">
+                                <option value="all">All roles</option>
+                                <option value="Finance-Admin">Finance-Admin</option>
+                                <option value="Cashier">Cashier</option>
+                                <option value="Customer">Customer</option>
                             </select>
-
-
-                            <select
-                                id="auditActionFilter"
-                                class="inv-select"
-                            >
-
-                                <option value="all">
-                                    All actions
-                                </option>
-
-                                <option value="Login">
-                                    Login
-                                </option>
-
-                                <option value="Logout">
-                                    Logout
-                                </option>
-
-                                <option value="Record added">
-                                    Record added
-                                </option>
-
-                                <option value="Record edited">
-                                    Record edited
-                                </option>
-
-                                <option value="Account created">
-                                    Account created
-                                </option>
-
-                                <option value="Cash shift">
-                                    Cash shift
-                                </option>
-
-                                <option value="Return">
-                                    Return
-                                </option>
-
+                            <select id="auditActionFilter" class="inv-select" aria-label="Filter by action">
+                                <option value="all">All actions</option>
+                                <option value="Login">Login</option>
+                                <option value="Logout">Logout</option>
+                                <option value="Record added">Record added</option>
+                                <option value="Record edited">Record edited</option>
+                                <option value="Account created">Account created</option>
+                                <option value="Cash shift">Cash shift</option>
+                                <option value="Return">Return</option>
                             </select>
-
-
-                            <input
-                                type="text"
-                                id="auditSearch"
-                                class="inv-search"
-                                placeholder="Search user or action..." autocomplete="off">
-
                         </div>
-
                     </div>
 
-
                     <div class="table-wrapper">
-
-                        <table>
-
+                        <table class="au-table">
                             <thead>
-
                                 <tr>
-                                    <th>Timestamp</th>
-                                    <th>User</th>
+                                    <th>When</th>
+                                    <th>Person</th>
                                     <th>Role</th>
                                     <th>Action</th>
                                     <th>Detail</th>
                                 </tr>
-
                             </thead>
-
                             <tbody id="auditTableBody"></tbody>
-
                         </table>
-
                     </div>
-
                 </div>
 
             </section>
@@ -1721,34 +1684,44 @@
                  NOTIFICATIONS
             ================================================== -->
 
-            <section id="notifications" class="page">
+            <section id="notifications" class="page ui2">
 
-                <div class="catalog-header">
+                <div class="ui2-hero">
                     <div>
-                        <div class="catalog-eyebrow">Alerts</div>
-                        <h1 class="catalog-title">Notification Center</h1>
+                        <div class="ui2-eyebrow"><span class="ui2-live"></span> Updates</div>
+                        <h1>Notifications</h1>
+                        <p>Everything that needs your attention: low stock, orders, payments, deliveries and POS activity. Click an item to open the page it is about.</p>
                     </div>
-                    <div class="catalog-actions">
-                        <button type="button" class="btn-secondary" id="ncPageMarkAll">Mark all as read</button>
+                    <div class="ui2-actions">
+                        <div class="ui2-chip">
+                            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                            <span id="ncPageSub">Loading...</span>
+                        </div>
+                        <button type="button" class="btn-secondary" id="ncPageMarkAll">
+                            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></svg>
+                            Mark all as read
+                        </button>
                     </div>
                 </div>
 
-                <div class="nc-page-tools">
-                    <div class="nc-chips">
-                        <button type="button" class="nc-chip on" data-nc-cat="">All</button>
-                        <button type="button" class="nc-chip" data-nc-cat="inventory" data-nc-roles="finance">Inventory</button>
-                        <button type="button" class="nc-chip" data-nc-cat="production" data-nc-roles="finance">Production</button>
-                        <button type="button" class="nc-chip" data-nc-cat="orders" data-nc-roles="finance,customer">Orders</button>
-                        <button type="button" class="nc-chip" data-nc-cat="payment" data-nc-roles="finance,cashier,customer">Payments</button>
-                        <button type="button" class="nc-chip" data-nc-cat="delivery" data-nc-roles="finance,customer">Delivery</button>
-                        <button type="button" class="nc-chip" data-nc-cat="pos" data-nc-roles="finance,cashier">POS</button>
-                    </div>
-                    <button type="button" class="nc-chip" id="ncUnreadOnly">All statuses</button>
-                </div>
+                <div class="panel nc-panel">
 
-                <div class="panel">
+                    <div class="nc-page-tools">
+                        <div class="nc-chips">
+                            <button type="button" class="nc-chip on" data-nc-cat="">All</button>
+                            <button type="button" class="nc-chip" data-nc-cat="inventory" data-nc-roles="finance">Inventory</button>
+                            <button type="button" class="nc-chip" data-nc-cat="production" data-nc-roles="finance">Production</button>
+                            <button type="button" class="nc-chip" data-nc-cat="orders" data-nc-roles="finance,customer">Orders</button>
+                            <button type="button" class="nc-chip" data-nc-cat="payment" data-nc-roles="finance,cashier,customer">Payments</button>
+                            <button type="button" class="nc-chip" data-nc-cat="delivery" data-nc-roles="finance,customer">Delivery</button>
+                            <button type="button" class="nc-chip" data-nc-cat="pos" data-nc-roles="finance,cashier">POS</button>
+                        </div>
+                        <button type="button" class="nc-chip nc-toggle" id="ncUnreadOnly">All statuses</button>
+                    </div>
+
                     <div class="nc-page-list" id="ncPageList"></div>
                     <button type="button" class="btn-secondary nc-more" id="ncMore" hidden>Load more</button>
+
                 </div>
 
             </section>
@@ -1758,18 +1731,17 @@
                  REPORTS
             ================================================== -->
 
-            <section id="reports" class="page">
+            <section id="reports" class="page ui2">
 
-                <div class="catalog-header rep-header">
+                <div class="catalog-header rep-header ui2-hero">
 
                     <div>
-                        <h1 class="catalog-title">
-                            Inventory &amp; Sales Reports
-                        </h1>
+                        <div class="ui2-eyebrow"><span class="ui2-live"></span> Analytics</div>
+                        <h1>Reports</h1>
                         <p class="rep-lede">Everything on one page, top to bottom: the highlights first, then the Sales report, the Inventory report and the Stock Movement Log. Use the bar below to jump between them.</p>
                     </div>
 
-                    <div class="catalog-actions">
+                    <div class="catalog-actions ui2-actions">
 
                         <button
                             class="btn-secondary report-print-btn"
@@ -2990,6 +2962,11 @@
                     <div class="form-section" role="group" aria-labelledby="supSecProducts">
                         <div class="form-section-title" id="supSecProducts">Products Supplied <span class="required-mark">*</span></div>
                         <div class="form-group">
+                            <label class="form-label" for="newSupplierLeadTime">Lead time (days)</label>
+                            <input type="number" id="newSupplierLeadTime" class="form-input" min="0" max="365" step="1" inputmode="numeric" style="max-width:140px" autocomplete="off">
+                            <div class="field-hint" id="newSupplierLeadHint">Days from placing an order to delivery. Used for the automatic reorder level of the products this is the main supplier of.</div>
+                        </div>
+                        <div class="form-group">
                             <div id="newSupplierProducts" class="check-list"></div>
                             <div class="field-hint">Only Raw Materials and Finishing Supplies can be supplied. Tick every product this supplier provides. The same link shows on the product.</div>
                         </div>
@@ -3002,7 +2979,7 @@
 
                     <div class="modal-footer">
                         <button type="button" class="btn-secondary" id="newSupplierCancelBtn">Cancel</button>
-                        <button type="button" class="btn-danger" id="archiveSupplierBtn">ARCHIVE SUPPLIER</button>
+                        <button type="button" class="btn-danger" id="archiveSupplierBtn">DELETE SUPPLIER</button>
                         <button type="submit" class="btn-primary" id="newSupplierSaveBtn">Save Supplier</button>
                     </div>
                 </div>
@@ -3116,10 +3093,6 @@
                             Cashier
                         </option>
 
-                        <option value="customer">
-                            Customer (online shop)
-                        </option>
-
 
                     </select>
 
@@ -3196,8 +3169,9 @@
                     <h2
                         class="modal-title"
                         style="margin-bottom:0;"
+                        id="editUserTitle"
                     >
-                        Edit User
+                        Account details
                     </h2>
 
                 </div>
@@ -3210,7 +3184,9 @@
                 novalidate
              autocomplete="off">
 
-                <div id="editUserMount"></div>
+                <!-- personal details are read-only here: the account owner changes them in My Profile -->
+                <div id="editUserInfo" class="eu-info"></div>
+                <p class="field-hint eu-lock">Personal details can only be changed by the account owner in <b>My Profile</b>. Finance can change the role only.</p>
 
                 <div class="form-group" style="margin-top:14px">
 
@@ -3425,6 +3401,15 @@
                 </div>
 
 
+                <!-- FINISHED GOODS: MATERIALS NEEDED (bill of materials, per 1 unit) -->
+                <div id="npBomSection" class="np-bom-section" hidden>
+                    <div class="form-section-label">Materials Needed &middot; Finished Goods Only <span class="required-mark">*</span></div>
+                    <p class="field-hint" id="npBomHint">The Raw Materials and Finishing Supplies needed to make 1 unit of this product.</p>
+                    <div class="form-group">
+                        <div id="npBomList" class="np-bom-list"></div>
+                    </div>
+                </div>
+
                 <div class="form-section-label">
                     Stock &amp; Pricing
                 </div>
@@ -3462,8 +3447,8 @@
 
                     <div class="form-group">
                         <label class="form-label" for="npUnitCost">
-                            Unit Cost (&#8369;)
-                            <span class="required-mark">*</span>
+                            <span id="npUnitCostLabel">Unit Cost (&#8369;)</span>
+                            <span class="required-mark" id="npUnitCostReq">*</span>
                         </label>
                         <input
                             type="text"
@@ -3473,6 +3458,9 @@
                             placeholder="0.00"
                             inputmode="decimal"
                             required autocomplete="off">
+                        <label class="check-row" id="npCostOverrideRow" style="margin-top:6px;display:none"><input type="checkbox" id="npCostOverride"><span class="check-label">Override</span></label>
+                        <input type="text" id="npCostReason" class="form-input" style="display:none;margin-top:6px" maxlength="200" placeholder="Why is the cost overridden? (required)" autocomplete="off">
+                        <div class="field-hint" id="npCostHint"></div>
                     </div>
 
                     <div class="form-group">
@@ -3510,16 +3498,26 @@
                 </div>
                 <div class="field-hint" id="npReorderHint" style="margin:-4px 0 12px"></div>
 
+                <div class="form-group" id="npWeightWrap" style="display:none">
+                    <label class="form-label" for="npWeight">Weight per piece (kg)</label>
+                    <input type="text" id="npWeight" class="form-input" placeholder="Auto" inputmode="decimal" maxlength="10" autocomplete="off" readonly>
+                    <label class="check-row" style="margin-top:6px"><input type="checkbox" id="npWeightManual"><span class="check-label">Set manually</span></label>
+                    <div class="field-hint" id="npWeightHint">Used to work out the delivery fee for heavy orders.</div>
+                </div>
+
                 <div class="form-row">
 
                     <div class="form-group">
                         <label class="form-label" for="npListPrice">Selling Price (&#8369;)</label>
                         <input type="text" data-money id="npListPrice" class="form-input" placeholder="Optional" inputmode="decimal" autocomplete="off">
+                        <label class="check-row" id="npPriceManualRow" style="margin-top:6px"><input type="checkbox" id="npPriceManual"><span class="check-label">Set manually</span></label>
+                        <div class="field-hint" id="npPriceHint"></div>
                     </div>
 
                     <div class="form-group">
                         <label class="form-label" for="npLocation">Storage Location <span class="required-mark">*</span></label>
                         <select id="npLocation" class="form-select"><option value="">Select a location…</option></select>
+                        <div class="field-hint">Locations are listed for the selected department. Choose a department first.</div>
                         <div id="npLocationNewWrap" style="display:none; margin-top:8px">
                             <input type="text" id="npLocationNew" class="form-input" placeholder="Type the new storage location" maxlength="100" autocomplete="off">
                         </div>
@@ -3556,16 +3554,6 @@
                     </div>
                 </div>
 
-
-                <!-- FINISHED GOODS: MATERIALS NEEDED (bill of materials, per 1 unit) -->
-                <div id="npBomSection" class="np-bom-section" hidden>
-                    <div class="form-section-label">Materials Needed &middot; Finished Goods Only <span class="required-mark">*</span></div>
-                    <p class="field-hint" id="npBomHint">The Raw Materials and Finishing Supplies needed to make 1 unit of this product.</p>
-                    <div class="form-group">
-                        <div id="npBomList" class="np-bom-list"></div>
-                    </div>
-                </div>
-
                 <!-- FINISHED GOODS ONLINE SHOP DETAILS -->
                 <div id="npShopSection" class="np-shop-section" hidden>
                     <div class="form-section-label">Online Shop Details · Finished Goods Only</div>
@@ -3594,7 +3582,7 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="npShopVisible"><input id="npShopVisible" type="checkbox" checked> Show in Online Shop</label>
-                        <div class="field-hint">Customers only see a product that is checked here, has a selling price above 0, and is not archived.</div>
+                        <div class="field-hint">Customers only see a product that is checked here, has a selling price above 0, and is not deleted.</div>
                     </div>
                     <div class="form-group">
                         <button type="button" class="btn-secondary" id="npShopSaveBtn">Save Online Shop Details</button>
@@ -3639,40 +3627,57 @@
 
     <!-- JAVASCRIPT -->
     <script src="input-rules.js?v=1"></script>
-    <script src="password-change.js?v=1"></script>
-    <script src="profile-edit-fields.js?v=2"></script>
-    <script src="ui-confirm.js?v=1"></script>
-    <script src="script.js?v=27"></script>
-    <script src="api-bridge.js?v=31"></script>
-    <script src="sales-orders.js?v=13"></script>
+    <script src="password-change.js?v=2"></script>
+    <script src="ui-confirm.js?v=2"></script>
+    <script src="form-assist.js?v=3"></script>
+    <script src="script.js?v=37"></script>
+    <script src="api-bridge.js?v=41"></script>
+    <script src="sales-orders.js?v=17"></script>
     <link rel="stylesheet" href="sales-admin.css?v=10">
-    <link rel="stylesheet" href="reports-sales.css?v=12">
+    <link rel="stylesheet" href="reports-sales.css?v=13">
+    <link rel="stylesheet" href="sales-hub.css?v=9">
+    <link rel="stylesheet" href="ui2-sales.css?v=1">
     <link rel="stylesheet" href="quick-stock.css?v=2">
     <link rel="stylesheet" href="inventory-priority.css?v=4">
     <link rel="stylesheet" href="product-details.css?v=2">
-    <script src="sales-admin.js?v=12"></script>
+    <link rel="stylesheet" href="ui2-products.css?v=1">
+    <link rel="stylesheet" href="ui2-suppliers.css?v=1">
+    <link rel="stylesheet" href="ui2-usermgmt.css?v=2">
+    <link rel="stylesheet" href="ui2-pager.css?v=1">
+    <link rel="stylesheet" href="ui2-auditlog.css?v=1">
+    <link rel="stylesheet" href="ui2-reports.css?v=1">
+    <link rel="stylesheet" href="ui2-notifications.css?v=1">
+    <script src="quote-guide.js?v=2"></script>
+    <script src="sales-admin.js?v=18"></script>
     <script src="reports-tabs.js?v=3"></script>
     <script src="reports-jump.js?v=3"></script>
     <script src="reports-sales.js?v=4"></script>
     <script src="reports-top-products.js?v=5"></script>
     <script src="reports-low-stock.js?v=2"></script>
-    <script src="reports-inventory.js?v=6"></script>
+    <script src="reports-inventory.js?v=7"></script>
     <script src="reports-highlights.js?v=1"></script>
-    <script src="cash-shift-reports.js?v=9"></script>
+    <script src="cash-shift-reports.js?v=10"></script>
 
     <script src="refund-admin.js?v=2"></script>
-    <script src="stock-count-admin.js?v=4"></script>
-    <script src="production-admin.js?v=4"></script>
-    <script src="product-materials.js?v=1"></script>
-    <script src="quick-stock.js?v=3"></script>
+    <script src="stock-count-admin.js?v=10"></script>
+    <script src="production-admin.js?v=6"></script>
+    <script src="product-materials.js?v=4"></script>
+    <script src="pricing-admin.js?v=3"></script>
+    <script src="quick-stock.js?v=4"></script>
     <script src="finished-goods-shop.js?v=5"></script>
-    <script src="shop-extras-admin.js?v=12"></script>
-    <script src="delivery-rates-admin.js?v=2"></script>
-    <script src="payment-terms-admin.js?v=7"></script>
+    <script src="shop-extras-admin.js?v=25"></script>
+    <script src="payment-terms-admin.js?v=10"></script>
+    <script src="payment-safeguards.js?v=3"></script>
+    <script src="delivery-rates-admin.js?v=4"></script>
     <script src="customer-profiles-admin.js?v=7"></script>
     <script src="walkin-customers-admin.js?v=1"></script>
     <script src="notification-center.js?v=8"></script>
-    <script src="sidebar.js?v=1"></script>
+    <script src="sidebar.js?v=3"></script>
+    <script src="sales-hub.js?v=4"></script>
+    <script src="table-pagination.js"></script>
+    <script src="ui2-usermgmt.js?v=2"></script>
+    <script src="ui2-auditlog.js?v=1"></script>
+    <script src="operations-schedule.js"></script>
 
 </body>
 

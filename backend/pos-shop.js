@@ -52,7 +52,7 @@ const FLOW = {
   Pickup:   ['Pending Confirmation', 'Paid', 'Packed', 'Ready for Pickup', 'Picked Up']
 };
 const FINAL_STATUS = ['Delivered', 'Picked Up'];
-const ADMIN_CANCELLABLE = ['Pending Confirmation', 'Paid', 'Packed'];   // once it is out for delivery / ready for pickup it can no longer be cancelled
+const ADMIN_CANCELLABLE = ['Pending Confirmation', 'Paid', 'Packed', 'On Hold'];   // once it is out for delivery / ready for pickup it can no longer be cancelled
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 // Refunds: a customer can ask for one after the order is Delivered / Picked Up, within this many days.
 const REFUND_WINDOW_DAYS = Number(process.env.REFUND_WINDOW_DAYS) || 7;
@@ -68,6 +68,7 @@ const REFUND_REASONS = {
 // after that window the shop decides. Change the window with CANCEL_AUTO_HOURS in .env (default 24 hours).
 const CANCEL_AUTO_HOURS = Number(process.env.CANCEL_AUTO_HOURS) || 24;
 const CANCEL_REASONS = {
+  balance_unpaid: 'Balance unpaid after grace period', // Finance/system only
   changed_mind: 'Changed my mind',
   ordered_by_mistake: 'Ordered by mistake',
   wrong_item_or_qty: 'Wrong item or quantity',
@@ -77,7 +78,7 @@ const CANCEL_REASONS = {
   payment_problem: 'Problem with payment',
   other: 'Other'
 };
-// Cashier asks Finance to void a receipt: pick a reason; "Other" needs a written explanation.
+// Cashier asks Finance to void an invoice: pick a reason; "Other" needs a written explanation.
 const VOID_REASONS = {
   wrong_item: 'Wrong item or quantity rung up',
   wrong_price: 'Wrong price',
@@ -86,7 +87,7 @@ const VOID_REASONS = {
   duplicate: 'Duplicate sale',
   other: 'Other'
 };
-// Partial returns at the counter: the customer brings back some of the items on a receipt. The cashier requests it, Finance approves.
+// Partial returns at the counter: the customer brings back some of the items on an invoice. The cashier requests it, Finance approves.
 const RETURN_REASONS = {
   damaged: 'Damaged or defective',
   wrong_item: 'Wrong item given',
@@ -105,6 +106,8 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
   const { notify, shopInfo } = makeOrderMail(pool, () => app.locals.notifications);
   // courier / rider details, dispatch + delivery times and proof photos for Delivery orders (also registers its own /api/orders/:no/delivery... routes)
   const delivery = makeDelivery({ app, pool, auth, wrap, tx, audit, ValidationError, str });
+  // delivery fee by weight + estimated arrival date (also registers GET / PUT /api/delivery-settings)
+  const dcalc = require('./delivery-calc')({ app, pool, auth, wrap, tx, audit, ValidationError, TZ });
   const later = (fn) => { Promise.resolve().then(fn).catch((e) => console.warn('[notify]', e.message)); };
   const nc = () => app.locals.notifications;
   const asPeso = (n) => (nc() && nc().peso ? nc().peso(n) : ('\u20B1' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
@@ -136,7 +139,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
               EXECUTE format('ALTER TABLE orders DROP CONSTRAINT %I', c.conname);
             END LOOP;
             ALTER TABLE orders ADD CONSTRAINT orders_status_flow_check CHECK (status IN
-              ('Pending Confirmation','Paid','Packed','Out for Delivery','Ready for Pickup','Delivered','Picked Up','Cancelled'));
+              ('Pending Confirmation','Paid','Packed','Out for Delivery','Ready for Pickup','Delivered','Picked Up','Cancelled','On Hold'));
           END IF;
         END $$`);
       await pool.query(`CREATE TABLE IF NOT EXISTS order_cancel_requests (
@@ -198,6 +201,8 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       sale_id BIGINT, error_message TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
     await pool.query('ALTER TABLE pos_xendit_payments ADD COLUMN IF NOT EXISTS customer_name TEXT');
     await pool.query('ALTER TABLE pos_xendit_payments ADD COLUMN IF NOT EXISTS customer_phone TEXT');
+    await pool.query('ALTER TABLE pos_xendit_payments ADD COLUMN IF NOT EXISTS request_id TEXT');
+    await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS uq_pos_checkout_request ON pos_xendit_payments(cashier_id, request_id) WHERE request_id IS NOT NULL');
     await pool.query('ALTER TABLE pos_xendit_payments ADD COLUMN IF NOT EXISTS delivery JSONB');      // POS delivery sale: fee + address, kept until the payment is verified
   }
   // Optional walk-in customer details typed by the cashier at checkout (name and/or phone). Blank = anonymous walk-in.
@@ -220,7 +225,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     if (name.length < 2 || name.length > 50 || !/^[\p{L}][\p{L}\p{M} .'’-]*$/u.test(name)) throw bad('customerName', 'Enter the customer’s full name (2–50 characters: letters, spaces, . \' and -)');
     if (!/^(\+63|0)9\d{9}$/.test(phone)) throw bad('customerPhone', 'Enter a valid mobile number, e.g. 0917 123 4567');
     const ship = await validateShipTo(Object.assign({}, b.shipTo || {}, { recipient: name }));
-    const q = await deliveryFeeFor(db, ship);
+    const q = await deliveryQuote(db, ship, await loadSellable(db, readLines(b.items), { lock: false }));   // area rate + weight charge
     if (!q.available) throw bad('region', `Sorry, we do not deliver to ${ship.province || ship.region} yet.`);
     return { name, phone, ship, fee: round2(q.fee) };
   }
@@ -228,11 +233,27 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     city: d.ship.city, province: d.ship.province, region: d.ship.region, zip: d.ship.zip, full: d.ship.fullAddress } : null;
   const posPaymentsReady = ensurePosPayments().catch(e => { console.error('[db] POS Xendit schema:', e.message); throw e; });
   posPaymentsReady.catch(() => {});          // already logged above; without this a database that is not reachable yet at boot would crash the whole server (unhandled rejection)
+  const posPaymentJson = (p) => ({ paymentId: p.payment_id, requestId: p.request_id,
+    checkoutUrl: p.checkout_url, amount: +p.amount, status: p.status, sale_id: p.sale_id, items: p.items });
+  // Recover only this cashier's unresolved checkouts and explicitly remembered requests.
+  app.get('/api/pos/xendit-payments', auth('cashier'), wrap(async (req, res) => {
+    await posPaymentsReady;
+    const ids = String(req.query.ids || '').split(',').filter(Boolean);
+    const requests = String(req.query.requests || '').split(',').filter(Boolean);
+    if (ids.length > 50 || requests.length > 50 || ids.some(x => !/^\d{1,18}$/.test(x)) || requests.some(x => !/^[a-zA-Z0-9-]{12,100}$/.test(x)))
+      throw bad('payments', 'Invalid payment recovery request');
+    const { rows } = await pool.query(`SELECT * FROM pos_xendit_payments
+      WHERE cashier_id=$1 AND (status IN ('pending','review') OR payment_id=ANY($2::bigint[]) OR request_id=ANY($3::text[]))
+      ORDER BY payment_id DESC`, [req.user.id, ids, requests]);
+    res.json(rows.map(posPaymentJson));
+  }));
   app.post('/api/pos/xendit-checkout', auth('cashier'), wrap(async (req, res) => {
     await posPaymentsReady;
     const b = req.body || {};
     const requestId = typeof b.requestId === 'string' && /^[a-zA-Z0-9-]{12,100}$/.test(b.requestId) ? b.requestId : null;
     if (!requestId) throw bad('requestId', 'Sale request identifier is required. Refresh the POS page.');
+    const previous = await pool.query('SELECT * FROM pos_xendit_payments WHERE cashier_id=$1 AND request_id=$2', [req.user.id, requestId]);
+    if (previous.rowCount) return res.json(posPaymentJson(previous.rows[0]));
     const lines = readLines(b.items);
     const cust = readCustomer(b);
     const dlv = await readPosDelivery(pool, b);
@@ -246,8 +267,13 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     const crypto = require('crypto');
     const externalId = 'triplee-pos-' + crypto.randomUUID();
     const snapshot = items.map(i => ({ sku: i.sku, qty: i.qty, price: i.price }));
-    const created = await pool.query(`INSERT INTO pos_xendit_payments (cashier_id,cashier_name,external_id,amount,items,customer_name,customer_phone,delivery)
-      VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8::jsonb) RETURNING payment_id`, [req.user.id,req.user.name,externalId,amount,JSON.stringify(snapshot),cust.name,cust.phone,dlv ? JSON.stringify(posDeliveryCols(dlv)) : null]);
+    const created = await pool.query(`INSERT INTO pos_xendit_payments (cashier_id,cashier_name,external_id,amount,items,customer_name,customer_phone,delivery,request_id)
+      VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8::jsonb,$9)
+      ON CONFLICT (cashier_id,request_id) WHERE request_id IS NOT NULL DO NOTHING RETURNING payment_id`, [req.user.id,req.user.name,externalId,amount,JSON.stringify(snapshot),cust.name,cust.phone,dlv ? JSON.stringify(posDeliveryCols(dlv)) : null,requestId]);
+    if (!created.rowCount) {
+      const replay = await pool.query('SELECT * FROM pos_xendit_payments WHERE cashier_id=$1 AND request_id=$2', [req.user.id,requestId]);
+      return res.json(posPaymentJson(replay.rows[0]));
+    }
     const id = created.rows[0].payment_id;
     try {
       const base = String(process.env.APP_BASE_URL || '').replace(/\/$/, '');
@@ -258,7 +284,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
         failure_redirect_url:`${base}/POS_Cashier.html?payment=failed`
       }});
       await pool.query(`UPDATE pos_xendit_payments SET invoice_id=$1,checkout_url=$2 WHERE payment_id=$3`, [invoice.id,invoice.invoice_url,id]);
-      res.status(201).json({ paymentId:id, checkoutUrl:invoice.invoice_url, amount, status:'pending' });
+      res.status(201).json({ paymentId:id, requestId, checkoutUrl:invoice.invoice_url, amount, status:'pending', items:snapshot });
     } catch(e) {
       await pool.query(`UPDATE pos_xendit_payments SET status='error',error_message=$1 WHERE payment_id=$2`, [String(e.message).slice(0,400),id]);
       throw e;
@@ -329,10 +355,10 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     if (kind && info) later(() => {
       if (kind === 'paid') return Promise.all([
         pingUser(info.cashier_id, { category: 'pos', title: 'Online POS payment completed',
-          body: 'Receipt ' + info.receiptNo + ' for ' + asPeso(info.amount) + ' was recorded.',
+          body: 'Invoice ' + info.receiptNo + ' for ' + asPeso(info.amount) + ' was recorded.',
           link: 'POS_Cashier.html#sales', entityType: 'sale', entityId: info.receiptNo, dedupeKey: 'pos_pay_ok:' + info.payment_id }, 'cashier'),
         pingFinance({ category: 'payment', title: 'POS online payment received',
-          body: 'Cashier ' + (info.cashier_name || '') + ' — receipt ' + info.receiptNo + ' (' + asPeso(info.amount) + ').',
+          body: 'Cashier ' + (info.cashier_name || '') + ' — invoice ' + info.receiptNo + ' (' + asPeso(info.amount) + ').',
           link: 'Finance_Inventory.html#sales', entityType: 'sale', entityId: info.receiptNo, dedupeKey: 'pos_pay_fin:' + info.payment_id })
       ]);
       if (kind === 'review') return Promise.all([
@@ -503,7 +529,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
   app.post('/api/payments/xendit/webhook', wrap(async (req, res) => {
     const expected = process.env.XENDIT_CALLBACK_TOKEN;
     const supplied = req.get('x-callback-token');
-    if (!expected || !supplied || supplied !== expected) return res.status(401).json({ error: 'Invalid callback token' });
+    if (!expected || !supplied || !require('./security').safeEqual(supplied, expected)) return res.status(401).json({ error: 'Invalid callback token' });
     const event = req.body || {};
     const externalId = str(event.external_id);
     const invoiceId = str(event.id);
@@ -523,6 +549,10 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
   const posSalesReady = (async () => {
     try {
       await pool.query('ALTER TABLE pos_sales ADD COLUMN IF NOT EXISTS request_id TEXT');
+      // POS documents are sales INVOICES: new numbers are SI-1001, SI-1002 ... (older R- numbers stay as they were and can still be looked up)
+      await pool.query('CREATE SEQUENCE IF NOT EXISTS receipt_seq START 1001');
+      await pool.query('CREATE SEQUENCE IF NOT EXISTS receipt_no_seq START 1001');
+      await pool.query(`DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'pos_sales' AND column_name = 'receipt_no' AND column_default LIKE '%''R-''%') THEN ALTER TABLE pos_sales ALTER COLUMN receipt_no SET DEFAULT ('SI-' || nextval('receipt_seq')); END IF; END $$`);
       await pool.query('ALTER TABLE pos_sales ADD COLUMN IF NOT EXISTS customer_name TEXT');
       await pool.query('ALTER TABLE pos_sales ADD COLUMN IF NOT EXISTS customer_phone TEXT');
       // POS delivery mode: 'Walk-in' (taken at the counter) or 'Delivery' (address + fee kept on the sale; the fee is part of total)
@@ -617,8 +647,6 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     } catch (err) { console.warn('[db] could not prepare the POS return tables:', err.message); }
   })();
   app.locals.posReturnsReady = posReturnsReady;   // cash-shifts.js waits for this before it reads the tables
-  // no cash goes into a drawer after the 5:00 PM closing time (rule lives in cash-shifts.js, mounted later)
-  const shiftLate = (shift) => (app.locals.cashShiftHours ? app.locals.cashShiftHours.lateError(shift.opened_at) : null);
 
   // Structured delivery address on orders + each customer's saved addresses (safe to run every time the server starts).
   async function ensureAddressSchema() {
@@ -707,6 +735,21 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     const def = rows.find((r) => r.scope === 'default');
     return { fee: def ? +def.fee : DELIVERY_FEE, rate: def ? def.name : 'Standard rate', scope: 'default', available: def ? def.available !== false : false };   // no "all other areas" row: not covered
   }
+  // The whole delivery quote for these goods: the area rate + the weight charge, and the estimated arrival. items = loadSellable() rows.
+  async function deliveryQuote(db, place, items) {
+    const base = await deliveryFeeFor(db, place);
+    if (!base.available) return base;
+    const q = await dcalc.quote(db, place, base, items);
+    return { ...base, fee: q.fee, baseFee: q.base, weightKg: q.weightKg, extraKg: q.extraKg, weightCharge: q.weightCharge, free: q.free, feeNote: q.note, eta: q.eta };
+  }
+  // the cart a fee screen sends: items=SKU:qty,SKU:qty. No items = no weight, so the plain area rate (as before).
+  const cartFromQuery = (v) => String(v || '').split(',').filter(Boolean).slice(0, 100).map((p) => { const [sku, qty] = p.split(':'); return { sku, qty: Number(qty) }; });
+  async function quoteForRequest(db, place, itemsParam) {
+    const cart = cartFromQuery(itemsParam);
+    const items = cart.length ? await loadSellable(db, readLines(cart), { lock: false }) : [];
+    return deliveryQuote(db, place, items);
+  }
+  const feeJson = (q) => ({ fee: q.fee, rate: q.rate, scope: q.scope, available: q.available, baseFee: q.baseFee, weightKg: q.weightKg, extraKg: q.extraKg, weightCharge: q.weightCharge, free: q.free, feeNote: q.feeNote || undefined, eta: q.eta });
   // shared with the quote forms (shop-extras.js), so a quotation can never promise delivery to an area the shop and the POS refuse
   app.locals.deliveryCoverage = (place) => deliveryFeeFor(pool, place || {});
   const ratesSummary = async () => {
@@ -756,8 +799,9 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
 
   // Loads the sellable finished-goods rows for these SKUs (sorted by id so concurrent sales lock in the same order).
   async function loadSellable(client, lines, { lock }) {
+    await dcalc.ready;   // products.weight_kg
     const { rows } = await client.query(
-      `SELECT product_id, sku, name, unit, selling_price, on_hand
+      `SELECT product_id, sku, name, unit, selling_price, on_hand, weight_kg
          FROM products
         WHERE upper(sku) = ANY($1) AND department = $2 AND NOT is_archived AND selling_price > 0 AND shop_visible = TRUE
         ORDER BY product_id ${lock ? 'FOR UPDATE' : ''}`, [[...lines.keys()], FG]);
@@ -813,8 +857,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
   app.get('/api/pos/delivery-fee', auth('cashier'), wrap(async (req, res) => {
     const region = str(req.query.region), province = str(req.query.province);
     if (!region && !province) throw bad('region', 'Choose the delivery region first');
-    const q = await deliveryFeeFor(pool, { region, province });
-    res.json({ fee: q.fee, rate: q.rate, scope: q.scope, available: q.available });
+    res.json(feeJson(await quoteForRequest(pool, { region, province }, req.query.items)));
   }));
 
   // ret = returnInfo() result for the sales being sent (optional). total / vat stay as originally charged;
@@ -923,8 +966,8 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       }
       const shiftResult = await client.query('SELECT shift_id, opened_at FROM pos_cash_shifts WHERE cashier_id=$1 AND closed_at IS NULL FOR UPDATE', [req.user.id]);
       if (!shiftResult.rowCount) throw bad('cashShift', 'Open your Cash Shift before completing a sale.');
-      const lateSale = shiftLate(shiftResult.rows[0]);
-      if (lateSale) throw bad('cashShift', lateSale);
+      if (app.locals.shiftIsStale && app.locals.shiftIsStale(shiftResult.rows[0].opened_at)) throw bad('cashShift', 'Your cash shift from an earlier day is still open. Count and close it, then open a new shift, before completing a sale.');
+      if (app.locals.shiftMustClose && app.locals.shiftMustClose(shiftResult.rows[0].opened_at)) throw bad('cashShift', 'It is time to close your cash shift. Count the drawer and close it first; no more sales can be made on this shift.');
       const cashShiftId = shiftResult.rows[0].shift_id;
       const items = await loadSellable(client, lines, { lock: true });
       if (app.locals.shopExtras) await app.locals.shopExtras.checkMinimums(client, items);     // minimum order; the maximum is the stock, checked in loadSellable
@@ -946,7 +989,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
         cardRef = str(b.cardRef).toUpperCase();
         if (!/^[A-Z0-9-]{4,30}$/.test(cardRef)) throw bad('cardRef', 'Reference number must be 4-30 letters, numbers or dashes');
         const dup = await client.query(`SELECT receipt_no FROM pos_sales WHERE method = 'Card' AND card_ref = $1 AND status <> 'Voided' LIMIT 1`, [cardRef]);
-        if (dup.rowCount) throw bad('cardRef', `Reference ${cardRef} was already used on receipt ${dup.rows[0].receipt_no}`);
+        if (dup.rowCount) throw bad('cardRef', `Reference ${cardRef} was already used on invoice ${dup.rows[0].receipt_no}`);
       }
       const vat = round2(total * VAT_RATE / (1 + VAT_RATE));
       const ins = await client.query(
@@ -968,10 +1011,10 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       }
       await audit(client, req.user, 'Record added', `POS sale ${s.receipt_no} — ${peso(total)} (${method}), ${items.length} line(s)` + (dlv ? ` · delivery to ${dlv.ship.city}, ${dlv.ship.province} (fee ${peso(dlv.fee)})` : '')
         + (changed.length ? ` · price override approved by ${approval.approverName}: ${changed.join(', ')}` : ''));
-      // a walk-in quotation handed to the counter: keep the reference on it so one quote can never cover two receipts
+      // a walk-in quotation handed to the counter: keep the reference on it so one quote can never cover two invoices
       if (str(b.quoteNo) && app.locals.quoteDesk) {
         await app.locals.quoteDesk.linkSale(client, str(b.quoteNo).toUpperCase(), s.sale_id);
-        await audit(client, req.user, 'Record edited', `Quote ${str(b.quoteNo).toUpperCase()} completed as receipt ${s.receipt_no}`);
+        await audit(client, req.user, 'Record edited', `Quote ${str(b.quoteNo).toUpperCase()} completed as invoice ${s.receipt_no}`);
       }
       return saleJson(s, items);
     });
@@ -997,12 +1040,12 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     res.json(sales.map(s => saleJson(s, items.filter(i => i.sale_id === s.sale_id), ret)));
   }));
 
-  // Find an older receipt by its number (the list above only shows today), so a customer can bring items back on a later day.
+  // Find an older invoice by its number (the list above only shows today), so a customer can bring items back on a later day.
   app.get('/api/pos/sales/lookup', auth('cashier'), wrap(async (req, res) => {
     const no = str(req.query.receipt).toUpperCase();
-    if (!/^[A-Z0-9-]{3,30}$/.test(no)) throw bad('receipt', 'Enter the receipt number printed on the receipt');
+    if (!/^[A-Z0-9-]{3,30}$/.test(no)) throw bad('receipt', 'Enter the invoice number printed on the invoice');
     const sr = await pool.query('SELECT * FROM pos_sales WHERE upper(receipt_no) = $1', [no]);
-    if (!sr.rowCount) throw bad('receipt', 'No receipt with that number');
+    if (!sr.rowCount) throw bad('receipt', 'No invoice with that number');
     const s = sr.rows[0];
     const { rows: items } = await pool.query('SELECT * FROM pos_sale_items WHERE sale_id = $1 ORDER BY item_id', [s.sale_id]);
     res.json(saleJson(s, items, await returnInfo(pool, [s.sale_id])));
@@ -1109,10 +1152,8 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       if (pend.rowCount) throw bad('id', 'This sale already has a return waiting for Finance. Wait for the decision before sending another');
       let shiftId = null;
       if (sale.method === 'Cash') {               // a cash refund comes out of this cashier's drawer, so a shift must be open
-        const sh = await client.query('SELECT shift_id, opened_at FROM pos_cash_shifts WHERE cashier_id = $1 AND closed_at IS NULL', [req.user.id]);
+        const sh = await client.query('SELECT shift_id FROM pos_cash_shifts WHERE cashier_id = $1 AND closed_at IS NULL', [req.user.id]);
         if (!sh.rowCount) throw bad('cashShift', 'Open your Cash Shift first. A cash refund is paid from your drawer.');
-        const lateReturn = shiftLate(sh.rows[0]);
-        if (lateReturn) throw bad('cashShift', lateReturn);
         shiftId = sh.rows[0].shift_id;
       }
       const { rows: lines } = await client.query('SELECT item_id, product_id, sku, name, unit, qty, price FROM pos_sale_items WHERE sale_id = $1 ORDER BY item_id', [sale.sale_id]);
@@ -1121,7 +1162,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       let cents = 0;
       for (const [id, qty] of want) {
         const line = lines.find(l => String(l.item_id) === id);
-        if (!line) throw bad('items', 'One of the items is not on this receipt');
+        if (!line) throw bad('items', 'One of the items is not on this invoice');
         const done = ret.items.get(id) || { approved: 0, pending: 0 };
         const left = round2(+line.qty - done.approved - done.pending);
         if (qty > left + 1e-9) throw bad('items', left <= 0 ? `${line.name} was already returned` : `Only ${left} ${line.unit} of ${line.name} can still be returned`);
@@ -1228,19 +1269,18 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
   }));
   app.get('/api/shop/config', auth('customer'), wrap(async (req, res) => {
     const d = await ratesSummary();
-    res.json({ deliveryFee: d.fallback, deliveryFeeFrom: d.from, deliveryFeeTo: d.to, refundWindowDays: REFUND_WINDOW_DAYS, cancelAutoHours: CANCEL_AUTO_HOURS, cancelReasons: CANCEL_REASONS, info: shopInfo() });
+    res.json({ deliveryFee: d.fallback, deliveryFeeFrom: d.from, deliveryFeeTo: d.to, refundWindowDays: REFUND_WINDOW_DAYS, cancelAutoHours: CANCEL_AUTO_HOURS, cancelReasons: Object.fromEntries(Object.entries(CANCEL_REASONS).filter(([key]) => key !== 'balance_unpaid')), info: shopInfo() });
   }));
   // Fee for one delivery address: the customer sees it at checkout before placing the order (the server recalculates it when the order is placed)
   app.get('/api/shop/delivery-fee', auth('customer'), wrap(async (req, res) => {
     const region = str(req.query.region), province = str(req.query.province);
     if (!region && !province) throw bad('region', 'Choose the delivery region first');
-    const q = await deliveryFeeFor(pool, { region, province });
-    res.json({ fee: q.fee, rate: q.rate, scope: q.scope, available: q.available });
+    res.json(feeJson(await quoteForRequest(pool, { region, province }, req.query.items)));
   }));
   // Public: the Help page (delivery, refunds, contact) can be read without signing in. Nothing secret is in here.
   app.get('/api/shop/info', wrap(async (req, res) => {
     const d = await ratesSummary();
-    res.json({ deliveryFee: d.fallback, deliveryFeeFrom: d.from, deliveryFeeTo: d.to, deliveryRates: d, refundWindowDays: REFUND_WINDOW_DAYS, cancelAutoHours: CANCEL_AUTO_HOURS, cancelReasons: CANCEL_REASONS, info: shopInfo() });
+    res.json({ deliveryFee: d.fallback, deliveryFeeFrom: d.from, deliveryFeeTo: d.to, deliveryRates: d, refundWindowDays: REFUND_WINDOW_DAYS, cancelAutoHours: CANCEL_AUTO_HOURS, cancelReasons: Object.fromEntries(Object.entries(CANCEL_REASONS).filter(([key]) => key !== 'balance_unpaid')), info: shopInfo() });
   }));
 
   /* ---------- delivery rates: Finance manages them ---------- */
@@ -1324,10 +1364,12 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     const pt = app.locals.paymentTerms;
     if (!pt || !target) return { ok: true };
     if (target === 'Paid') return pt.releaseDecision(o, { action: 'confirm', role });
-    if (target === 'Out for Delivery') {
+    if (target === 'Out for Delivery' || target === 'Delivered') {
       const m = pt.orderMoney(o);
-      if (!m.outstanding || isCod(o) || o.credit_exception_by) return { ok: true, money: m };
-      return { ok: false, field: 'payment', money: m, reason: `${peso(m.balance)} is still unpaid on this online-payment order. Collect it first (or ask Finance for a credit exception) before it goes out for delivery` };
+      if (!isCod(o) && m.outstanding && !o.credit_exception_by) {
+        return { ok: false, field: 'payment', money: m, reason: `${peso(m.balance)} is still unpaid on this order. Orders on payment terms or online payments cannot be delivered until fully paid (or approved with a credit exception by Finance).` };
+      }
+      if (target === 'Out for Delivery') return { ok: true, money: m };
     }
     if (FINAL_STATUS.includes(target)) return pt.releaseDecision(o, { action: 'release', role });
     return { ok: true };
@@ -1338,6 +1380,10 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     shipTo: o.fulfillment === 'Delivery' && o.city ? { recipient: o.recipient_name, addressLine: o.address_line, landmark: o.landmark || undefined,
       barangay: o.barangay, city: o.city, province: o.province, region: o.region, zip: o.zip_code } : undefined,
     phone: o.phone, method: o.payment_method, subtotal: +o.subtotal, deliveryFee: +o.delivery_fee, total: +o.total, status: o.status, paymentStatus: o.payment_status || 'unpaid',
+    cancelReasonCode: o.cancel_reason_code || undefined,
+    depositDisposition: o.deposit_disposition || undefined,
+    depositDecisionNote: o.deposit_decision_note || undefined,
+    holdReason: o.status === 'On Hold' ? 'Balance unpaid' : undefined,
     forfeited: +o.forfeited_amount > 0 ? +o.forfeited_amount : undefined,
     delivery: o.fulfillment === 'Delivery' && ['Out for Delivery', 'Delivered'].includes(o.status) ? delivery.customerJson(dlv, o) : undefined,
     cancelRequested: !!cancelPending,
@@ -1472,7 +1518,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       const subtotal = round2(items.reduce((n, i) => n + i.price * i.qty, 0));
       let fee = 0;
       if (fulfillment === 'Delivery') {                       // by the delivery address' province / region
-        const q = await deliveryFeeFor(client, ship);
+        const q = await deliveryQuote(client, ship, items);        // area rate + weight charge
         if (!q.available) throw bad('region', `Sorry, we do not deliver to ${ship.province || ship.region} yet. Choose another address or pick up in store.`);
         fee = q.fee;
       }
@@ -1483,8 +1529,18 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       if (method === cashMethod) {
         const c = await cashCheck(client, req.user.id, fulfillment, round2(subtotal + fee)); if (!c.ok) throw bad('method', c.reason);
         // COD: the delivery fee AND a down payment (taken off what the rider collects) are paid online first
-        if (fulfillment === 'Delivery') { const dep = round2(Math.min(c.rules.codDeposit, subtotal)); if (fee + dep > 0) { advKind = 'shipping_fee'; advance = round2(fee + dep); } }
-        if (fulfillment === 'Pickup' && c.rules.copDeposit > 0) { advKind = 'deposit'; advance = round2(Math.min(c.rules.copDeposit, subtotal)); }
+        if (fulfillment === 'Delivery') {
+          const half = round2(subtotal * 0.5);
+          const minDep = c.rules.codDeposit > 0 ? c.rules.codDeposit : 200;
+          const dep = round2(Math.min(Math.max(half, minDep), subtotal));
+          if (fee + dep > 0) { advKind = 'shipping_fee'; advance = round2(fee + dep); }
+        }
+        if (fulfillment === 'Pickup') {
+          const half = round2(subtotal * 0.5);
+          const minDep = c.rules.copDeposit > 0 ? c.rules.copDeposit : 200;
+          const dep = round2(Math.min(Math.max(half, minDep), subtotal));
+          if (dep > 0) { advKind = 'deposit'; advance = dep; }
+        }
         if (advance > 0 && !process.env.XENDIT_SECRET_KEY)
           throw bad('method', `${cashMethod} needs the ${advKind === 'shipping_fee' ? 'delivery fee and down payment' : 'down payment'} paid online first, and online payment is not available right now. Please try again later`);
       }
@@ -1521,7 +1577,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
   app.post('/api/shop/orders/:no/cancel-request', auth('customer'), wrap(async (req, res) => {
     const b = req.body || {};
     const code = str(b.reason), details = str(b.details);
-    if (!CANCEL_REASONS[code]) throw bad('reason', 'Choose the reason for cancelling');
+    if (!CANCEL_REASONS[code] || code === 'balance_unpaid') throw bad('reason', 'Choose the reason for cancelling');
     if (code === 'other' && details.length < 5) throw bad('details', 'Please tell us the reason (at least 5 characters)');
     if (details.length > 300) throw bad('details', 'Please keep the details under 300 characters');
     const reason = CANCEL_REASONS[code] + (details ? ' \u2014 ' + details : '');
@@ -1662,17 +1718,18 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       const r = await client.query(`SELECT * FROM orders WHERE order_no = $1 FOR UPDATE`, [req.params.no]);
       if (!r.rowCount) throw bad('id', 'Order not found');
       const o = r.rows[0];
-      const q = await client.query(`SELECT request_id FROM order_cancel_requests WHERE order_id = $1 AND status = 'pending' FOR UPDATE`, [o.order_id]);
+      const q = await client.query(`SELECT request_id, reason_code FROM order_cancel_requests WHERE order_id = $1 AND status = 'pending' FOR UPDATE`, [o.order_id]);
       if (!q.rowCount) throw bad('id', 'There is no pending cancellation request for this order');
       if (approve) {
-        if (!['Pending Confirmation', 'Paid'].includes(o.status)) throw bad('id', 'This order is already packed, so it cannot be cancelled');
+        if (!['Pending Confirmation', 'Paid'].includes(o.balance_hold_from || o.status)) throw bad('id', 'This order is already packed, so it cannot be cancelled');
         if (o.stock_deducted) {
           const { rows: items } = await client.query('SELECT product_id, qty FROM order_items WHERE order_id = $1 ORDER BY product_id', [o.order_id]);
           for (const i of items) await postMovement(client, { productId: i.product_id, type: 'in', reason: 'refund', qty: +i.qty,
             userId: req.user.id, sourceType: 'order', sourceId: o.order_id, note: `Cancelled ${o.order_no}` });
         }
         await client.query(`UPDATE orders SET status = 'Cancelled', stock_deducted = FALSE, status_updated_at = now() WHERE order_id = $1`, [o.order_id]);
-        const owed = await queueCancelRefund(client, o, req.user.id);
+        const kept = await app.locals.paymentTerms.cancellationPolicy(client, o, q.rows[0].reason_code || 'other', req.body || {}, req.user);
+        const owed = await queueCancelRefund(client, o, req.user.id, kept);
         await logStatus(client, o.order_id, o.status, 'Cancelled', req.user.id, 'Customer cancellation approved' + (owed ? ` — refund of ${peso(owed)} queued` : ''));
       }
       await client.query(`UPDATE order_cancel_requests SET status = $2, decided_by = $3, decided_at = now() WHERE request_id = $1`,
@@ -1874,8 +1931,8 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
             throw bad('cashReceived', `Enter the cash received; it must cover the ${peso(collect)} balance`);
           const shift = await client.query('SELECT shift_id, opened_at FROM pos_cash_shifts WHERE cashier_id = $1 AND closed_at IS NULL FOR UPDATE', [req.user.id]);
           if (!shift.rowCount) throw bad('cashReceived', 'Open your Cash Shift before collecting payment');
-          const lateCash = shiftLate(shift.rows[0]);
-          if (lateCash) throw bad('cashReceived', lateCash);
+          if (app.locals.shiftIsStale && app.locals.shiftIsStale(shift.rows[0].opened_at)) throw bad('cashReceived', 'Your cash shift from an earlier day is still open. Count and close it, then open a new shift, before collecting payment');
+          if (app.locals.shiftMustClose && app.locals.shiftMustClose(shift.rows[0].opened_at)) throw bad('cashReceived', 'It is time to close your cash shift. Count the drawer and close it first; cash can no longer be collected on this shift');
           shiftId = shift.rows[0].shift_id;
         }
       }
@@ -1888,7 +1945,7 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
           const p = await app.locals.paymentTerms.applyPayment(client, { kind: 'order', no: o.order_no, amount: collect, method: 'Cash', tendered: cashReceived,
             cashShiftId: shiftId, actor: req.user, note: `Collected on ${target === 'Delivered' ? 'delivery' : 'pickup'}`, requestId: str(b.requestId) || undefined });
           await client.query("UPDATE orders SET payment_status = 'paid', cash_shift_id = $2 WHERE order_id = $1", [o.order_id, shiftId]);
-          handover = { receiptNo: 'RCP-' + o.order_no + '-' + p.paymentId, paymentId: p.paymentId, amount: p.amount, tendered: p.tendered, change: p.change,
+          handover = { receiptNo: 'INV-' + o.order_no + '-' + p.paymentId, paymentId: p.paymentId, amount: p.amount, tendered: p.tendered, change: p.change,
             paidAmount: p.parent.paid, balance: p.parent.balance };
         }
         if (dispatch) await delivery.saveDispatch(client, o.order_id, dispatch, req.user.id);
@@ -1905,12 +1962,16 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
 
   // Admin cancels an order directly (reason required). Stock goes back if it was already deducted.
   app.post('/api/orders/:no/cancel', auth('finance'), wrap(async (req, res) => {
-    const reason = str((req.body || {}).reason);
+    const body = req.body || {};
+    let code = str(body.reasonCode) || 'other';
+    if (!CANCEL_REASONS[code]) throw bad('reasonCode', 'Choose a cancellation reason');
+    const reason = str(body.reason);
     if (reason.length < 5 || reason.length > 300) throw bad('reason', 'Please explain why (5 to 300 characters)');
     await tx(async (client) => {
       const r = await client.query('SELECT * FROM orders WHERE order_no = $1 FOR UPDATE', [req.params.no]);
       if (!r.rowCount) throw bad('id', 'Order not found');
       const o = r.rows[0];
+      if (!body.reasonCode && o.status === 'On Hold' && o.balance_hold_from) code = 'balance_unpaid';
       if (o.status === 'Cancelled') throw bad('id', 'This order is already cancelled');
       if (FINAL_STATUS.includes(o.status)) throw bad('id', `This order was already ${o.status.toLowerCase()}, so it cannot be cancelled. Handle it as a return instead`);
       if (!ADMIN_CANCELLABLE.includes(o.status)) throw bad('id', `An order that is "${o.status}" can no longer be cancelled`);
@@ -1921,7 +1982,8 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
       }
       await client.query(`UPDATE orders SET status = 'Cancelled', stock_deducted = FALSE, status_updated_at = now() WHERE order_id = $1`, [o.order_id]);
       await client.query(`UPDATE order_cancel_requests SET status = 'approved', decided_by = $2, decided_at = now() WHERE order_id = $1 AND status = 'pending'`, [o.order_id, req.user.id]);
-      const owed = await queueCancelRefund(client, o, req.user.id);
+      const kept = await app.locals.paymentTerms.cancellationPolicy(client, o, code, body, req.user);
+      const owed = await queueCancelRefund(client, o, req.user.id, kept);
       await logStatus(client, o.order_id, o.status, 'Cancelled', req.user.id, reason + (owed ? ` — refund of ${peso(owed)} queued` : ''));
       await audit(client, req.user, 'Record edited', `Order ${o.order_no} cancelled by admin: ${reason}${o.stock_deducted ? ' — stock restored, refund to original payment method due' : ''}`);
     });

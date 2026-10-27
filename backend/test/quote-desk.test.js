@@ -202,7 +202,7 @@ async function call(method, url, { body, headers } = {}) {
   const wild = await call('GET', '/api/pos/quote-desk?q=%25%5F');
   ok('LIKE wildcards in a search term are escaped, not treated as wildcards', wild.json.rows.length === 0, wild.json.rows.length);
   const badFilters = await call('GET', '/api/pos/quote-desk?status=anything&source=zzz&page=0&pageSize=7');
-  ok('unknown filters / sizes degrade to safe defaults', badFilters.status === 200 && badFilters.json.filter === 'all' && badFilters.json.source === 'all' && badFilters.json.pageSize === 20 && badFilters.json.page === 1);
+  ok('unknown filters / sizes degrade to safe defaults', badFilters.status === 200 && badFilters.json.filter === 'all' && badFilters.json.source === 'all' && badFilters.json.pageSize === 10 && badFilters.json.page === 1);
   const src = await call('GET', '/api/pos/quote-desk?source=pos');
   ok('the Source filter separates walk-in from online', src.json.rows.every((r) => r.source === 'pos') && src.json.rows.length >= 1);
 

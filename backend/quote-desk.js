@@ -9,7 +9,7 @@
    Mounted in server.js:  require('./quote-desk')({ app, pool, auth, wrap, tx, audit, ValidationError, str, validateShipTo, formatShipTo });
 */
 const PAGE_SIZES = [10, 20, 50, 100];
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 10;
 const REQUEST_ID_RE = /^[a-zA-Z0-9-]{12,100}$/;
 
 /* The quoted quantity must be in the unit the product is sold in. Without this, "5 kg" on a product sold by pcs would become
@@ -90,6 +90,7 @@ module.exports = function mountQuoteDesk({ app, pool, auth, wrap, tx, audit, Val
       flexibleDate: q.flexible_date === true, company: q.company_name || null,
       fulfillment: q.fulfillment || null, area: q.area || null, source: q.source || 'shop', requestDate: ms(q.created_at),
       amount: money(total), proposedAmount: money(q.proposed_amount), leadTime: q.lead_time || null,
+      costStale: q.cost_stale_note || null,          // recipe-costing.js: a material cost moved after this price was worked out
       estimatedReady: ((app.locals.quoteReadyBy && app.locals.quoteReadyBy(q)) || null),
       lateForNeededBy: !!(app.locals.quoteReadyBy && app.locals.quoteReadyBy(q) && dateStr(q.needed_by) && app.locals.quoteReadyBy(q) > dateStr(q.needed_by)),
       validUntil: dateStr(q.valid_until) || null, expired, status: q.status, statusLabel: labelFor(q.status, q.fulfillment, expired),
@@ -311,12 +312,12 @@ module.exports = function mountQuoteDesk({ app, pool, auth, wrap, tx, audit, Val
   }
 
   /* Called by the POS sale when a cashier rings up a handed-over walk-in quote: keeps the reference and refuses a second
-     link, so one quote can never cover two receipts. */
+     link, so one quote can never cover two invoices. */
   app.locals.quoteDesk = {
     linkSale: async (client, quoteNo, saleId) => {
       const q = (await client.query('SELECT * FROM quote_requests WHERE quote_no = $1 FOR UPDATE', [quoteNo])).rows[0];
       if (!q) throw bad('quote', 'That quotation reference was not found');
-      if (q.handover_sale_id && Number(q.handover_sale_id) !== Number(saleId)) throw bad('quote', 'This quotation was already used on another receipt');
+      if (q.handover_sale_id && Number(q.handover_sale_id) !== Number(saleId)) throw bad('quote', 'This quotation was already used on another invoice');
       await client.query('UPDATE quote_requests SET handover_sale_id = $2, updated_at = now() WHERE quote_id = $1', [q.quote_id, saleId]);
       return q;
     },

@@ -28,6 +28,9 @@
   .cr-tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid var(--border);margin:1px 3px 1px 0}
   .cr-tag.bad{color:#e35b5b;border-color:rgba(227,91,91,.5)}.cr-tag.warn{color:var(--amber);border-color:rgba(217,164,65,.5)}.cr-tag.good{color:var(--green);border-color:rgba(67,196,122,.5)}
   .cr-var.bad{color:#e35b5b;font-weight:600}.cr-var.good{color:var(--green);font-weight:600}
+  .cr-rule{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 14px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--card);font-size:14px}
+  .cr-rule input{width:110px;padding:6px 10px;font-size:14px}
+  .cr-rule .m{font-size:13px;color:var(--text-dim)}
   tr.cr-row{cursor:pointer}tr.cr-row:hover{background:var(--hover)}
   tr.cr-detail td{background:var(--inset);padding:12px 16px}
   .cr-mv{display:grid;grid-template-columns:auto auto 1fr;gap:4px 14px;font-size:13.5px}
@@ -37,7 +40,7 @@
   document.head.appendChild(css);
 
   async function api(path) {
-    const r = await fetch('/api' + path, { credentials: 'same-origin' });
+    const r = await fetch('/api' + path, { credentials: 'same-origin', cache: 'no-store' });
     if (r.status === 401) { location.href = 'Login_Inventory.html'; throw new Error('Not signed in'); }
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || 'Request failed');
@@ -94,6 +97,7 @@
       stat('Counted cash', peso(t.countedCash), 'closed shifts only') +
       stat('Net variance', (net < 0 ? '−' : net > 0 ? '+' : '') + peso(Math.abs(net)), 'short ' + peso(Math.abs(t.shortage)) + ' · over ' + peso(t.overage), Math.abs(net) < 0.005 ? 'good' : 'bad') +
       stat('Needs review', t.needsReview, 'variance ≥ ' + peso(data.varianceAlert) + ', open too long, void or return pending', t.needsReview ? 'warn' : 'good') + '</div>';
+    h += '<div class="cr-rule"><label for="crLimit"><b>Closing reason required when the drawer is more than</b></label>₱<input id="crLimit" inputmode="decimal" autocomplete="off" value="' + esc(Number(data.reasonThreshold).toFixed(2)) + '"><button type="button" class="btn-secondary btn-sm" data-crrule>Save</button><span class="m" id="crRuleMsg">Short or over by less than this, the cashier may close without a note. Changes are written to the audit log.</span></div>';
     h += '<div class="table-wrapper"><table><thead><tr><th>Cashier</th><th>Opened</th><th>Closed</th><th>Open for</th><th class="cr-r">Opening</th><th class="cr-r">Cash sales</th><th class="cr-r">In / Out</th><th class="cr-r">Refunds</th><th class="cr-r">Expected</th><th class="cr-r">Counted</th><th>Result</th><th>Flags</th></tr></thead><tbody>';
     if (!data.shifts.length) h += '<tr><td colspan="12" class="cr-empty">No cash shifts in this period.</td></tr>';
     data.shifts.forEach((s) => {
@@ -135,7 +139,17 @@
     }
   }
 
-  document.addEventListener('click', (e) => {
+  document.addEventListener('click', async (e) => {
+    if (e.target.closest('[data-crrule]')) {
+      const box = $('crLimit'), msg = $('crRuleMsg'), v = Number(String(box.value).replace(/,/g, '').trim());
+      if (!/^\d{1,5}(\.\d{1,2})?$/.test(String(box.value).replace(/,/g, '').trim()) || v > 10000) { msg.textContent = 'Enter an amount from 0 to 10,000 pesos (up to 2 decimals).'; return; }
+      try {
+        const r = await fetch('/api/finance/cash-shifts/rules', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reasonThreshold: v }) });
+        const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Could not save');
+        data.reasonThreshold = d.reasonThreshold; box.value = d.reasonThreshold.toFixed(2); msg.textContent = 'Saved. Cashiers now need a reason above ' + peso(d.reasonThreshold) + '.';
+      } catch (err) { msg.textContent = err.message; }
+      return;
+    }
     const q = e.target.closest('[data-cr]');
     if (q) {
       const k = q.dataset.cr, now = new Date();
@@ -155,5 +169,29 @@
     from = b.querySelector('[data-crdate="from"]').value; to = b.querySelector('[data-crdate="to"]').value;
     if (from && to) show();
   });
+  document.addEventListener('click', (e) => {
+    if (e.target && (e.target.id === 'soPayRefreshBtn' || e.target.closest('#soPayRefreshBtn') || e.target.id === 'saOverviewRefresh' || e.target.closest('#saOverviewRefresh'))) {
+      show();
+    }
+  });
+
+  function watchSalesPages() {
+    ['sales-overview', 'sales'].forEach((id) => {
+      const sec = $(id);
+      if (sec) {
+        new MutationObserver(() => {
+          if (sec.classList.contains('active-page')) show();
+        }).observe(sec, { attributes: true, attributeFilter: ['class'] });
+        if (sec.classList.contains('active-page')) show();
+      }
+    });
+    window.addEventListener('focus', () => {
+      if (['sales-overview', 'sales'].some((id) => $(id) && $(id).classList.contains('active-page'))) show();
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchSalesPages);
+  else watchSalesPages();
+
   window.CashReports = { show };
 })();

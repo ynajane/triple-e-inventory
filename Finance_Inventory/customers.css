@@ -222,14 +222,6 @@ html[data-theme="light"] #customers .customer-avatar-large { background: #dbe6f0
 #customers .customer-table .row-actions { display: flex; gap: 8px; flex-wrap: nowrap; }
 #customers .customer-table .row-actions button { white-space: nowrap; }
 #customers .customer-table th:last-child { width: 1%; white-space: nowrap; }
-#customers .customer-edit-card { width: min(640px, 100%); }
-#customers .customer-edit-card .customer-modal-content { overflow-y: auto; }
-#customers .customer-edit-card form { display: contents; }
-#customers .customer-edit-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
-#customers .customer-edit-field > span { font-size: 12px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
-#customers .customer-edit-field .inv-search { width: 100%; max-width: none; }
-#customers .customer-edit-error { margin: 0; padding: 9px 12px; border-radius: 8px; font-size: 13.5px; color: var(--red); border: 1px solid var(--red); background: rgba(227,91,91,.1); }
-#customers .customer-edit-actions { display: flex; gap: 8px; }
 
 /* ---------- Registered / Walk-in tabs ---------- */
 #customers .customer-directory[hidden] { display: none !important; }

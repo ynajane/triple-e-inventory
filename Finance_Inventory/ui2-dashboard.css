@@ -1,0 +1,219 @@
+/* =========================================================
+   ui2-dashboard.css — Dashboard page only (#dashboard.ui2)
+   Needs ui2-core.css loaded before it.
+========================================================= */
+
+/* ---------- KPI cards ---------- */
+#dashboard .stats {
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 16px;
+    margin: 0 0 22px;
+}
+#dashboard .stats .stat-card:nth-child(2) { --accent: var(--red); }
+#dashboard .stats .stat-card:nth-child(3) { --accent: var(--amber); }
+#dashboard .stats .stat-card:nth-child(4) { --accent: var(--green); }
+#dashboard .stats .stat-card:nth-child(5) { --accent: var(--u-cyan); }
+
+/* clickable KPI cards (JS adds .dash-kpi / .is-selected) */
+#dashboard .stat-card.dash-kpi { cursor: pointer; }
+#dashboard .stat-card.dash-kpi.is-selected {
+    border-color: var(--accent);
+    box-shadow:
+        0 0 0 1px var(--accent),
+        0 20px 40px -20px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+#dashboard .stat-card.dash-kpi.is-selected::after { left: 0; right: 0; opacity: 1; height: 3px; }
+#dashboard .stat-card.dash-kpi.is-selected::before { opacity: 1; }
+
+/* foot colours that read well on both themes */
+#dashboard .stat-foot.up       { color: var(--u-ok-fg); }
+#dashboard .stat-foot.warn     { color: var(--u-warn-fg); }
+#dashboard .stat-foot.low-foot { color: var(--u-bad-fg); }
+
+/* ---------- KPI drill-down panel ---------- */
+#dashboard .dash-kpi-panel { margin-bottom: 22px; }
+#dashboard .dash-kpi-panel .dash-kpi-ico {
+    width: 42px; height: 42px;
+    border-radius: 12px;
+    background: var(--u-chip-bg);
+    border: 1px solid var(--u-chip-line);
+    color: var(--blue-bright);
+}
+#dashboard .dash-kpi-panel.kpi-low { border-color: var(--u-bad-line); }
+#dashboard .dash-kpi-panel.kpi-low .dash-kpi-ico {
+    background: var(--u-bad-bg);
+    border-color: var(--u-bad-line);
+    color: var(--u-bad-fg);
+}
+#dashboard .dash-kpi-panel tr.inv-row.low  { background: var(--u-bad-bg);  box-shadow: inset 3px 0 0 var(--red); }
+#dashboard .dash-kpi-panel tr.inv-row.watch { box-shadow: inset 3px 0 0 var(--amber); }
+#dashboard .dash-kpi-more { padding: 14px 4px 0; font-size: 13px; color: var(--text-dim); }
+
+/* ---------- Quick actions + Stock health ---------- */
+#dashboard .dash-top-panels {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 18px;
+    margin-bottom: 22px;
+}
+
+#dashboard .quick-actions-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 12px;
+    margin-top: 0;
+}
+#dashboard .quick-action-item {
+    position: relative;
+    gap: 14px;
+    padding: 15px 16px;
+    border-radius: 12px;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line-soft);
+    transition: transform .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+#dashboard .quick-action-item:hover {
+    transform: translateY(-2px);
+    border-color: var(--u-chip-line);
+    background: var(--u-hover);
+    box-shadow: 0 16px 30px -22px rgba(74,144,217,.7);
+}
+#dashboard .quick-action-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: var(--u-chip-bg);
+    border: 1px solid var(--u-chip-line);
+    color: var(--blue-bright);
+    transition: background .16s ease, color .16s ease;
+}
+#dashboard .quick-action-icon .ico { width: 21px; height: 21px; }
+#dashboard .quick-action-title { font-size: 15.5px; line-height: 1.25; }
+#dashboard .quick-action-sub   { font-size: 13px; line-height: 1.35; color: var(--text-dim); }
+#dashboard .quick-action-arrow {
+    color: var(--blue-bright);
+    opacity: .45;
+    transform: translateX(-4px);
+    transition: opacity .16s ease, transform .16s ease;
+}
+#dashboard .quick-action-item:hover .quick-action-arrow { opacity: 1; transform: translateX(0); }
+
+/* the first action is the primary one: full-width, filled */
+#dashboard .quick-action-item:first-child {
+    grid-column: 1 / -1;
+    border-color: var(--u-chip-line);
+    background:
+        linear-gradient(110deg, color-mix(in srgb, var(--blue-bright) 22%, transparent), color-mix(in srgb, var(--blue-bright) 5%, transparent) 70%),
+        var(--u-surface-flat);
+}
+#dashboard .quick-action-item:first-child .quick-action-icon {
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    border-color: rgba(255,255,255,.25);
+    color: #fff;
+    box-shadow: 0 10px 22px -10px rgba(74,144,217,.8);
+}
+#dashboard .quick-action-item:first-child .quick-action-arrow { opacity: 1; transform: none; }
+
+/* stock health rings */
+#dashboard .health-ring-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 0;
+    flex: 1;
+}
+#dashboard .health-ring-card {
+    min-width: 0;
+    padding: 20px 12px 18px;
+    border-radius: 12px;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line-soft);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    transition: transform .16s ease, border-color .16s ease;
+}
+#dashboard .health-ring-card:hover { transform: translateY(-2px); border-color: var(--u-chip-line); }
+#dashboard .health-ring-svg { width: 104px; height: 104px; overflow: visible; }
+#dashboard .health-ring-svg circle:first-of-type { stroke: var(--u-track); }
+#dashboard .health-ring-svg circle:nth-of-type(2) {
+    filter: drop-shadow(0 0 5px rgba(74,144,217,.35));
+    animation: ui2Ring 1.2s cubic-bezier(.2,.8,.2,1) both;
+}
+html[data-theme="light"] #dashboard .health-ring-svg circle:nth-of-type(2) { filter: none; }
+@keyframes ui2Ring { from { stroke-dashoffset: 214; } }
+#dashboard .health-ring-pct { font-size: 21px; }
+#dashboard .health-ring-name {
+    font-family: "Oswald", sans-serif;
+    font-weight: 500;
+    font-size: 15px;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    margin-top: 12px;
+}
+#dashboard .health-ring-caption { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+
+/* ---------- Operations & delivery schedule (injected by operations-schedule.js) ---------- */
+#dashboard .ops-panel { margin-bottom: 22px; }
+#dashboard .ops-tabs {
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line-soft);
+}
+#dashboard .ops-tab { border-radius: 9px; padding: 8px 15px; font-weight: 600; }
+#dashboard .ops-tab:hover { background: var(--u-hover); }
+#dashboard .ops-tab.active {
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    color: #fff;
+    box-shadow: 0 8px 18px -8px rgba(74,144,217,.8);
+}
+#dashboard .ops-table-wrap { border-radius: 12px; border-color: var(--u-line-soft); background: var(--u-surface-flat); }
+#dashboard .ops-table th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px; letter-spacing: 1.5px; font-weight: 500;
+    padding: 13px 16px;
+    background: var(--u-head-bg);
+    border-bottom-color: var(--u-line-soft);
+}
+#dashboard .ops-table td { padding: 14px 16px; font-size: 14px; border-bottom-color: var(--u-line-soft); }
+#dashboard .ops-table tr:hover td { background: var(--u-hover); }
+#dashboard .ops-badge-due,
+#dashboard .ops-badge-sched,
+#dashboard .ops-badge-ready,
+#dashboard .ops-badge-short { border-radius: 99px; padding: 4px 11px; font-size: 12px; }
+#dashboard .ops-badge-due   { color: var(--u-warn-fg); background: var(--u-warn-bg); border-color: var(--u-warn-line); }
+#dashboard .ops-badge-ready { color: var(--u-ok-fg);   background: var(--u-ok-bg);   border-color: var(--u-ok-line); }
+#dashboard .ops-badge-short { color: var(--u-bad-fg);  background: var(--u-bad-bg);  border-color: var(--u-bad-line); }
+#dashboard .ops-mat-chip { border-radius: 99px; padding: 3px 9px; }
+#dashboard .ops-mat-chip.short { color: var(--u-bad-fg); background: var(--u-bad-bg); border-color: var(--u-bad-line); }
+
+/* ---------- Recent movements ---------- */
+#dashboard .dash-section-panel { margin-bottom: 0; }
+#dashboard .movements-panel .panel-head::after {      /* little "live" marker beside the title */
+    content: "LIVE";
+    order: 3;
+    align-self: center;
+    margin-left: auto;
+    padding: 4px 11px;
+    border-radius: 99px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; letter-spacing: 1.8px;
+    color: var(--u-ok-fg);
+    background: var(--u-ok-bg);
+    border: 1px solid var(--u-ok-line);
+}
+#dashboard .movements-panel tbody td.dim { color: var(--text-dim); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1100px) {
+    #dashboard .dash-top-panels { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+    #dashboard .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    #dashboard .stat-card { padding: 16px 14px 14px; }
+    #dashboard .stat-card .ui2-ico { width: 34px; height: 34px; margin-bottom: 12px; }
+    #dashboard .stat-label { letter-spacing: 1.2px; font-size: 11px; }
+    #dashboard .stat-value { font-size: 28px; }
+    #dashboard .stat-foot  { font-size: 12.5px; }
+    #dashboard .quick-actions-list { grid-template-columns: 1fr; }
+}
+@media (max-width: 420px) {
+    #dashboard .stats { grid-template-columns: 1fr; }
+}

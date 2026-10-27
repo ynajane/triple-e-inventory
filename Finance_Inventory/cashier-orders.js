@@ -39,7 +39,7 @@ const statusLabel = (o) => (o.status === 'Paid' ? 'Confirmed' : o.status);
 const statusClass = (s) => (s === 'Pending Confirmation' ? 's-pending' : FINAL.includes(s) ? 's-done' : s === 'Cancelled' ? 's-off' : 's-active');
 const isCash = (o) => /^Cash on /.test(o.method || '');
 /* The money comes from the ledger (orders.paid_amount / payment_state), never from a checkout redirect or a typed
-   receipt number. §5: "Paid" only when the ledger says the balance is zero. */
+   invoice number. §5: "Paid" only when the ledger says the balance is zero. */
 const STATE_LABEL = { unpaid: 'Unpaid', partially_paid: 'Partially paid', paid: 'Paid', refunded: 'Refunded', partially_refunded: 'Partially refunded' };
 const dueOf = (o) => Number(o.outstanding != null ? o.outstanding : Math.max(0, Number(o.total || 0) - Number(o.paidAmount || 0)));
 const paidOf = (o) => Number(o.paidAmount || 0);
@@ -63,7 +63,7 @@ let orders = [], tab = 'open', chosen = null, target = '', busy = false, shiftOp
 
 async function request(path, options = {}) {
   let r;
-  try { r = await fetch('/api' + path, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } }); }
+  try { r = await fetch('/api' + path, { credentials: 'same-origin', signal: AbortSignal.timeout(15000), ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } }); }
   catch { throw Object.assign(new Error('Cannot reach the server. Check the connection and try again.'), { fields: {} }); }
   const j = await r.json().catch(() => ({}));
   if (r.status === 401) throw Object.assign(new Error('Your session has ended. Please sign in again.'), { fields: {} });
@@ -127,6 +127,7 @@ const FAIL_REASONS = {
 };
 let failFor = null, failReq = false;
 function openFail(o) {
+  if (busy || failReq) return;
   failFor = o; const del = o.fulfillment === 'Delivery';
   $('coAction').innerHTML = `<form class="co-sheet" id="coFailForm" novalidate>
     <h2>${del ? 'Delivery did not go through' : 'Order not picked up'}</h2><div class="co-sub">${esc(o.id)} · ${esc(o.customer)} · ${peso(o.total)}</div>
@@ -141,7 +142,7 @@ function openFail(o) {
   openModal($('coAction'));
 }
 async function submitFail() {
-  const o = failFor; if (!o || failReq) return; clearErrs();
+  const o = failFor; if (!o || busy || failReq) return; clearErrs();
   const reason = $('co_failReason').value, note = $('co_failNote').value.trim(), pick = document.querySelector('input[name="co_failAction"]:checked');
   const action = o.fulfillment === 'Delivery' ? (pick ? pick.value : '') : 'cancel';
   let ok = true;
@@ -151,7 +152,7 @@ async function submitFail() {
   const btn = $('coFailGo'); failReq = true; btn.disabled = true;
   try {
     const r = await request('/orders/' + encodeURIComponent(o.id) + '/not-completed', { method: 'POST', body: JSON.stringify({ reason, note, action }) });
-    closeAction(); await load(true);
+    closeAction(true); await load(true);
     say(r.status === 'Packed' ? o.id + ' is back in Packed for another delivery.' : o.id + ' was cancelled and its stock returned' + (r.refundQueued ? '; the refund is queued for Finance.' : '.'));
   } catch (e) {
     Object.entries(e.fields || {}).forEach(([k, m]) => setErr(k === 'reason' ? 'failReason' : k === 'note' ? 'failNote' : k === 'action' ? 'failAction' : k, m));
@@ -163,6 +164,10 @@ async function submitFail() {
 function payButton(o) {
   if (['Cancelled', 'Returned'].includes(o.status) || o.cancelRequested) return '';
   if (o.awaitingPayment || dueOf(o) <= 0 || o.paymentState === 'refunded') return '';
+  // Pickup: only collect payment once the order has been packed and is Ready for Pickup (or already released with terms)
+  if (o.fulfillment === 'Pickup' && ['Pending Confirmation', 'Paid'].includes(o.status)) return '';
+  // Delivery: COD balance is collected upon delivery handover at doorstep, not before packing
+  if (o.fulfillment === 'Delivery' && ['Pending Confirmation', 'Paid'].includes(o.status)) return '';
   return `<button type="button" class="btn-secondary" data-pay="${esc(o.id)}">Collect payment</button>`;
 }
 function render() {
@@ -199,7 +204,7 @@ const byId = (id) => orders.find((x) => String(x.id) === String(id));
 /* ---------- modal plumbing ---------- */
 function openModal(el) { opener = document.activeElement; el.hidden = false; document.body.style.overflow = 'hidden'; const f = el.querySelector('input:not([type=checkbox]),select,textarea,button.btn-primary,button'); if (f) setTimeout(() => f.focus(), 30); }
 function closeModal(el) { el.hidden = true; el.innerHTML = ''; if ($('coDetail').hidden && $('coAction').hidden) document.body.style.overflow = ''; if (opener && document.contains(opener)) opener.focus(); }
-function closeAction() { chosen = null; target = ''; payFor = null; payDraft = null; closeModal($('coAction')); }
+function closeAction(force = false) { if (!force && (busy || failReq)) return; chosen = null; target = ''; payFor = null; payDraft = null; closeModal($('coAction')); }
 document.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (!$('coAction').hidden) closeAction(); else if (!$('coDetail').hidden) closeModal($('coDetail')); });
 ['coDetail', 'coAction'].forEach((id) => $(id).addEventListener('mousedown', (e) => { if (e.target === $(id)) (id === 'coAction' ? closeAction() : closeModal($(id))); }));
 
@@ -220,6 +225,7 @@ function detailHtml(o) {
     <div class="co-card-head"><div><h2 id="coDetailTitle">${esc(o.id)}</h2><div class="co-sub">${esc(o.customer)} \u00B7 placed ${esc(when(o.createdAt))}</div></div>
       <div class="co-pills"><span class="co-pill ${statusClass(o.status)}">${esc(statusLabel(o))}</span><span class="co-pill">${esc(o.fulfillment)}</span></div></div>
     ${flagsFor(o)}
+    <div class="co-kpis"><div class="co-kpi"><small>Order total</small><b>${peso(o.total)}</b></div><div class="co-kpi ok"><small>Paid so far</small><b>${peso(paidOf(o))}</b></div><div class="co-kpi ${dueOf(o) > 0.004 ? 'due' : 'ok'}"><small>${dueOf(o) > 0.004 ? 'To collect' : 'Balance'}</small><b>${dueOf(o) > 0.004 ? peso(dueOf(o)) : 'Settled'}</b></div><div class="co-kpi"><small>Items</small><b>${(o.items || []).length}</b></div></div>
     <div class="co-grid">
       <div><h3>Customer</h3><p>${esc(o.customer)}<br>${o.customerPhone ? '<a href="tel:' + esc(o.customerPhone) + '">' + esc(o.customerPhone) + '</a><br>' : ''}${esc(o.customerEmail || '')}</p></div>
       <div><h3>${o.fulfillment === 'Delivery' ? 'Deliver to' : 'Pickup'}</h3>${where}</div>
@@ -228,18 +234,20 @@ function detailHtml(o) {
     </div>
     <table class="co-table"><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>${lines}</tbody>
       <tfoot>${o.deliveryFee ? `<tr><td colspan="3" class="r">Subtotal</td><td class="r">${peso(o.subtotal)}</td></tr><tr><td colspan="3" class="r">Delivery fee</td><td class="r">${peso(o.deliveryFee)}</td></tr>` : ''}<tr><td colspan="3" class="r">Total</td><td class="r">${peso(o.total)}</td></tr></tfoot></table>
-    <h3 class="faint" style="font:500 12px 'IBM Plex Mono',monospace;letter-spacing:1px;text-transform:uppercase;margin-top:12px">Payments received</h3>
+    <h3 class="co-sec">Payments received</h3>
     <div id="coLedger" class="co-sub" aria-live="polite">Loading\u2026</div>
-    <h3 class="faint" style="font:500 12px 'IBM Plex Mono',monospace;letter-spacing:1px;text-transform:uppercase;margin-top:12px">History</h3>
+    <h3 class="co-sec">History</h3>
     <ul class="co-line">${hist || '<li>No history yet.</li>'}</ul>
     <div class="co-actions"><button type="button" class="btn-secondary" data-slip="${esc(o.id)}">Print slip</button><button type="button" class="btn-secondary" data-close-detail>Close</button>${failButton(o)}${payButton(o)}${actionButton(o)}</div></div>`;
 }
 function openDetail(o) {
+  if (busy || failReq) return;
   $('coDetail').innerHTML = detailHtml(o); openModal($('coDetail'));
   /* §4: the counter reads total / received / outstanding from one place — the ledger, not this page's arithmetic. */
+  const box = $('coLedger');
   request('/pos/payment-ledger/order/' + encodeURIComponent(o.id))
-    .then((l) => { const box = $('coLedger'); if (box) box.innerHTML = ledgerHtml(l); })
-    .catch(() => { const box = $('coLedger'); if (box) box.innerHTML = '<p class="faint">The payment ledger could not be read.</p>'; });
+    .then((l) => { if (box && box.isConnected) box.innerHTML = ledgerHtml(l); })
+    .catch(() => { if (box && box.isConnected) box.innerHTML = '<p class="faint">The payment ledger could not be read.</p>'; });
 }
 function ledgerHtml(l) {
   const rows = (l.payments || []).map((p) => `<tr><td>${esc(when(p.at))}</td><td>${esc(p.receivedBy || 'System')}</td><td>${esc(p.method)}</td>
@@ -289,7 +297,7 @@ function printSlip(o) {
   printFrame(html, o.id);
 }
 
-/* One shared printer path: the slip and the payment receipt are both built as a document string and sent to a
+/* One shared printer path: the slip and the payment invoice are both built as a document string and sent to a
    hidden iframe, so the browser print dialog is the only thing the page opens. */
 function printFrame(html, label) {
   const f = document.createElement('iframe'); f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'; document.body.appendChild(f);
@@ -317,7 +325,8 @@ const termsLine = (o) => (o.terms && o.terms.key !== 'full'
   ? `${esc(o.terms.key === 'custom' ? 'Custom partial payment' : o.terms.key === 'half' ? 'Half Payment' : 'Down Payment')} \u2014 ${peso(o.terms.amount)} (${o.terms.percent}%) now, ${esc(o.terms.condition || 'balance due before release')}`
   : 'Full Payment \u2014 the whole amount before the goods are released');
 
-async function openPay(o) {
+async function openPay(o, force = false) {
+  if (!force && (busy || failReq)) return;
   payFor = o; payDraft = null; payReceipt = null; shiftOpen = null;
   payReq = 'pos-' + String(o.id).replace(/[^A-Za-z0-9]/g, '') + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   const due = Number(o.dueNow != null ? o.dueNow : dueOf(o));
@@ -338,8 +347,11 @@ async function openPay(o) {
     <div class="co-actions"><button type="button" class="btn-secondary" id="coCancel">Cancel</button><button type="submit" class="btn-primary" id="coSubmit">Review payment</button></div></form>`;
   openModal($('coAction'));
   syncPayMethod();
-  try { shiftOpen = !!(await request('/pos/cash-shifts/current')); } catch { shiftOpen = null; }
-  syncShiftWarn();
+  const sheet = $('coPayForm');
+  let open = null;
+  try { open = !!(await request('/pos/cash-shifts/current')); } catch { /* unknown until retried */ }
+  if (!sheet.isConnected) return;
+  shiftOpen = open; syncShiftWarn();
 }
 function syncPayMethod() {
   const m = $('co_method') ? $('co_method').value : 'Cash';
@@ -405,17 +417,17 @@ function reviewPay(d) {                        // §7: the figures are read back
 function receiptSheet(r, o) {
   payReceipt = Object.assign({}, r, { order: o });
   $('coAction').innerHTML = `<div class="co-sheet">
-    <h2 id="coActionTitle">Payment recorded</h2><div class="co-sub">${esc(o.id)} \u00B7 ${esc(o.customer)} \u00B7 receipt ${esc(r.receiptNo)}</div>
+    <h2 id="coActionTitle">Payment recorded</h2><div class="co-sub">${esc(o.id)} \u00B7 ${esc(o.customer)} \u00B7 invoice ${esc(r.receiptNo)}</div>
     <div class="co-box"><div class="faint">${esc(r.method)} \u00B7 ${r.purpose === 'initial' ? 'initial payment' : 'balance payment'}</div>
       <div class="big">${peso(r.amount)}</div>
       ${r.change != null ? `<div class="co-change">Give change: <b>${peso(r.change)}</b> (received ${peso(r.tendered)})</div>` : ''}
       <div class="faint">Total ${peso(r.total)} \u00B7 now in ${peso(r.paidAmount)} \u00B7 outstanding ${peso(r.balance)}</div></div>
     ${r.replayed ? '<div class="co-flag">This is the same payment sent a moment ago, so it was recorded once.</div>' : ''}
-    <div class="co-actions"><button type="button" class="btn-secondary" data-payreceipt="${esc(r.paymentId)}">Print receipt</button>
+    <div class="co-actions"><button type="button" class="btn-secondary" data-payreceipt="${esc(r.paymentId)}">Print invoice</button>
       <button type="button" class="btn-secondary" id="coPayAgain">Another payment</button><button type="button" class="btn-primary" id="coDone">Done</button></div></div>`;
 }
 async function submitPay() {
-  if (busy || !payFor) return;
+  if (busy || failReq || !payFor) return;
   const o = payFor;
   if (!payDraft) { payDraft = collectPay(); if (!payDraft) { const f = document.querySelector('#coAction .co-fld.bad input,#coAction .co-fld.bad select'); if (f) f.focus(); return; } reviewPay(payDraft); return; }
   const btn = $('coSubmit'); busy = true; btn.disabled = true; btn.textContent = 'Saving\u2026';
@@ -434,16 +446,16 @@ async function submitPay() {
     if (btn.isConnected) { btn.disabled = false; btn.textContent = 'Confirm payment'; if ($('coPayBack')) $('coPayBack').disabled = false; }
     await load(true);                                          // the balance may have moved somewhere else: show the truth
     const fresh = byId(o.id);
-    if (fresh && (dueOf(fresh) !== dueOf(o) || fresh.paymentState !== o.paymentState)) { payDraft = null; openPay(fresh); message(o.id + ': the balance changed to ' + peso(dueOf(fresh)) + ' while you were working.', true); }
+    if (fresh && (dueOf(fresh) !== dueOf(o) || fresh.paymentState !== o.paymentState)) { payDraft = null; openPay(fresh, true); message(o.id + ': the balance changed to ' + peso(dueOf(fresh)) + ' while you were working.', true); }
   } finally { busy = false; }
 }
 
-/* ---------- print a payment receipt ---------- */
+/* ---------- print a payment invoice ---------- */
 function printPaymentReceipt(r) {
-  if (!r) { say('That receipt is no longer on the screen. Print it from the order details.', true); return; }
+  if (!r) { say('That invoice is no longer on the screen. Print it from the order details.', true); return; }
   const o = r.order || {};
-  const html = `<!doctype html><html><head><title>${esc(r.receiptNo || 'receipt')}</title><style>body{font:13px Arial,sans-serif;margin:18px;color:#000}h1{font-size:18px;margin:0 0 4px}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border-bottom:1px solid #999;padding:5px 3px;text-align:left}.sig{margin-top:38px;border-top:1px solid #000;width:260px;padding-top:4px}</style></head><body>
-    <h1>Triple E Metal Products \u2014 official receipt</h1>
+  const html = `<!doctype html><html><head><title>Invoice ${esc(r.receiptNo || '')}</title><style>body{font:13px Arial,sans-serif;margin:18px;color:#000}h1{font-size:18px;margin:0 0 4px}table{width:100%;border-collapse:collapse;margin:10px 0}td,th{border-bottom:1px solid #999;padding:5px 3px;text-align:left}.sig{margin-top:38px;border-top:1px solid #000;width:260px;padding-top:4px}</style></head><body>
+    <h1>Triple E Metal Products \u2014 sales invoice</h1>
     <div><b>${esc(r.receiptNo || '')}</b> \u00B7 ${esc(when(Date.now()))}</div>
     <div>Order: ${esc(o.id || '')} \u00B7 Customer: ${esc(o.customer || '')}</div>
     <table><tbody>
@@ -454,9 +466,9 @@ function printPaymentReceipt(r) {
       <tr><td>Total now paid</td><td style="text-align:right">${peso(r.paidAmount)}</td></tr>
       <tr><td><b>Balance still outstanding</b></td><td style="text-align:right"><b>${peso(r.balance)}</b></td></tr>
     </tbody></table>
-    <div>This receipt is for one payment on the order. It is not proof that the order is fully paid \u2014 check the balance above.</div>
+    <div>This invoice is for one payment on the order. It is not proof that the order is fully paid \u2014 check the balance above.</div>
     <div class="sig">Cashier signature</div></body></html>`;
-  printFrame(html, r.receiptNo || 'the receipt');
+  printFrame(html, r.receiptNo || 'the invoice');
 }
 
 /* ---------- action dialog ---------- */
@@ -465,6 +477,7 @@ function setErr(name, msg) {
   const box = document.querySelector(`#coAction [data-err="${name}"]`);
   if (!box) { const g = $('coActErr'); if (g) g.textContent = msg || ''; return; }
   box.textContent = msg || ''; box.closest('.co-fld').classList.toggle('bad', !!msg);
+  const input = $('co_' + name); if (input) { if (!box.id) box.id = 'coError_' + name; input.setAttribute('aria-describedby', box.id); input.setAttribute('aria-invalid', String(!!msg)); }
 }
 function clearErrs() { document.querySelectorAll('#coAction [data-err]').forEach((x) => { x.textContent = ''; x.closest('.co-fld').classList.remove('bad'); }); $('coActErr').textContent = ''; }
 
@@ -501,6 +514,7 @@ function actionBody(o, t) {
 }
 let actReq = '';
 async function openAction(o) {
+  if (busy || failReq) return;
   chosen = o; target = o.next; shiftOpen = null; actReq = '';
   const t = target;
   $('coAction').innerHTML = `<form class="co-sheet" id="coForm" novalidate>
@@ -509,7 +523,11 @@ async function openAction(o) {
     <div class="co-actions"><button type="button" class="btn-secondary" id="coCancel">Cancel</button><button type="submit" class="btn-primary" id="coSubmit">${esc(ACTION[t] || 'Confirm')}</button></div></form>`;
   openModal($('coAction'));
   if (FINAL.includes(t) && o.cashOnHandover) {          // cash must land in an open Cash Shift
-    try { shiftOpen = !!(await request('/pos/cash-shifts/current')); } catch { shiftOpen = null; }
+    const sheet = $('coForm');
+    let open = null;
+    try { open = !!(await request('/pos/cash-shifts/current')); } catch { /* unknown until retried */ }
+    if (!sheet.isConnected) return;
+    shiftOpen = open;
     if (shiftOpen === false && $('coShiftWarn')) {
       $('coShiftWarn').innerHTML = '<div class="co-flag bad" style="margin-top:10px">You have no open Cash Shift. Open one first so this cash is counted in your drawer. <button type="button" class="btn-secondary" id="coGoShift" style="margin-top:6px">Open Cash Shift</button></div>';
       $('coSubmit').disabled = true;
@@ -555,7 +573,7 @@ function collect() {                    // reads + validates the form; returns t
   return ok ? body : null;
 }
 async function submit(e) {
-  e.preventDefault(); if (busy || !chosen) return;
+  e.preventDefault(); if (busy || failReq || !chosen) return;
   const body = collect(); if (!body) { const first = document.querySelector('#coAction .co-fld.bad input,#coAction .co-fld.bad select'); if (first) first.focus(); return; }
   const o = chosen, t = target, btn = $('coSubmit'); busy = true; btn.disabled = true; btn.textContent = 'Saving\u2026';
   if (body.cashReceived != null) body.requestId = actReq || (actReq = 'pos-' + String(o.id).replace(/[^A-Za-z0-9]/g, '') + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8));
@@ -563,27 +581,27 @@ async function submit(e) {
     const res = await request('/orders/' + encodeURIComponent(o.id) + (t === 'Paid' ? '/confirm' : '/status'), { method: 'POST', body: JSON.stringify(body) });
     await load(true);
     if (res && res.receiptNo) {                                   // cash handover: the ledger row this move just created
-      $('coAction').innerHTML = `<div class="co-sheet"><h2 id="coActionTitle">${esc(t === 'Delivered' ? 'Delivered' : 'Released')} \u2014 payment recorded</h2><div class="co-sub">${esc(o.id)} \u00B7 receipt ${esc(res.receiptNo)} \u00B7 in your Cash Shift</div>
+      $('coAction').innerHTML = `<div class="co-sheet"><h2 id="coActionTitle">${esc(t === 'Delivered' ? 'Delivered' : 'Released')} \u2014 payment recorded</h2><div class="co-sub">${esc(o.id)} \u00B7 invoice ${esc(res.receiptNo)} \u00B7 in your Cash Shift</div>
         <div class="co-box"><div class="faint">Cash received ${peso(res.tendered)} \u00B7 applied to the order ${peso(res.amount)}</div>
           <div class="co-change" style="font-size:16px">Give change: <b style="font-size:26px">${peso(res.change)}</b></div>
           <div class="faint">Order total ${peso(o.total)} \u00B7 now in ${peso(res.paidAmount)} \u00B7 outstanding ${peso(res.balance)}</div></div>
-        <div class="co-actions"><button type="button" class="btn-secondary" data-payreceipt="${esc(res.paymentId)}">Print receipt</button><button type="button" class="btn-primary" id="coDone">Done</button></div></div>`;
+        <div class="co-actions"><button type="button" class="btn-secondary" data-payreceipt="${esc(res.paymentId)}">Print invoice</button><button type="button" class="btn-primary" id="coDone">Done</button></div></div>`;
       payReceipt = Object.assign({ order: o }, res);
       render(); return;
     }
-    closeAction(); message('', false); say(o.id + ': ' + (t === 'Paid' ? 'order confirmed' : t === 'Picked Up' ? 'released to the customer' : t === 'Delivered' ? 'marked delivered' : 'marked ' + t.toLowerCase()) + '.');
+    closeAction(true); message('', false); say(o.id + ': ' + (t === 'Paid' ? 'order confirmed' : t === 'Picked Up' ? 'released to the customer' : t === 'Delivered' ? 'marked delivered' : 'marked ' + t.toLowerCase()) + '.');
   } catch (err) {
     const names = Object.keys(err.fields || {});
     if (names.length) names.forEach((n) => setErr(n, err.fields[n])); else $('coActErr').textContent = err.message;
     if (err.fields && err.fields.status === undefined && !names.length) { /* plain error already shown */ }
     await load(true);                                                      // someone else may have changed the order: show the truth
     const fresh = byId(o.id);
-    if (fresh && fresh.status !== o.status) { closeAction(); message(o.id + ' changed in the meantime: ' + err.message, true); }
+    if (fresh && fresh.status !== o.status) { closeAction(true); message(o.id + ' changed in the meantime: ' + err.message, true); }
     else if (btn.isConnected) { btn.disabled = shiftOpen === false; btn.textContent = ACTION[t] || 'Confirm'; }
   } finally { busy = false; if ($('coSubmit') && !$('coSubmit').disabled) $('coSubmit').textContent = ACTION[target] || 'Confirm'; }
 }
 async function checkPayment(id, btn) {
-  if (busy) return; busy = true; const old = btn.textContent; btn.disabled = true; btn.textContent = 'Checking\u2026';
+  if (busy || failReq) return; busy = true; const old = btn.textContent; btn.disabled = true; btn.textContent = 'Checking\u2026';
   try {
     const r = await request('/orders/' + encodeURIComponent(id) + '/check-payment', { method: 'POST', body: '{}' });
     await load(true);
@@ -595,7 +613,7 @@ async function checkPayment(id, btn) {
 /* ---------- events ---------- */
 $('coTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) { tab = b.dataset.tab; render(); } });
 document.addEventListener('click', (e) => {
-  const t = e.target; if (!t.closest) return;
+  const t = e.target; if (!t.closest || ((busy || failReq) && t.closest('#coAction'))) return;
   const detail = t.closest('[data-detail]'), act = t.closest('[data-act]'), chk = t.closest('[data-check]'), slip = t.closest('[data-slip]'), cash = t.closest('[data-cash]'), pay = t.closest('[data-pay]'), amt = t.closest('[data-amt]');
   if (detail && $('coList').contains(detail)) { const o = byId(detail.dataset.detail); if (o) openDetail(o); }
   else if (act && (act.closest('#coList') || act.closest('#coDetail'))) { const o = byId(act.dataset.act); if (o) { closeModal($('coDetail')); openAction(o); } }
@@ -617,18 +635,43 @@ $('coAction').addEventListener('submit', (e) => { if (e.target.id === 'coForm') 
 $('coAction').addEventListener('input', (e) => {
   if (e.target.id === 'co_cashReceived') updateChange();
   if (e.target.id === 'co_amount' || e.target.id === 'co_tendered') updatePayChange();
-  const f = e.target.closest && e.target.closest('.co-fld'); if (f && f.dataset.fld) setErr(f.dataset.fld, '');
+  liveActionField(e.target);
 });
+function liveActionField(input) {
+  const field = input?.closest?.('.co-fld')?.dataset.fld; if (!field) return;
+  const v = input.value.trim(), n = parseMoney(v); let message = '';
+  if (!input.disabled && input.getClientRects().length) {
+    if (field === 'amount') message = n === null || n <= 0 ? 'Enter an amount greater than zero, with at most 2 decimals.' : payFor && n > dueOf(payFor) + 0.001 ? 'Only ' + peso(dueOf(payFor)) + ' is outstanding on this order.' : '';
+    if (field === 'tendered' || field === 'cashReceived') {
+      const due = field === 'tendered' ? parseMoney($('co_amount')?.value || '') : chosen ? dueOf(chosen) : null;
+      message = n === null ? 'Enter the cash handed over.' : due !== null && n + 1e-9 < due ? 'That is less than the amount due (' + peso(due) + ').' : due !== null && n > due + 100000 ? 'That is far above the amount. Check the cash.' : '';
+    }
+    if (field === 'reference') message = REF_RE.test(v) ? '' : 'Enter the reference from the app, receipt or statement (4–40 characters).';
+    if (field === 'receivedBy') message = NAME_RE.test(v) ? '' : 'Enter the full name (2–80 letters, no numbers).';
+    if (field === 'relationship') message = v.length >= 3 && v.length <= 60 ? '' : 'Enter how this person is related or authorised (3–60 characters).';
+    if (field === 'pickupIdType') message = ID_TYPES.includes(v) ? '' : 'Choose the ID that was presented.';
+    if (field === 'pickupIdLast4') message = /^[A-Za-z0-9]{4}$/.test(v) ? '' : 'Enter exactly 4 letters or numbers.';
+    if (field === 'failReason') message = v ? '' : 'Choose what happened.';
+    if (field === 'failNote') message = $('co_failReason')?.value === 'other' && v.length < 5 ? 'Describe what happened (at least 5 characters).' : '';
+    if (field === 'note' && v.length > 200) message = 'The note must be 200 characters or fewer.';
+  }
+  setErr(field, message);
+  if (field === 'amount' && $('co_tendered')?.value) liveActionField($('co_tendered'));
+}
+$('coAction').addEventListener('focusout', e => liveActionField(e.target));
 $('coAction').addEventListener('change', (e) => {
-  if (e.target.id === 'co_method') { syncPayMethod(); return; }
+  liveActionField(e.target);
+  if (e.target.id === 'co_failReason' && $('co_failNote')) liveActionField($('co_failNote'));
+  if (e.target.id === 'co_method') { syncPayMethod(); ['co_reference','co_tendered'].forEach(id => liveActionField($(id))); return; }
   if (e.target.id !== 'co_rep' || !chosen) return;                         // "someone else is collecting": the name must be typed fresh
   $('coRepBox').hidden = !e.target.checked;
   const n = $('co_receivedBy'); n.value = e.target.checked ? '' : (chosen.fulfillment === 'Delivery' ? (chosen.recipient || chosen.customer) : chosen.customer);
   if (e.target.checked) n.focus();
+  liveActionField($('co_relationship')); liveActionField(n);
 });
 $('coSearch').addEventListener('input', render); $('coFilter').addEventListener('change', render); $('coRefresh').addEventListener('click', () => load(false));
 
 window.cashierOrdersLoad = () => load(false);
 load(true);                                                                // fills the "To confirm" badge in the menu right away
-setInterval(() => { if (!document.hidden && $('coDetail').hidden && $('coAction').hidden && !busy) load(true); }, 45000);
+setInterval(() => { if (!document.hidden && $('coDetail').hidden && $('coAction').hidden && !busy && !failReq) load(true); }, 45000);
 })();

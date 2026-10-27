@@ -11,7 +11,7 @@
   const SOURCES = [['all', 'Online + walk-in'], ['shop', 'Online only'], ['pos', 'Walk-in only']];
   const CLARIFY = [['dimensions', 'Size / dimensions'], ['thickness', 'Thickness'], ['material', 'Material / grade'], ['finish', 'Surface finish'], ['quantity', 'Quantity / unit'], ['other', 'Other detail']];
 
-  const S = { rows: [], total: 0, pageCount: 1, page: 1, pageSize: 20, counts: {}, sort: 'created', dir: 'desc', filter: 'open', source: 'all', q: '', busy: false, error: '', detail: null, openPrice: false, openTerms: false, view: 'requests' };
+  const S = { rows: [], total: 0, pageCount: 1, page: 1, pageSize: 10, counts: {}, sort: 'created', dir: 'desc', filter: 'open', source: 'all', q: '', busy: false, error: '', detail: null, openPrice: false, openTerms: false, view: 'requests' };
   const desk = (p) => '/api/pos/quote-desk' + p;
   const el = (id) => document.getElementById(id);
   const day = (v) => (!v ? '—' : new Date(v).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }));
@@ -22,6 +22,27 @@
   const qtyParts = (text) => { const m = /^([\d,.]+)\s+(.+)$/.exec(String(text || '').trim()); if (!m) return null; const n = Number(m[1].replace(/,/g, '')); return Number.isFinite(n) && n > 0 ? { qty: n, unit: m[2] } : null; };
   const requestId = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '').slice(0, 32) : 'qd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 14));
   const fieldErr = (e) => (e && e.fields ? Object.values(e.fields)[0] : e && e.message) || 'Something went wrong. Try again.';
+  function liveDeskField(input) {
+    if (!window.FormAssist || !input.matches?.('input, select, textarea')) return;
+    const value = input.value.trim(), n = Number(value.replace(/,/g, '')), form = input.form;
+    let message = null;
+    if (input.name === 'unit' && form?.id === 'qdPriceForm') {
+      message = !/^\d+(?:\.\d{1,2})?$/.test(value) || n <= 0 ? 'Enter the unit price in pesos, up to two decimals.' : '';
+      const q = qtyParts(S.detail?.quantity), margin = rulesNow()?.minMarginPct || 20;
+      const floor = S.draft?.costTotal > 0 ? Math.round(S.draft.costTotal / (1 - margin / 100) * 100) / 100 : 0;
+      if (!message && q && Math.round(n * q.qty * 100) / 100 < floor - 0.004) message = 'Price cannot be below the ' + margin + '% margin floor (' + peso(floor) + ' total).';
+    }
+    if (input.matches('[data-rqty]')) message = /^\d+(?:\.\d+)?$/.test(value.replace(/,/g, '')) && n > 0 ? '' : 'Enter a quantity per piece greater than zero.';
+    if (form?.id === 'qdCollectForm' && input.name === 'amount') message = !/^\d+(?:\.\d{1,2})?$/.test(value) || n <= 0 ? 'Enter an amount greater than zero, up to two decimals.' : n > Number(S.detail?.balance) + 0.004 ? 'The balance is only ' + money(S.detail.balance) + '.' : '';
+    if (form?.id === 'qdCollectForm' && input.name === 'reference') message = form.elements.method.value !== 'Cash' && value.length < 4 ? 'Enter the reference (at least 4 characters).' : '';
+    if (input.matches('[data-jsku]')) {
+      const m = S.job?.materials?.find(x => x.sku === input.dataset.jsku);
+      message = value && (!/^\d{1,8}(?:\.\d{1,2})?$/.test(value.replace(/,/g, '')) || n < 0) ? 'Use a quantity of 0 or more, with at most 2 decimals.' : m && n > Number(m.onHand) ? 'Only ' + m.onHand + ' ' + m.unit + ' in stock.' : '';
+    }
+    if (input.matches('[data-recv]')) message = value.length < 2 || value.length > 80 ? 'Enter the recipient’s name (2–80 characters).' : '';
+    if (message !== null) FormAssist.validation.show(input, message);
+    return message;
+  }
   async function call(path, opts) {
     try { return await api(path, opts); }
     catch (e) {                                          // api() throws a plain Error; keep the server's per-field message
@@ -47,10 +68,10 @@
     if (S.q.trim()) p.push('q=' + encodeURIComponent(S.q.trim()));
     return desk('?' + p.join('&'));
   }
-  async function loadDesk() {
+  async function loadDesk(silent) {
     if (S.busy) return;
     S.busy = true; S.error = '';
-    renderList();
+    if (silent !== true) renderList();
     try {
       const r = await call(listUrl());
       S.rows = r.rows || []; S.total = r.total || 0; S.pageCount = r.pageCount || 1; S.page = r.page || 1; S.pageSize = r.pageSize || 20;
@@ -60,14 +81,22 @@
       el('navQuoteCount').title = ready + ' quote(s) ready to tell the customer';
       el('pqRequestCount').textContent = (S.counts.open || 0) + (S.counts.approval || 0);
     } catch (e) {
+      if (silent === true) { S.busy = false; return; }   // a failed background refresh keeps what is on screen
       S.rows = []; S.error = e instanceof TypeError ? 'No connection to the server. Check your network and try again.' : fieldErr(e);
     }
     S.busy = false;
     renderList(); renderPager();
   }
+  // New requests show up by themselves: refresh the list (newest first) while this page is on screen and nothing is being edited.
+  setInterval(function () {
+    var body = el('qdBody');
+    if (document.hidden || S.busy || S.detail || !body || !body.offsetParent || S.page !== 1 || S.sort !== 'created' || S.dir !== 'desc') return;
+    var typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if (!typing) loadDesk(true);
+  }, 30000);
   function tableHeads() {
     const cols = [['ref', 'Reference', 'reference'], ['customer', 'Customer', 'customer'], ['product', 'Product', 'product'],
-      ['qty', 'Quantity', null], ['needed', 'Needed by', 'needed'], ['amount', 'Quoted amount', 'amount'],
+      ['qty', 'Quantity', null], ['needed', 'Needed by', 'needed'],
       ['requested', 'Requested', 'created'], ['status', 'Status', 'status'], ['source', 'Source', null], ['act', '', null]];
     return '<tr>' + cols.map(([k, label, sort]) => {
       const on = sort && S.sort === sort;
@@ -76,26 +105,22 @@
     }).join('') + '</tr>';
   }
   function rowCells(r) {
-    const amt = money(r.amount);
     return '<td><span class="qd-ref">' + esc(r.id) + '</span></td>' +
       '<td><div class="qd-who"><b>' + esc(r.customer || '—') + '</b><small>' + esc(r.phone || '') + (r.company ? ' · ' + esc(r.company) : '') + '</small></div></td>' +
       '<td><div class="qd-what"><b>' + esc(r.product || 'Custom item') + '</b><small>' + (r.sku ? esc(r.sku) + ' · catalog' : 'custom specification') + '</small></div></td>' +
       '<td class="qd-num">' + esc(r.quantity || '—') + '</td>' +
       '<td>' + neededText(r) + '</td>' +
-      '<td class="qd-num">' + (amt || (r.proposedAmount != null ? 'proposed ' + money(r.proposedAmount) : '—')) + '</td>' +
       '<td>' + day(r.requestDate) + '</td>' +
       '<td><span class="qd-pill ' + pillClass(r) + '">' + esc(r.statusLabel || r.status) + '</span>' + (r.financeNote && r.status === 'new' ? '<small class="qd-back">Sent back by Finance</small>' : '') + '</td>' +
       '<td><span class="qd-src ' + (r.source === 'pos' ? 'pos' : '') + '">' + (r.source === 'pos' ? 'Walk-in' : 'Online') + '</span></td>' +
       '<td class="is-right"><button type="button" class="qd-open" data-open="' + esc(r.id) + '">Open</button></td>';
   }
   function cardRow(r) {
-    const amt = money(r.amount);
     return '<div class="qd-qcard" data-open="' + esc(r.id) + '" tabindex="0" role="button" aria-label="Open quotation ' + esc(r.id) + '">' +
       '<div class="qd-line"><span class="qd-ref">' + esc(r.id) + '</span><span class="qd-pill ' + pillClass(r) + '">' + esc(r.statusLabel || r.status) + '</span></div>' +
       '<div class="qd-who"><b>' + esc(r.customer || '—') + '</b><small>' + esc(r.phone || '') + '</small></div>' +
       '<div class="qd-what"><b>' + esc(r.product || 'Custom item') + '</b><small>' + esc(r.quantity || '') + ' · needed ' + neededText(r) + '</small></div>' +
-      '<div class="qd-line"><span class="qd-mut">' + (r.source === 'pos' ? 'Walk-in' : 'Online') + ' · ' + day(r.requestDate) + '</span>' +
-      '<span class="qd-num">' + (amt || (r.proposedAmount != null ? 'proposed ' + money(r.proposedAmount) : '—')) + '</span></div></div>';
+      '<div class="qd-line"><span class="qd-mut">' + (r.source === 'pos' ? 'Walk-in' : 'Online') + ' · ' + day(r.requestDate) + '</span></div></div>';
   }
   function renderList() {
     const bar = el('qdChips');
@@ -180,6 +205,7 @@
         row('Where they pay', esc(payWhere)) ])),
 
       sec('Price', kv([
+        d.costStale ? row('Cost changed', '<span class="qd-pill warn">Check the price</span> ' + esc(d.costStale)) : '',
         row('Quoted amount', money(d.amount) || '—'),
         row('Paid so far', money(d.paidAmount) || '₱0.00'),
         row('Balance', d.balance != null ? money(d.balance) : '—'),
@@ -196,8 +222,10 @@
         row('Customer answer', d.responseNote ? noteBox(d.responseNote) : '') ])),
 
       sec('Payment terms on this quotation', termsSectionHtml(d)),
+      collectHtml(d),
       sec('History', timelineHtml(d)),
       d.orderNo ? sec('Converted', '<div class="qd-callout ok">This quotation became order <b>' + esc(d.orderNo) + '</b>. A quotation is not a reservation: stock leaves inventory only at the sale or order-confirm step.</div>') : '',
+      productionHtml(d),
       sec('Pricing', priceFormHtml(d))
     ];
     el('qdDrawerBody').innerHTML = parts.filter(Boolean).join('');
@@ -209,8 +237,11 @@
       const total = unit && unit.value && q ? Number(unit.value) * q.qty : (d.proposedAmount != null ? d.proposedAmount : d.amount);
       loadTermOptions(form, total, (d.terms || {}).key);
       if (form && unit && unit.value && q) { const t = form.querySelector('[data-total]'); if (t) t.textContent = peso(total); syncRoute(form, total); }
+      if (form && form.elements.leadTime && form.elements.leadTime.value) updateReady(form);
+      loadSystemPrice(d, form);
     }
     if (S.openTerms) loadTermOptions(el('qdTermsForm'), d.amount != null ? d.amount : d.proposedAmount, (d.terms || {}).key);
+    if (el('qdDrawerBody').querySelector('[data-job]')) loadJob(d);
   }
   function timelineHtml(d) {
     const items = (d.clarifications || []).map((c) => '<div class="qd-tl-item ' + (c.status === 'answered' ? 'done' : 'wait') + '">' +
@@ -223,6 +254,116 @@
     (d.notes || []).slice(0, 8).forEach((n) => items.push('<div class="qd-tl-item"><b>' + esc(n.action) + '</b><time>' + day(n.at) + ' · ' + esc(n.by || '') + '</time><p>' + esc(n.detail) + '</p></div>'));
     return items.length ? '<div class="qd-tl">' + items.join('') + '</div>' : '<p class="qd-mut dim" style="margin:0">Nothing has happened on this request yet.</p>';
   }
+  /* ---- Task 4: the quick recipe and the system price. Every sum is done by the server (quote-automation.js):
+     cost per piece = materials x their current cost, suggested price = cost x (1 + markup), margin, stock needed vs on hand.
+     The suggested price per piece pre-fills the unit price and follows every change until the cashier types their own. ---- */
+  const num4 = (n) => (+Number(n).toFixed(4)).toLocaleString('en-PH', { maximumFractionDigits: 4 });
+  let draftSeq = 0, draftTimer = null;
+  const linesFrom = (e) => (Array.isArray(e && e.lines) && !e.catalog ? e.lines.map((l) => ({ sku: l.sku, qtyPerPiece: l.recipeQty, unit: l.recipeUnit })) : null);
+  async function loadSystemPrice(d, form) {
+    const box = form && form.querySelector('[data-sys]'); if (!box) return;
+    let e;
+    try { e = await call('/api/pricing/quote/' + encodeURIComponent(d.id)); } catch (err) { box.innerHTML = '<p class="q-hint">The system price could not be worked out: ' + esc(fieldErr(err)) + '</p>'; return; }
+    if (!box.isConnected) return;
+    S.rules = e.approvalRules || (window.PQ_OPTIONS || {}).approvalRules || null;
+    S.recipeMode = 'saved'; S.lines = linesFrom(e); S.recipeEditedBy = e.editedBy || null; S.recipeAuto = e.auto !== false;
+    if (!e.catalog && !e.missing && !S.mats) { try { S.mats = await call('/api/pricing/materials'); } catch (_) { S.mats = []; } }
+    if (!box.isConnected) return;
+    box.innerHTML = '<div data-sum></div>' + (e.catalog || e.missing ? '' : '<div data-recipe></div>');
+    renderRecipe(form); showDraft(form, e);
+  }
+  function showDraft(form, e) {
+    S.draft = e;
+    const sum = form.querySelector('[data-sum]'); if (!sum) return;
+    sum.innerHTML = draftSummaryHtml(e);
+    fillUnit(form);
+    const unit = form.querySelector('[name=unit]'), q = qtyParts(S.detail && S.detail.quantity);
+    syncRoute(form, unit && q && /^\d+(\.\d{1,2})?$/.test(unit.value.trim()) ? Number(unit.value) * q.qty : 0);
+  }
+  function draftSummaryHtml(e) {
+    if (e.missing) return '<p class="q-hint">No system price yet: the request does not give the ' + esc(e.missing.join(', ')) + '.</p>';
+    const rows = (e.lines || []).map((l) => '<tr><td>' + esc(l.name || l.sku) + (l.estimate ? ' <span class="dim">estimate</span>' : '') + '</td>' +
+      '<td class="qd-num">' + (l.qtyPerPiece != null ? num4(l.qtyPerPiece) + ' ' + esc(l.unit) : '\u2014') + '</td>' +
+      '<td class="qd-num">' + (l.needed != null ? num4(l.needed) + ' ' + esc(l.unit) : '\u2014') + '</td>' +
+      '<td class="qd-num">' + num4(l.onHand || 0) + '</td>' +
+      '<td>' + (l.short > 0 ? '<span class="qd-pill bad">short by ' + num4(l.short) + ' ' + esc(l.unit) + '</span>' : l.needed != null ? '<span class="qd-pill ok">in stock</span>' : '\u2014') + '</td>' +
+      '<td class="qd-num">' + (l.costPerPiece != null ? peso(l.costPerPiece) : '<span class="qd-pill bad">no cost</span>') + '</td></tr>').join('');
+    const table = rows ? '<div class="qd-sys-tablewrap"><table class="qd-sys-table"><thead><tr><th>Material</th><th class="qd-num">Per piece</th><th class="qd-num">For ' + esc(e.quantity) + '</th><th class="qd-num">On hand</th><th>Stock</th><th class="qd-num">Cost / pc</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '';
+    if (!e.ok) return '<div class="qd-sys-head"><span>System price</span><strong>Cannot price yet</strong></div>' +
+      '<div class="qd-callout bad">' + esc((e.problems || []).map((p) => p.message).join(' ')) + '</div>' + table;
+    return '<div class="qd-sys-head"><span>Suggested price <span class="dim">(cost \u00D7 ' + (1 + e.markupPct / 100).toFixed(2) + ')</span></span><strong>' + peso(e.total) + '</strong></div>' + table +
+      kv([['Cost per piece', peso(e.costPerPiece)], ['Total cost', peso(e.costTotal)], ['Suggested per piece', '<b>' + peso(e.pricePerPiece) + '</b>'], ['Margin', esc(e.marginPct) + '%'],
+        ['Stock check', (e.shortfalls || []).length ? '<span class="qd-pill bad">short</span> ' + esc(e.shortfalls.map((s) => s.name + ' short by ' + num4(s.short) + ' ' + s.unit).join('; ')) : '<span class="qd-pill ok">covers the quantity</span>']]) +
+      ((e.notes || []).length ? '<p class="q-hint">' + esc(e.notes.join(' ')) + '</p>' : '') +
+      (e.catalog ? '' : '<p class="q-hint">Materials only, at today\u2019s costs. The weight per piece (' + esc(e.weightKg) + ' kg) is an estimate; correct the lines below if you know better.</p>') +
+      '<button type="button" class="btn-secondary btn-sm" data-use-sys>Use the suggested price</button>';
+  }
+  function matOptions(sku) {
+    const m = S.mats || [];
+    return '<option value="">Choose a material\u2026</option>' + ['Raw Materials', 'Finishing Supplies'].map((dep) => '<optgroup label="' + dep + '">' +
+      m.filter((x) => x.department === dep).map((x) => '<option value="' + esc(x.sku) + '"' + (x.sku === sku ? ' selected' : '') + '>' + esc(x.name) + ' (' + esc(x.sku) + ')' + (x.unitCost == null ? ' \u00B7 no cost' : '') + '</option>').join('') + '</optgroup>').join('');
+  }
+  function renderRecipe(form) {
+    const box = form && form.querySelector('[data-recipe]'); if (!box) return;
+    const lines = S.lines || [], editable = ['new', 'pending_approval'].includes((S.detail || {}).status);
+    const units = (sku) => ((S.mats || []).find((x) => x.sku === sku) || {}).units || [];
+    box.innerHTML = '<div class="qd-recipe"><div class="qd-recipe-head"><b>Quick recipe, per piece</b><span class="dim">' +
+      (S.recipeMode === 'edited' ? 'changed by you \u2014 saved when you confirm the price' : S.recipeMode === 'auto' ? 'back to the automatic guess \u2014 saved when you confirm' :
+        S.recipeAuto ? 'automatic first guess (estimate)' : 'adjusted on this quote' + (S.recipeEditedBy ? ' by ' + esc(S.recipeEditedBy) : '')) + '</span></div>' +
+      lines.map((l, i) => '<div class="qd-rline" data-i="' + i + '"><select data-rsku aria-label="Material"' + (editable ? '' : ' disabled') + '>' + matOptions(l.sku) + '</select>' +
+        '<input data-rqty inputmode="decimal" aria-label="Quantity per piece" value="' + esc(l.qtyPerPiece == null ? '' : l.qtyPerPiece) + '"' + (editable ? '' : ' disabled') + '>' +
+        '<select data-runit aria-label="Unit"' + (editable ? '' : ' disabled') + '>' + (units(l.sku).length ? units(l.sku) : [l.unit || '']).map((u) => '<option' + (String(u).toLowerCase() === String(l.unit || '').toLowerCase() ? ' selected' : '') + '>' + esc(u) + '</option>').join('') + '</select>' +
+        (editable ? '<button type="button" class="btn-secondary btn-sm" data-rdel aria-label="Remove this material">\u00D7</button>' : '') + '</div>').join('') +
+      (editable ? '<div class="qd-recipe-actions"><button type="button" class="btn-secondary btn-sm" data-radd>+ Add material</button>' +
+        (S.recipeMode === 'edited' || !S.recipeAuto ? '<button type="button" class="btn-secondary btn-sm" data-rauto>Back to the automatic guess</button>' : '') + '</div>' : '') + '</div>';
+  }
+  function readRecipe(form) {
+    S.lines = Array.from(form.querySelectorAll('.qd-rline')).map((r) => ({ sku: r.querySelector('[data-rsku]').value, qtyPerPiece: r.querySelector('[data-rqty]').value.replace(/,/g, '').trim(), unit: r.querySelector('[data-runit]').value }));
+  }
+  const validLines = () => (S.lines || []).filter((l) => l.sku && /^\d+(\.\d+)?$/.test(String(l.qtyPerPiece)) && Number(l.qtyPerPiece) > 0);
+  function recalcDraft(form) {
+    clearTimeout(draftTimer);
+    const sum = form.querySelector('[data-sum]'); if (sum) sum.style.opacity = '.55';
+    draftTimer = setTimeout(async () => {
+      const d = S.detail; if (!d) return;
+      const sp = d.specs || {}, my = ++draftSeq;
+      try {
+        const e = await call('/api/pricing/quote-estimate', { method: 'POST', body: JSON.stringify({ itemType: sp.itemType, specs: sp, quantity: d.quantity, productSku: d.sku || undefined,
+          lines: S.recipeMode === 'auto' && !S.lines ? undefined : validLines() }) });
+        if (my !== draftSeq || !form.isConnected) return;
+        if (!S.lines) { S.lines = linesFrom(e) || []; renderRecipe(form); }
+        showDraft(form, e);
+      } catch (err) { if (my === draftSeq && sum && sum.isConnected) sum.innerHTML = '<div class="qd-callout bad">' + esc(fieldErr(err)) + '</div>'; }
+      if (sum && sum.isConnected) sum.style.opacity = '';
+    }, 300);
+  }
+  // the suggested price stays in the unit price box until the cashier types their own (data-auto="1" while untouched)
+  function fillUnit(form) {
+    const u = form.querySelector('[name=unit]'); if (!u || u.dataset.auto !== '1') return;
+    u.value = S.draft && S.draft.ok ? Number(S.draft.pricePerPiece).toFixed(2) : '';
+    S.fillingUnit = true; u.dispatchEvent(new Event('input', { bubbles: true })); S.fillingUnit = false;
+  }
+  function matchLeadTimeForNeededBy(neededBy) {
+    if (!neededBy) return '';
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+    if (neededBy < today) return '';
+    let cur = new Date(today + 'T00:00:00Z'), target = new Date(neededBy + 'T00:00:00Z');
+    let workdays = 0;
+    while (cur < target) {
+      cur = new Date(cur.getTime() + 86400000);
+      const w = cur.getUTCDay();
+      if (w !== 0 && w !== 6) workdays++;
+    }
+    const o = window.PQ_OPTIONS || {};
+    const map = o.leadWorkdays || { '1 to 3 working days': 3, '1 week': 5, '2 weeks': 10, '3 weeks': 15, '1 month': 22, '2 months': 44, '3 months': 66, '4 to 6 months': 132 };
+    const entries = Object.entries(map).sort((a, b) => a[1] - b[1]);
+    let best = '';
+    for (const [k, days] of entries) {
+      if (days <= workdays) best = k;
+    }
+    return best || (entries[0] ? entries[0][0] : '');
+  }
+
   function priceFormHtml(d) {
     const can = ['new', 'pending_approval', 'awaiting_details'].includes(d.status);
     if (!can) return d.status === 'awaiting_details' ? '<div class="qd-callout warn">Waiting for the customer to send the missing details. Pricing opens as soon as they reply.</div>' : '';
@@ -232,12 +373,15 @@
     const o = window.PQ_OPTIONS || {}, q = qtyParts(d.quantity) || {};
     const back = d.financeNote && d.status === 'new' ? '<div class="qd-callout warn">Finance sent your price back: <b>' + esc(d.financeNote) + '</b>. Change the price and send it again.</div>' : '';
     const unit = d.proposedAmount != null && q.qty ? (d.proposedAmount / q.qty).toFixed(2) : '';
+    const autoLead = d.leadTime || (d.neededBy ? matchLeadTimeForNeededBy(d.neededBy) : '');
     return back + '<form class="qd-price" id="qdPriceForm" novalidate>' +
-      '<label>Unit price (PHP)<input name="unit" type="number" step="0.01" min="0" placeholder="0.00" value="' + esc(unit) + '" required></label>' +
+      '<div class="qd-sys wide" data-sys><p class="q-hint">Working out the materials and the suggested price\u2026</p></div>' +
+      '<label>Unit price (PHP) <span class="dim" data-unit-note>' + (unit ? 'your earlier price' : 'filled in with the suggested price') + '</span><input name="unit" type="number" step="0.01" min="0" placeholder="0.00" value="' + esc(unit) + '"' + (unit ? '' : ' data-auto="1"') + ' required></label>' +
       '<label>Quantity<input value="' + esc(d.quantity || '—') + '" disabled></label>' +
       '<div class="qd-calc"><span>Calculated total for the customer' + (q.qty ? ' <span class="dim">(' + q.qty + ' × unit price)</span>' : '') + '</span><strong data-total>—</strong></div>' +
       '<div class="qd-callout wide" data-route role="status" hidden></div>' +
-      '<label>Estimated availability<select name="leadTime" required><option value="">Select…</option>' + (o.leadTimes || []).map((x) => '<option value="' + esc(x) + '">' + esc(x) + '</option>').join('') + '</select></label>' +
+      '<label>Estimated availability' + (d.neededBy ? ' <span class="dim">(Customer requested: ' + esc(day(d.neededBy)) + ')</span>' : '') +
+      '<select name="leadTime" required><option value="">Select…</option>' + (o.leadTimes || []).map((x) => '<option value="' + esc(x) + '"' + (x === autoLead ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></label>' +
       '<div class="qd-calc" data-ready hidden role="status"><span>Estimated ready date <span class="dim">(working days, if accepted today)</span></span><strong data-ready-date>—</strong></div>' +
       '<div class="qd-callout warn wide" data-ready-late hidden>That is later than the date the customer needs it' + (d.neededBy ? ' (' + esc(shortDay(d.neededBy)) + ')' : '') + '. Choose a shorter time, or say in your remarks when you can deliver.</div>' +
       '<label>Quotation validity<select name="validDays" required>' + (o.validDays || []).map((x) => '<option value="' + esc(x) + '"' + (x === 7 ? ' selected' : '') + '>' + esc(x) + ' days</option>').join('') + '</select></label>' +
@@ -245,12 +389,10 @@
       '<div class="qd-term-list" data-terms-opts><p class="q-hint">Reading the payment policy…</p></div>' +
       '<small class="q-hint">Only the terms Finance switched on for this kind of item appear. Choosing one never takes money now; it says what the customer pays now and what stays outstanding.</small></fieldset>' +
       '<label class="wide">Remarks for the customer<textarea name="note" maxlength="1500" rows="2" placeholder="What is included, any assumption you made, how to reach you"></textarea></label>' +
-      '<label class="qd-check"><input type="checkbox" name="exception"> Custom manufacturing, or a price that needs Finance approval first</label>' +
-      '<label class="wide" data-reason hidden>Why Finance must approve<textarea name="reason" maxlength="500" rows="2" placeholder="Costing, material sourcing, or the discount you are asking for"></textarea></label>' +
       '<div class="err-text wide" data-price-err role="alert"></div>' +
       '<div class="wide" style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn-secondary" data-act="cancelprice">Cancel</button>' +
-      '<button type="submit" class="btn-primary">' + (d.status === 'pending_approval' ? 'Resubmit for approval' : 'Review & send price') + '</button></div></form>' +
-      '<p class="q-hint">Approval status: ' + esc(d.status === 'pending_approval' ? 'waiting for Finance' : limitHint()) + '</p>';
+      '<button type="submit" class="btn-primary">Confirm price</button></div></form>' +
+      '<p class="q-hint">You never choose where the price goes: the system checks it against Finance\u2019s rules (' + esc(rulesHint()) + ') and either sends it to the customer or to Finance, with the reason.</p>';
   }
   /* ---- payment terms. The policy table, the allowed scope per item type and every peso figure come from the
      backend; this screen only renders what GET /api/pos/payment-terms returns for the total being quoted. ---- */
@@ -266,7 +408,9 @@
       '<span class="qd-term-name">' + esc(o.label || TERM_NAME[o.key] || o.key) + '</span>' +
       '<span class="qd-term-calc">Pay now <b>' + (money(o.dueNow) || '—') + '</b> · balance <b>' + (money(o.balance) || '₱0.00') + '</b>' +
       (o.balanceCondition ? ' <em>— ' + esc(o.balanceCondition) + '</em>' : '') + '</span>' +
-      (o.enabledBy ? '<span class="qd-term-by">switched on by ' + esc(o.enabledBy) + '</span>' : '') + '</label>';
+      // automation: the suggested term, and whether the system signs it by itself at this total (Finance's limit)
+      '<span class="qd-term-by">' + (o.recommended ? '<b>Suggested</b> · ' : '') +
+      (o.key === 'full' ? 'no approval needed' : o.autoApproved ? 'approved automatically (within Finance’s limit)' : 'goes to Finance to approve') + '</span></label>';
   }
 
   async function loadTermOptions(root, total, current) {
@@ -278,9 +422,12 @@
       const r = await call('/api/pos/payment-terms?total=' + encodeURIComponent(Number(total).toFixed(2)) +
         '&madeToOrder=' + (d && d.madeToOrder ? 'true' : 'false'));
       if (seq !== termSeq || !box.isConnected) return;
-      const opts = (r && r.options) || [];
+      const opts = ((r && r.options) || []).map((o) => Object.assign(o, { recommended: o.key === r.recommended }));
       S.termOpts = opts;
-      box.innerHTML = opts.length ? opts.map((o) => termOptionHtml(o, current)).join('')
+      // keep what the cashier already picked; otherwise the saved term; otherwise the system's suggestion
+      const picked = box.querySelector('input[name=term]:checked');
+      const pick = (picked && picked.value) || current || r.recommended || 'full';
+      box.innerHTML = opts.length ? opts.map((o) => termOptionHtml(o, pick)).join('')
         : '<p class="q-hint">Only Full Payment is allowed for this item.</p>';
       syncTermFields(root);
     } catch (e) { if (seq === termSeq && box.isConnected) box.innerHTML = '<p class="q-hint qd-bad">The payment policy could not be read: ' + esc(fieldErr(e)) + '</p>'; }
@@ -311,7 +458,7 @@
         '<div class="err-text wide" data-terms-err role="alert"></div>' +
         '<div class="wide" style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn-secondary" data-act="cancelterms">Cancel</button>' +
         '<button type="submit" class="btn-primary">Save terms</button></div></form>' +
-        '<p class="q-hint">Part-payments need Finance approval before the customer sees them.</p>';
+        '<p class="q-hint">A part-payment within Finance’s automatic limit is approved at once; anything else goes to Finance first.</p>';
     }
     return kv([
       row('Payment term', t ? '<b>' + esc(TERM_NAME[t.key] || t.key) + '</b>' + (t.percent != null ? ' — ' + t.percent + '%' : '') : '<b>Full Payment</b> — everything before release'),
@@ -337,6 +484,7 @@
     const o = (S.termOpts || []).find((x) => x.key === key) || {};
     const go = await pqConfirm({ title: 'Attach these payment terms to the quotation?',
       description: key === 'full' ? 'Full Payment: the customer settles everything before the goods are released.'
+        : o.autoApproved ? 'Within Finance’s automatic limit: approved at once, unless the customer still owes money on another order (then Finance decides).'
         : 'This is sent to Finance as a proposal. The customer is not shown partial terms until Finance signs them.',
       rows: [['Quotation', d.id], ['Customer', d.customer], ['Total quoted', money(d.amount) || '—'],
         ['Term', o.label || TERM_NAME[key] || key], ['Pay now', money(o.dueNow) || '—'], ['Balance', money(o.balance) || '₱0.00'],
@@ -346,7 +494,8 @@
     const btn = form.querySelector('button[type=submit]'); btn.disabled = true;
     try {
       const r = await call('/api/pos/quotes/' + encodeURIComponent(d.id) + '/terms', { method: 'POST', body: JSON.stringify({ termKey: key, condition: condition || undefined, note: note || undefined }) });
-      toast(r.terms && r.terms.state === 'proposed' ? 'Sent to Finance to approve the terms.' : 'Payment terms saved for this quotation.');
+      toast(r.terms && r.terms.state === 'proposed' ? 'Sent to Finance to approve the terms: ' + ((r.auto && r.auto.reasons || []).join('; ') || 'needs a signature') + '.'
+        : r.terms && r.terms.auto ? 'Payment terms approved automatically.' : 'Payment terms saved for this quotation.');
       S.openTerms = false; await openDetail(d.id); loadDesk();
     } catch (e) { err.textContent = fieldErr(e); btn.disabled = false; }
   }
@@ -355,12 +504,111 @@
     const b = [];
     if (['new', 'awaiting_details'].includes(d.status) && d.customerId) b.push('<button type="button" class="btn-secondary" data-act="clarify">Request missing details</button>');
     if (d.status === 'quoted' && d.source === 'pos' && !d.expired) b.push('<button type="button" class="btn-primary" data-act="accept">Customer accepted</button><button type="button" class="btn-secondary" data-act="decline">Customer declined</button>');
+    if (d.status === 'quoted' && !(Number(d.paidAmount) > 0)) b.push('<button type="button" class="' + (d.expired || d.costStale ? 'btn-primary' : 'btn-secondary') + '" data-act="refresh">Refresh price at today\u2019s costs</button>');
     if (d.status === 'quoted' && d.expired) b.push('<button type="button" class="btn-secondary" data-act="renew">Ask Finance for a new price</button>');
     if (d.status === 'quoted' && d.source !== 'pos') b.push('<button type="button" class="btn-secondary" data-act="renew">Ask Finance to re-issue</button>');
     if (d.status === 'accepted') b.push('<button type="button" class="btn-primary" data-act="convert">' + (d.source === 'pos' ? 'Hand over to the counter' : 'Convert into an order') + '</button>');
     if (d.converted) b.push('<span class="qd-callout ok" style="flex:1 1 220px">Already converted to ' + esc(d.orderNo || 'an order') + '.</span>');
+    if (d.amount != null || ['quoted', 'accepted', 'preparing', 'ready', 'completed'].includes(d.status)) {
+      b.push('<button type="button" class="btn-secondary" data-act="print-invoice">Print quotation invoice</button>');
+    }
     b.push('<button type="button" class="btn-secondary" data-act="close">Close</button>');
     return b.join('');
+  }
+
+  function printQuoteInvoiceCashier(d) {
+    if (!d) return;
+    const w = window.open('', '_blank');
+    if (!w) { toast('Please allow pop-ups to print the quotation invoice.', true); return; }
+    const sp = d.specs || {};
+    const specsHtml = [
+      sp.material ? 'Material: ' + esc(sp.material) : '',
+      sp.size ? 'Dimensions: ' + esc(sp.size) : '',
+      sp.thickness ? 'Thickness: ' + esc(sp.thickness) : '',
+      sp.finish ? 'Finish: ' + esc(sp.finish) : '',
+      sp.service ? 'Secondary work: ' + esc(sp.service) : ''
+    ].filter(Boolean).join(' | ');
+    const when = day(d.requestDate || d.createdAt);
+    const ready = d.estimatedReady ? day(d.estimatedReady) : (d.leadTime || 'Upon confirmation');
+    const valid = d.validUntil ? day(d.validUntil) : '7 days from quote';
+    const amount = Number(d.amount) || Number(d.proposedAmount) || 0;
+    const paid = Number(d.paidAmount) || 0;
+    const balance = d.balance != null ? Number(d.balance) : Math.max(0, amount - paid);
+    const term = d.terms ? (TERM_NAME[d.terms.key] || d.terms.key) : 'Full Payment';
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Quotation Invoice ${esc(d.id)}</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; padding: 30px; margin: 0; background: #fff; }
+        .sheet { max-width: 680px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 28px; }
+        .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; }
+        .brand { font-size: 20px; font-weight: 700; color: #0f172a; }
+        .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
+        .title-box { text-align: right; }
+        .inv-title { font-size: 18px; font-weight: 700; color: #1e40af; text-transform: uppercase; letter-spacing: 0.5px; }
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; background: #e0f2fe; color: #0369a1; margin-top: 4px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; font-size: 13px; }
+        .grid div span { color: #64748b; display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .grid div strong { color: #0f172a; font-size: 13px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }
+        th { background: #f8fafc; border-bottom: 1px solid #cbd5e1; padding: 10px; text-align: left; font-size: 12px; color: #475467; }
+        td { border-bottom: 1px solid #f1f5f9; padding: 12px 10px; }
+        .r { text-align: right; }
+        .totals { margin-left: auto; width: 280px; font-size: 13px; margin-bottom: 24px; }
+        .totals-row { display: flex; justify-content: space-between; padding: 4px 0; }
+        .totals-row.grand { font-size: 15px; font-weight: 700; border-top: 1px solid #cbd5e1; padding-top: 8px; margin-top: 4px; color: #0f172a; }
+        .footer { font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 12px; text-align: center; }
+        @media print { body { padding: 0; } .sheet { border: none; padding: 0; } }
+      </style></head><body>
+      <div class="sheet">
+        <div class="header">
+          <div>
+            <div class="brand">Triple E Metal Products</div>
+            <div class="sub">Official Pro-Forma Quotation Invoice</div>
+          </div>
+          <div class="title-box">
+            <div class="inv-title">Quotation Invoice</div>
+            <div class="badge">${esc(d.statusLabel || d.status)}</div>
+          </div>
+        </div>
+        <div class="grid">
+          <div><span>Quote Reference</span><strong>${esc(d.id)}</strong></div>
+          <div><span>Date Quoted</span><strong>${esc(when)}</strong></div>
+          <div><span>Customer</span><strong>${esc(d.customer || '—')}</strong><br><small>${esc(d.phone || '')}</small></div>
+          <div><span>Fulfillment</span><strong>${esc(d.fulfillment || 'Pickup')}</strong></div>
+          <div><span>Estimated Ready / Availability</span><strong>${esc(ready)}</strong>${d.neededBy ? '<br><small>Customer needed date: ' + esc(day(d.neededBy)) + '</small>' : ''}</div>
+          <div><span>Price Valid Until</span><strong>${esc(valid)}</strong></div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Item / Specification</th>
+              <th class="r">Quantity</th>
+              <th class="r">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <strong>${esc(d.product || 'Custom Fabricated Item')}</strong>
+                ${specsHtml ? '<div style="font-size:12px;color:#64748b;margin-top:4px;">' + specsHtml + '</div>' : ''}
+              </td>
+              <td class="r">${esc(d.quantity || '1')}</td>
+              <td class="r"><strong>${peso(amount)}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="totals">
+          <div class="totals-row"><span>Total Quoted Amount</span><strong>${peso(amount)}</strong></div>
+          <div class="totals-row"><span>Payment Term</span><span>${esc(term)}</span></div>
+          ${paid > 0 ? `<div class="totals-row"><span>Amount Paid</span><span>${peso(paid)}</span></div>` : ''}
+          <div class="totals-row grand"><span>Remaining Balance</span><span>${peso(balance)}</span></div>
+        </div>
+        <div class="footer">
+          This is an official Pro-Forma Quotation Invoice issued by Triple E Metal Products. Terms and lead times are subject to formal confirmation upon order acceptance.
+        </div>
+      </div>
+      <script>setTimeout(function(){ window.focus(); window.print(); }, 400);</script>
+      </body></html>`);
+    w.document.close();
   }
 
   /* ================= 4. actions ================= */
@@ -493,25 +741,44 @@
     let x = new Date(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }) + 'T00:00:00Z'), left = n;
     while (left > 0) { x = new Date(x.getTime() + 86400000); const w = x.getUTCDay(); if (w !== 0 && w !== 6) left--; }
     const iso = x.toISOString().slice(0, 10);
-    out.textContent = day(iso); box.hidden = false; late.hidden = !(d.neededBy && iso > d.neededBy);
+    out.textContent = day(iso) + (d.neededBy && iso <= d.neededBy ? ' (Target ready: on or before requested date ' + day(d.neededBy) + ')' : '');
+    box.hidden = false; late.hidden = !(d.neededBy && iso > d.neededBy);
   }
 
-  /* Whether a price goes to Finance is decided by the server's cashier ceiling (GET /api/pos/quote-options).
-     Going over it is automatic and needs no written reason; only the "custom manufacturing" tick asks for one. */
-  const cashierLimit = () => { const n = Number((window.PQ_OPTIONS || {}).cashierQuoteLimit || 0); return n > 0 ? n : 0; };
-  const overLimit = (total) => { const lim = cashierLimit(); return lim <= 0 || total > lim; };
-  function limitHint() {
-    const lim = cashierLimit();
-    return lim > 0 ? 'you can send prices up to ' + peso(lim) + ' straight to the customer; a higher price goes to Finance automatically, no reason needed.'
-      : 'no cashier pricing limit is set yet, so every counter price is checked by Finance before the customer sees it. You do not need to write a reason for that.';
+  /* Where a confirmed price goes is decided by the SERVER (quote-automation.js routeQuote) from Finance's approval rules.
+     This preview runs the same rules on the same numbers so the cashier knows before confirming; the server decides again. */
+  const rulesNow = () => S.rules || (window.PQ_OPTIONS || {}).approvalRules || null;
+  function rulesHint() {
+    const R = rulesNow(); if (!R) return 'the approval rules could not be read, so Finance checks it';
+    return '\u00B1' + R.tolerancePct + '% of the system price, margin at least ' + R.minMarginPct + '%, up to ' + peso(R.valueLimit) + ', fully costed and in stock';
+  }
+  function previewRoute(form, total) {
+    const R = rulesNow(), e = S.draft, why = [];
+    if (!R) return ['the approval rules could not be read'];
+    if (!e || !e.ok) why.push(e && e.missing ? 'the request does not give the ' + e.missing.join(', ') : 'it cannot be priced yet (' + ((e && e.problems) || []).map((p) => p.message).join(' ').replace(/\.$/, '') + ')');
+    else {
+      const margin = total > 0 ? (total - e.costTotal) / total * 100 : -Infinity, dev = e.total > 0 ? (total - e.total) / e.total * 100 : 0;
+      if (total < e.costTotal - 0.004) why.push(peso(total) + ' is below the cost of ' + peso(e.costTotal));
+      else if (margin < R.minMarginPct) why.push('the margin of ' + margin.toFixed(1) + '% is below the minimum of ' + R.minMarginPct + '%');
+      if (Math.abs(dev) > R.tolerancePct + 1e-9) why.push(Math.abs(dev).toFixed(1) + '% ' + (dev < 0 ? 'below' : 'above') + ' the system price of ' + peso(e.total) + ' (allowed \u00B1' + R.tolerancePct + '%)');
+      if ((e.shortfalls || []).length) why.push('stock is short (' + e.shortfalls.map((s) => s.name + ' by ' + num4(s.short) + ' ' + s.unit).join('; ') + ')');
+    }
+    if (!(R.valueLimit > 0)) why.push('no order-value limit is set');
+    else if (total > R.valueLimit) why.push(peso(total) + ' is over the cashier limit of ' + peso(R.valueLimit));
+    const term = form && form.querySelector('input[name=term]:checked');
+    // a part-payment within Finance's automatic limit is signed by the system (the server also checks the customer owes nothing elsewhere)
+    const termOpt = term && (S.termOpts || []).find((x) => x.key === term.value);
+    if (term && term.value !== 'full' && !(termOpt && termOpt.autoApproved)) why.push('partial-payment terms over Finance’s automatic limit are approved by Finance');
+    return why;
   }
   function syncRoute(form, total) {
     const box = form && form.querySelector('[data-route]'); if (!box) return;
-    if (!(total > 0) || !overLimit(total)) { box.hidden = true; box.textContent = ''; return; }
-    const lim = cashierLimit();
+    if (!(total > 0)) { box.hidden = true; box.textContent = ''; return; }
+    const why = previewRoute(form, total);
     box.hidden = false;
-    box.textContent = (lim > 0 ? peso(total) + ' is above your ' + peso(lim) + ' pricing limit' : 'No cashier pricing limit is set')
-      + ', so Finance approves this price before the customer sees it. This is automatic; you do not need to tick the box below or write a reason.';
+    box.className = 'qd-callout wide ' + (why.length ? 'warn' : 'ok');
+    box.textContent = why.length ? 'Goes to Finance automatically: ' + why.join('; ') + '. Nothing else to do; you are told when they answer.'
+      : 'Within Finance\u2019s rules: the customer gets this price as soon as you confirm.';
   }
 
   async function submitPrice(form) {
@@ -523,12 +790,18 @@
     if (!/^\d+(?:\.\d{1,2})?$/.test(unit) || Number(unit) <= 0) { err.textContent = 'Enter the unit price in pesos, up to two decimals.'; return; }
     if (!q) { err.textContent = 'The quoted quantity could not be read. Fix it with Finance before pricing.'; return; }
     const total = Math.round(Number(unit) * q.qty * 100) / 100;
+    const minMargin = (rulesNow() && rulesNow().minMarginPct) || 20;
+    if (S.draft && S.draft.costTotal > 0) {
+      const minFloor = Math.round((S.draft.costTotal / (1 - minMargin / 100)) * 100) / 100;
+      if (total < minFloor - 0.004) {
+        err.textContent = 'Price cannot be below the ' + minMargin + '% margin floor (' + peso(minFloor) + ' total, ' + peso(minFloor / q.qty) + '/pc). Please adjust the unit price.';
+        return;
+      }
+    }
     const leadTime = f.get('leadTime'), validDays = Number(f.get('validDays')), note = String(f.get('note') || '').trim();
-    const exception = f.has('exception'), reason = String(f.get('reason') || '').trim();
     if (!leadTime || !validDays) { err.textContent = 'Choose the preparation time and how long the price is valid.'; return; }
-    if (exception && reason.length < 10) { err.textContent = 'Explain why Finance must approve it (at least 10 characters).'; return; }
-    const auto = !exception && overLimit(total), toFinance = exception || auto;
-    const autoWhy = cashierLimit() > 0 ? 'above your ' + peso(cashierLimit()) + ' pricing limit' : 'no cashier pricing limit is set';
+    if (S.recipeMode === 'edited' && validLines().length !== (S.lines || []).length) { err.textContent = 'Finish or remove the incomplete recipe line (material and a quantity above 0).'; return; }
+    const why = previewRoute(form, total), toFinance = why.length > 0;
     const termKey = f.get('term') || 'full';
     const termOpt = (S.termOpts || []).find((x) => x.key === termKey) || {};
     const dueNow = termOpt.dueNow != null ? money(termOpt.dueNow) : peso(total);
@@ -539,23 +812,152 @@
         ['Unit price', peso(Number(unit))], ['Calculated total', peso(total)], ['Ready in', leadTime], ['Price valid', validDays + ' days'],
         ['Payment term', (termOpt.label || TERM_NAME[termKey] || termKey) + ' — pay ' + dueNow + ' now, balance ' + balance],
         ['Where they pay', d.payMethod || (d.fulfillment === 'Delivery' ? 'Cash on delivery' : 'Pay at pickup')],
-        ['Needs Finance approval', exception ? 'Yes — ' + reason : auto ? 'Yes, automatically — ' + autoWhy : 'No'], ['Remarks', note || 'none']],
-      acknowledgment: 'I checked the specifications, the quantity and the arithmetic before sending this price.', confirmLabel: toFinance ? 'Send to Finance' : 'Approve & tell customer' });
+        ['Suggested price', S.draft && S.draft.ok ? peso(S.draft.total) + ' (cost ' + peso(S.draft.costTotal) + ')' : 'cannot price yet'],
+        ['Where it goes', toFinance ? 'Finance, automatically \u2014 ' + why.join('; ') : 'Straight to the customer'], ['Remarks', note || 'none']],
+      acknowledgment: 'I checked the specifications, the quantity and the arithmetic before confirming this price.', confirmLabel: 'Confirm price' });
     if (!go) return;
     const btn = form.querySelector('button[type=submit]'); btn.disabled = true;
     try {
-      const r = await call('/api/pos/quotes/' + encodeURIComponent(d.id) + '/price', { method: 'POST', body: JSON.stringify({ amount: total.toFixed(2), leadTime, validDays, note, reason, customManufacturing: exception }) });
+      const recipe = d.sku ? undefined : S.recipeMode === 'edited' ? validLines() : S.recipeMode === 'auto' ? null : undefined;
+      const r = await call('/api/pos/quotes/' + encodeURIComponent(d.id) + '/price', { method: 'POST', body: JSON.stringify({ amount: total.toFixed(2), leadTime, validDays, note, termKey, recipe }) });
       // The terms are attached to the price the customer is shown, so they go on straight after it exists.
-      let termsState = null;
-      if (termKey !== ((d.terms || {}).key || 'full')) {
+      // the server attaches the term together with the price; only an older server needs the separate call
+      let termsState = r.quote && r.quote.terms && r.quote.terms.key === termKey ? r.quote.terms.state : null;
+      if (!termsState && termKey !== ((d.terms || {}).key || 'full')) {
         try { const t = await call('/api/pos/quotes/' + encodeURIComponent(d.id) + '/terms', { method: 'POST', body: JSON.stringify({ termKey }) }); termsState = t.terms && t.terms.state; }
         catch (te) { err.textContent = 'The price was saved, but the payment terms were not: ' + fieldErr(te); S.openPrice = false; await openDetail(d.id); loadDesk(); return; }
       }
-      toast(r.status === 'pending_approval' ? 'Sent to Finance for approval.'
+      const dec = r.decision || {};
+      toast(r.status === 'pending_approval' ? 'Sent to Finance automatically: ' + ((dec.reasons || []).join('; ') || 'needs approval') + '.'
         : termsState === 'proposed' ? 'Price sent. The partial payment terms now go to Finance for a signature.'
-        : 'Price approved and shown to the customer.');
+        : termsState === 'approved' && termKey !== 'full' ? 'Within the rules: the customer has the price, and the part-payment was approved automatically.'
+        : 'Within the rules: the customer has the price now.');
       S.openPrice = false; await openDetail(d.id); loadDesk();
-    } catch (e) { err.textContent = fieldErr(e); btn.disabled = false; if (/reason|justif/i.test(err.textContent)) { const box = form.querySelector('[data-reason]'); if (box) { box.hidden = false; box.querySelector('textarea').focus(); } } }
+    } catch (e) { err.textContent = fieldErr(e); btn.disabled = false; }
+  }
+
+  async function doRefresh() {
+    const d = S.detail; if (!d) return;
+    const go = await pqConfirm({ title: 'Refresh this quote at today\u2019s costs?',
+      description: 'The system works the price out again from today\u2019s material costs and checks it against Finance\u2019s rules. Within the rules the customer gets the new price and a new validity date; otherwise it goes to Finance.',
+      rows: [['Quotation', d.id], ['Customer', d.customer], ['Price now', money(d.amount) || '\u2014'], ['Valid until', d.validUntil ? day(d.validUntil) + (d.expired ? ' (expired)' : '') : '\u2014']],
+      acknowledgment: 'I will tell the customer if the price changes.', confirmLabel: 'Refresh price' });
+    if (!go) return;
+    try {
+      const r = await call('/api/pos/quotes/' + encodeURIComponent(d.id) + '/refresh-price', { method: 'POST', body: '{}' });
+      toast(r.status === 'quoted' ? 'Refreshed: ' + peso(r.before) + ' \u2192 ' + peso(r.amount) + ', valid again.' : 'The new price ' + peso(r.amount) + ' went to Finance: ' + ((r.decision || {}).reasons || []).join('; '));
+      await openDetail(d.id); loadDesk();
+    } catch (e) { toast(fieldErr(e), true); }
+  }
+
+  /* ---- collecting the money (the cashier records it; Finance only follows up) ----
+     Online (Xendit) payments are recorded by themselves: the cashier can press "Check online payment" to look now. Anything paid at the
+     counter, on pickup or on delivery is recorded here; cash goes into this cashier's own open Cash Shift (the server refuses it without one). */
+  const PAY_METHODS = ['Cash', 'GCash', 'Maya', 'Bank transfer', 'Credit / debit card'];
+  function collectDue(d) {
+    const bal = Number(d.balance) || 0, t = d.terms;
+    if (t && t.state === 'approved' && t.key !== 'full' && Number(t.amount) > 0 && d.status === 'accepted') return Math.min(bal, Math.max(0, Math.round((Number(t.amount) - (Number(d.paidAmount) || 0)) * 100) / 100)) || bal;
+    return bal;
+  }
+  function collectHtml(d) {
+    if (!['accepted', 'preparing', 'ready'].includes(d.status) || !(Number(d.balance) > 0)) return '';
+    const online = d.payMethod === 'Xendit', where = d.fulfillment === 'Delivery' ? 'on delivery' : 'at pickup', due = collectDue(d);
+    const intro = online
+      ? '<div class="qd-callout">The customer chose to pay online. It is recorded automatically when it arrives. Only take money here if they pay you at the counter instead — the online link is closed first so they cannot pay twice.</div>'
+      : '<div class="qd-callout">Collect <b>' + money(due) + '</b> ' + (d.status === 'ready' ? where : 'when the customer pays') + ', then record it here. You are the one who records it; Finance is told.</div>';
+    return sec('Collect payment', intro +
+      '<form id="qdCollectForm" class="qd-form" novalidate><label>Amount received (₱)<input name="amount" inputmode="decimal" autocomplete="off" value="' + esc(String(due)) + '"></label>' +
+      '<label>Paid by<select name="method">' + PAY_METHODS.map((m) => '<option' + (m === 'Cash' ? ' selected' : '') + '>' + esc(m) + '</option>').join('') + '</select></label>' +
+      '<label data-refrow hidden>Reference <span class="q-optional">(from the app, receipt or statement)</span><input name="reference" maxlength="60" autocomplete="off"></label>' +
+      '<div class="qd-err" id="qdCollectErr" role="alert"></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn-primary" data-act="collect">Record payment</button>' +
+      (online ? '<button type="button" class="btn-secondary" data-act="checkpay">Check online payment</button>' : '') + '</div></form>');
+  }
+  async function doCollect() {
+    const d = S.detail, form = el('qdCollectForm'); if (!d || !form) return;
+    const err = el('qdCollectErr'); err.textContent = '';
+    const amount = form.elements.amount.value.replace(/[,₱\s]/g, ''), method = form.elements.method.value, reference = form.elements.reference.value.trim();
+    if (!(Number(amount) > 0)) { err.textContent = 'Enter the amount received.'; return; }
+    if (Number(amount) > Number(d.balance) + 0.004) { err.textContent = 'The balance is only ' + money(d.balance) + '.'; return; }
+    if (method !== 'Cash' && reference.length < 4) { err.textContent = 'Enter the reference (at least 4 characters).'; form.elements.reference.focus(); return; }
+    const go = await pqConfirm({ title: 'Record this payment for ' + d.id + '?', description: method === 'Cash' ? 'The cash goes into your open Cash Shift.' : 'Recorded as received by ' + method + '.',
+      rows: [['Amount', money(Number(amount))], ['Paid by', method]].concat(reference ? [['Reference', reference]] : []).concat([['Balance after', money(Math.max(0, Number(d.balance) - Number(amount)))]]),
+      acknowledgment: 'I have received this money.', confirmLabel: 'Record payment' });
+    if (!go) return;
+    S.collectKey = S.collectKey || requestId();
+    try {
+      const r = await call('/api/pos/quotes/' + encodeURIComponent(d.id) + '/payment', { method: 'POST', body: JSON.stringify({ amount, method, reference, requestId: S.collectKey }) });
+      S.collectKey = null;
+      toast(r.balance > 0 ? 'Payment recorded. Balance ' + money(r.balance) + '.' : 'Payment recorded. Fully paid.');
+      await openDetail(d.id); loadDesk();
+    } catch (e) { err.textContent = fieldErr(e); }
+  }
+  async function doCheckPay() {
+    const d = S.detail; if (!d) return;
+    try {
+      const r = await call('/api/pos/quotes/' + encodeURIComponent(d.id) + '/check-payment', { method: 'POST', body: '{}' });
+      toast(r.balance > 0 ? 'Not paid online yet. Balance ' + money(r.balance) + '.' : 'Paid online. It is recorded.');
+      await openDetail(d.id); loadDesk();
+    } catch (e) { toast(fieldErr(e), true); }
+  }
+
+  /* ---- after acceptance: the job order of a custom item (cashier / production staff can run every step) ---- */
+  function productionHtml(d) {
+    if (!['accepted', 'preparing', 'ready'].includes(d.status) || d.sku) return '';
+    return sec('Production', '<div data-job><p class="q-hint">Reading the job order\u2026</p></div>');
+  }
+  let jobSeq = 0;
+  async function loadJob(d) {
+    const my = ++jobSeq; let j;
+    try { j = await call('/api/pos/quotes/' + encodeURIComponent(d.id) + '/job'); } catch (e) { const b0 = el('qdDrawerBody').querySelector('[data-job]'); if (b0) b0.innerHTML = '<div class="qd-callout bad">' + esc(fieldErr(e)) + '</div>'; return; }
+    const box = el('qdDrawerBody').querySelector('[data-job]'); if (my !== jobSeq || !box || !S.detail || S.detail.id !== d.id) return;
+    S.job = j; S.jobKey = S.jobKey || requestId();
+    const name = (sku) => ((j.materials || []).find((m) => m.sku === sku) || { name: sku });
+    let h = '';
+    if (j.job && j.job.status !== 'draft') {
+      h += '<p><b>' + esc(j.job.ref) + '</b> \u00B7 materials issued by ' + esc(j.job.issuedBy) + ' \u00B7 ' + esc(j.job.issuedAt) + (j.job.status === 'finished' ? ' \u00B7 <span class="qd-pill ok">finished ' + esc(j.job.finishedAt || '') + '</span>' : '') + '</p>' +
+        kv(j.job.items.map((i) => [i.name, num4(i.quantity) + ' ' + esc(i.unit)]).concat([['Material cost', peso(j.job.materialCost)]]));
+      if (j.canFinish) h += '<button type="button" class="btn-primary" data-act="jobfinish">Job finished \u2014 mark ' + (d.fulfillment === 'Delivery' ? 'out for delivery' : 'ready for pickup') + '</button>';
+    } else if (j.paymentBlocked && j.paymentNeeded) {
+      h += '<div class="qd-callout warn"><b>Down payment required before production:</b> Customer has paid ' + peso(j.paymentNeeded.paid) + ' of ' + peso(j.quoted) + '. Under Philippine Contract Law (Civil Code Arts. 1482 & 1582), custom-made orders require an initial down payment (' + peso(j.paymentNeeded.required) + ') before materials can leave stock. Collect at the counter or wait for online payment confirmation.</div>';
+    } else if (j.canIssue) {
+      h += '<p class="q-hint">' + (j.job ? '<b>' + esc(j.job.ref) + '</b> draft, made when the customer accepted. ' : '') + 'Issuing takes these materials out of stock and moves the quote to Preparing (the customer is told).</p>' +
+        (j.suggestions || []).map((s) => { const m = name(s.sku); return '<div class="qd-rline qd-jline"><span>' + esc(m.name) + ' <span class="dim">' + esc(m.onHand != null ? num4(m.onHand) + ' ' + m.unit + ' on hand' : '') + '</span></span>' +
+          '<input data-jsku="' + esc(s.sku) + '" inputmode="decimal" aria-label="Quantity to issue" value="' + esc(s.quantity != null ? s.quantity : '') + '"><span>' + esc(m.unit || '') + '</span></div>' +
+          (m.onHand != null && s.quantity > m.onHand ? '<div class="qd-callout warn">' + esc(m.name) + ' is short by ' + num4(s.quantity - m.onHand) + ' ' + esc(m.unit) + ' (a purchase suggestion was sent to Finance).</div>' : ''); }).join('') +
+        '<button type="button" class="btn-primary" data-act="jobissue">Issue materials &amp; start preparing</button>';
+    } else h += '<p class="q-hint">Nothing to do here right now.</p>';
+    if (d.status === 'ready') h += '<label class="wide" style="display:block;margin-top:10px">' + (d.fulfillment === 'Delivery' ? 'Received by' : 'Picked up by') + '<input data-recv maxlength="80" autocomplete="off"></label>' +
+      '<button type="button" class="btn-primary" data-act="complete">Mark ' + (d.fulfillment === 'Delivery' ? 'delivered' : 'picked up') + '</button>' +
+      (Number(d.balance) > 0 ? '<p class="q-hint">The balance of ' + money(d.balance) + ' must be paid first.</p>' : '');
+    box.innerHTML = h;
+  }
+  async function jobAction(act) {
+    const d = S.detail; if (!d) return;
+    const no = encodeURIComponent(d.id), box = el('qdDrawerBody').querySelector('[data-job]');
+    try {
+      if (act === 'jobissue') {
+        const invalid = Array.from(box.querySelectorAll('[data-jsku]')).find(i => liveDeskField(i));
+        if (invalid) { invalid.focus(); return; }
+        const items = Array.from(box.querySelectorAll('[data-jsku]')).map((i) => ({ sku: i.dataset.jsku, quantity: i.value.replace(/,/g, '').trim() })).filter((i) => Number(i.quantity) > 0);
+        if (!items.length) { toast('Enter how much of each material the job uses.', true); return; }
+        const go = await pqConfirm({ title: 'Issue these materials for ' + d.id + '?', description: 'They leave stock now as \u201CUsed in production\u201D and the quote moves to Preparing.',
+          rows: items.map((i) => [((S.job.materials || []).find((m) => m.sku === i.sku) || { name: i.sku }).name, i.quantity]), acknowledgment: 'These are the quantities the job really uses.', confirmLabel: 'Issue materials' });
+        if (!go) return;
+        await call('/api/pos/quotes/' + no + '/job', { method: 'POST', body: JSON.stringify({ requestKey: S.jobKey, items }) });
+        S.jobKey = null; toast('Materials issued. The quote is now Preparing and the customer was told.');
+      } else if (act === 'jobfinish') {
+        await call('/api/pos/quotes/' + no + '/job/finish', { method: 'POST', body: '{}' });
+        toast('Job finished. The customer was told it is ' + (d.fulfillment === 'Delivery' ? 'out for delivery.' : 'ready for pickup.'));
+      } else if (act === 'complete') {
+        const recipient = box.querySelector('[data-recv]');
+        if (recipient && liveDeskField(recipient)) { recipient.focus(); return; }
+        const recv = (box.querySelector('[data-recv]') || {}).value || '';
+        await call('/api/pos/quotes/' + no + '/step', { method: 'POST', body: JSON.stringify({ status: 'completed', receivedBy: recv.trim() }) });
+        toast(d.id + ' is complete.');
+      }
+      await openDetail(d.id); loadDesk();
+    } catch (e) { toast(fieldErr(e), true); }
   }
 
   /* ================= 5. walk-in quotation form ================= */
@@ -573,7 +975,7 @@
     email: () => { const v = el('pqEmail').value.trim(); return !v || (v.length <= 120 && PQ_MAIL_RE.test(v)) ? '' : 'Enter a valid email address, or leave it empty.'; },
     company: () => (el('pqCompany').value.trim().length <= 80 ? '' : 'Keep the company name within 80 characters.'),
     productName: () => el('pqProduct').value || el('pqItem').value.trim().length >= 3 ? '' : 'Tell us what they need (at least 3 characters).',
-    neededBy: () => (!pqNeededVal() || isFlexible() ? '' : 'Choose the date they need it, or tick that the date is flexible.'),
+    neededBy: () => (pqNeededVal() || isFlexible() ? '' : 'Choose the date they need it, or tick that the date is flexible.'),
     region: () => (pqFulfil() === 'Delivery' && !el('pqRegion').value ? 'Choose the region.' : ''),
     province: () => (pqFulfil() !== 'Delivery' ? '' : !el('pqProvince').value ? 'Choose the province.' : pqNoCover),
     city: () => { if (pqFulfil() !== 'Delivery') return ''; const v = pqClean(el('pqCity').value); return !v ? 'Choose the city or municipality.' : PQG.cities.length && !pqCode(PQG.cities, v) ? 'Pick the city / municipality from the list.' : ''; },
@@ -584,11 +986,47 @@
   // same coverage as a POS delivery sale (Finance > Delivery rates): the cashier sees it before the request is logged
   let pqNoCover = '';
   async function pqCheckCover() {
-    pqNoCover = ''; const region = el('pqRegion').value, province = el('pqProvince').value;
+    pqNoCover = ''; pqFeeNote(''); const region = el('pqRegion').value, province = el('pqProvince').value;
     if (!region || !province) return;
     try { const q = await api('/api/pos/delivery-fee?region=' + encodeURIComponent(region) + '&province=' + encodeURIComponent(province));
-      if (q && q.available === false) pqNoCover = 'We do not deliver to ' + province + ' yet. Choose another area or switch to Pickup.'; } catch (_) { /* the server checks again on save */ }
+      if (q && q.available === false) pqNoCover = 'We do not deliver to ' + province + ' yet. Choose another area or switch to Pickup.';
+      pqFeeNote(q && q.available !== false ? 'Delivery fee to ' + esc(province) + ': <b>' + peso(q.fee) + '</b> (' + esc(q.rate || 'standard rate') + ')' : ''); } catch (_) { /* the server checks again on save */ }
     if (pqFulfil() === 'Delivery') pqField('province');
+  }
+
+  /* ---- Task 9 (form-assist.js): delivery fee, minimum order, known customer by phone / email, ZIP -> area, draft, Enter to move on ---- */
+  const FA = window.FormAssist;
+  let pqDraft = null;
+  function pqFeeNote(html) {
+    let n = el('pqFeeNote');
+    if (!n) { n = document.createElement('div'); n.id = 'pqFeeNote'; n.className = 'fa-note ok'; n.setAttribute('role', 'status'); el('pqArea').appendChild(n); }
+    n.innerHTML = html || ''; n.hidden = !html;
+  }
+  function pqMinWarn() {
+    const qty = el('pqQty'), p = prod(el('pqProduct').value); if (!FA || !qty) return;
+    const n = Number(qty.value), m = p ? Math.min(Number(p.minOrder) || 0, p.available > 0 ? p.available : Infinity) : 0;
+    FA.note(qty, p && n > 0 && n < m ? 'Minimum order for ' + esc(p.name) + ' is <b>' + m + ' ' + esc(p.unit) + '</b>.' : '', 'warn', 'min');
+  }
+  // the person may already be known: a registered account, an earlier walk-in sale or walk-in quote with the same phone / email
+  let matchSeq = 0;
+  async function pqMatch(input) {
+    if (!FA) return;
+    const phone = el('pqPhone').value.replace(/[\s().-]/g, ''), email = el('pqEmail').value.trim(), my = ++matchSeq;
+    if (!PQ_PHONE_RE.test(phone) && !PQ_MAIL_RE.test(email)) { FA.note(input, ''); return; }
+    let r; try { r = await api('/api/customers/match?phone=' + encodeURIComponent(phone) + '&email=' + encodeURIComponent(email)); } catch (_) { return; }
+    if (my !== matchSeq) return;
+    const m = (r.matches || [])[0];
+    ['pqPhone', 'pqEmail'].forEach((id) => FA.note(el(id), '', '', 'match'));
+    if (!m) return;
+    const kind = m.kind === 'account' ? 'has an online account' : 'bought from us before (' + m.kind + (m.last ? ', ' + m.last : '') + ')';
+    const n = FA.note(el(m.by === 'email' ? 'pqEmail' : 'pqPhone'), 'This ' + (m.by === 'email' ? 'email' : 'number') + ' belongs to <b>' + esc(m.name) + '</b>, who ' + esc(kind) +
+      '. <button type="button" class="fa-link">Use their details</button>', 'info', 'match');
+    n.querySelector('button').onclick = () => {
+      if (m.name) FA.setValue(el('pqName'), m.name);
+      if (m.email && !el('pqEmail').value.trim()) FA.setValue(el('pqEmail'), m.email);
+      if (m.phone && !el('pqPhone').value.trim()) FA.setValue(el('pqPhone'), FA.phone.format(m.phone) || m.phone);
+      FA.note(n.closest('.q-field').querySelector('input'), '', '', 'match');
+    };
   }
 
   const PQG = { regions: [], provinces: [], cities: [], barangays: [], city: '', tok: { prov: 0, city: 0, bgy: 0 } };
@@ -666,8 +1104,14 @@
       esc(e instanceof TypeError ? 'No connection to the server.' : e.message || 'The server refused the request.') + '</p><button type="button" class="btn-secondary" id="pqRetryOptions">Try again</button></div>';
       el('pqRetryOptions').onclick = () => { el('pqFields').innerHTML = '<p class="dim">Loading the form…</p>'; ensureFields(); }; return; }
     if (pqMounted) return;
-    QuoteFields.mount(el('pqFields'), { prefix: 'pq', options: o, flexible: isFlexible });
+    QuoteFields.mount(el('pqFields'), { prefix: 'pq', options: o, flexible: isFlexible, estimate: 'staff', productSku: () => el('pqProduct').value || '' });
     pqMounted = true;
+    if (FA && !pqDraft) {
+      pqDraft = FA.draft('posQuote', el('pqForm'), ['pqProduct', 'pqItem', 'pqS_itemType', 'pqS_material', 'pqS_size', 'pqS_thickness', 'pqS_finish', 'pqS_service',
+        'pqQty', 'pqUnit', 'pqNeeded', 'pqNotes', 'pqName', 'pqPhone', 'pqEmail', 'pqCompany', 'pqStreet'],
+        { ignoreDefault: (id) => id === 'pqUnit', banner: el('qdFormSections'), onDiscard: () => { el('pqForm').reset(); el('pqProduct').value = ''; QuoteFields.reset('pq'); pqProductChanged(); } });
+      setTimeout(() => pqDraft.restore().then(pqMinWarn), 0);
+    }
     // the date stays next to Quantity, exactly where the online form has it; the counter-only "No fixed date" switch sits under it
     const dateField = el('pqNeeded') && el('pqNeeded').closest('.q-field'), flex = el('pqFlexible') && el('pqFlexible').closest('label');
     if (dateField && flex) { dateField.appendChild(flex); const holder = el('pqFlexHolder'); if (holder) holder.remove(); }
@@ -676,7 +1120,7 @@
   function pqProductChanged() {
     const p = prod(el('pqProduct').value);
     el('pqNameWrap').hidden = !!p; if (p) pqErr('productName', '');
-    if (pqMounted) { QuoteFields.autofill('pq', p ? p.specs : null); if (p) QuoteFields.setUnit('pq', p.unit); }
+    if (pqMounted) { QuoteFields.autofill('pq', p ? p.specs : null); if (p) QuoteFields.setUnit('pq', p.unit); QuoteFields.estimate('pq'); }
   }
   function collectForm() {
     const f = pqFulfil(), r = pqMounted ? QuoteFields.read('pq') : {};
@@ -712,7 +1156,7 @@
     const f = pqFulfil();
     const fields = ['contactName', 'phone', 'email', 'company', 'productName', 'neededBy'].concat(f === 'Delivery' ? ['region', 'province', 'city', 'barangay', 'street'] : []);
     let first = null;
-    fields.forEach((k) => { if (!pqField(k) && !first) first = PQ_IDS[k]; });
+    fields.forEach((k) => { if (!pqField(k) && !first) first = PQ_IDS[k] || (k === 'neededBy' ? 'pqNeeded' : null); });
     if (pqMounted) { const qf = QuoteFields.validate('pq'); if (!qf.ok && !first) first = qf.focus; }
     if (first) { err.textContent = 'Please fix the highlighted fields.'; const x = el(first); x.scrollIntoView({ block: 'center', behavior: 'smooth' }); if (x.focus) x.focus({ preventScroll: true }); return; }
     buildReview();
@@ -733,6 +1177,7 @@
       pqResetArea(); Object.keys(PQ_IDS).forEach((k) => pqErr(k, '')); el('pqProduct').value = '';
       if (pqMounted) QuoteFields.reset('pq');
       pqProductChanged(); el('pqFlexible').checked = false; const nd = pqNeededEl(); if (nd) nd.disabled = false;
+      if (pqDraft) pqDraft.clear(); if (FA) { FA.markClean(el('pqForm')); ['pqPhone', 'pqEmail'].forEach((id) => FA.note(el(id), '', '', 'match')); pqFeeNote(''); }
       document.querySelector('input[name="pqFulfil"][value="Pickup"]').checked = true; el('pqArea').hidden = true;
       showFormStep(); loadDesk();
       if (no) openDetail(no);                        // straight to the request, where the price is prepared
@@ -749,7 +1194,7 @@
     let timer;
     el('qdSearch').addEventListener('input', (e) => { S.q = e.target.value; clearTimeout(timer); S.page = 1; timer = setTimeout(loadDesk, 350); });
     el('qdSource').innerHTML = SOURCES.map(([k, l]) => '<option value="' + k + '">' + l + '</option>').join('');
-    el('qdSize').innerHTML = PAGE_SIZES.map((n) => '<option value="' + n + '"' + (n === 20 ? ' selected' : '') + '>' + n + ' rows</option>').join('');
+    el('qdSize').innerHTML = PAGE_SIZES.map((n) => '<option value="' + n + '"' + (n === 10 ? ' selected' : '') + '>' + n + ' rows</option>').join('');
     el('qdSource').addEventListener('change', (e) => { S.source = e.target.value; S.page = 1; loadDesk(); });
     el('qdSize').addEventListener('change', (e) => { S.pageSize = Number(e.target.value); S.page = 1; loadDesk(); });
     el('qdRefresh').addEventListener('click', loadDesk);
@@ -767,7 +1212,10 @@
     el('qdDrawerClose').addEventListener('click', closeDetail);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.detail) { if (!el('qdClarifyOverlay').hidden) closeClarify(); else closeDetail(); } });
     el('qdDrawerBody').addEventListener('input', (e) => {
-      if (e.target.name === 'unit') { const d = S.detail, q = qtyParts(d.quantity), out = e.target.form.querySelector('[data-total]');
+      liveDeskField(e.target);
+      if (e.target.matches('[data-rqty]')) { readRecipe(e.target.form); S.recipeMode = 'edited'; recalcDraft(e.target.form); return; }
+      if (e.target.name === 'unit') { if (!S.fillingUnit) { e.target.dataset.auto = ''; const n = e.target.form.querySelector('[data-unit-note]'); if (n) n.textContent = 'your price'; }
+        const d = S.detail, q = qtyParts(d.quantity), out = e.target.form.querySelector('[data-total]');
         const okNum = /^\d+(\.\d{1,2})?$/.test(e.target.value.trim());
         if (out) out.textContent = q && okNum ? peso(Number(e.target.value) * q.qty) : '—';
         syncRoute(e.target.form, q && okNum ? Number(e.target.value) * q.qty : 0);
@@ -775,9 +1223,14 @@
         termTimer = setTimeout(() => loadTermOptions(e.target.form, q && okNum ? Number(e.target.value) * q.qty : 0, (d.terms || {}).key), 350); }
     });
     el('qdDrawerBody').addEventListener('change', (e) => {
+      liveDeskField(e.target);
       if (e.target.name === 'leadTime') updateReady(e.target.form);
-      if (e.target.name === 'term') syncTermFields(e.target.form);
-      if (e.target.name === 'exception') { const box = e.target.form.querySelector('[data-reason]'); box.hidden = !e.target.checked; if (e.target.checked) box.querySelector('textarea').focus(); }
+      if (e.target.name === 'term') { syncTermFields(e.target.form); if (e.target.form.id === 'qdPriceForm') { const u = e.target.form.elements.unit, q = qtyParts(S.detail.quantity); syncRoute(e.target.form, u && q ? Number(u.value) * q.qty : 0); } }
+      if (e.target.matches('[data-rsku], [data-runit]')) {
+        if (e.target.matches('[data-rsku]')) { readRecipe(e.target.form); const m = (S.mats || []).find((x) => x.sku === e.target.value); const i = +e.target.closest('.qd-rline').dataset.i; if (m && S.lines[i]) S.lines[i].unit = m.unit; renderRecipe(e.target.form); }
+        else readRecipe(e.target.form);
+        S.recipeMode = 'edited'; recalcDraft(el('qdPriceForm'));
+      }
     });
     el('qdDrawerBody').addEventListener('submit', (e) => {
       if (e.target.id === 'qdPriceForm') { e.preventDefault(); submitPrice(e.target); }
@@ -790,6 +1243,8 @@
       else if (act === 'clarify') doClarify();
       else if (act === 'convert') doConvert();
       else if (['accept', 'decline', 'renew'].includes(act)) doRespond(act);
+      else if (act === 'refresh') doRefresh();
+      else if (act === 'print-invoice') printQuoteInvoiceCashier(S.detail);
     });
     el('qdDrawerBody').addEventListener('click', async (e) => {
       const b = e.target.closest('[data-act]'); if (!b) return;
@@ -797,6 +1252,22 @@
       if (b.dataset.act === 'cancelprice') { S.openPrice = false; renderDetail(); }
       if (b.dataset.act === 'terms') { S.openTerms = true; renderDetail(); }
       if (b.dataset.act === 'cancelterms') { S.openTerms = false; renderDetail(); }
+      if (['jobissue', 'jobfinish', 'complete'].includes(b.dataset.act)) jobAction(b.dataset.act);
+      if (b.dataset.act === 'collect') doCollect();
+      if (b.dataset.act === 'checkpay') doCheckPay();
+    });
+    el('qdDrawerBody').addEventListener('change', (e) => {      // a reference is only asked for when the money did not come as cash
+      const f = e.target.closest('#qdCollectForm'); if (!f || e.target.name !== 'method') return;
+      f.querySelector('[data-refrow]').hidden = e.target.value === 'Cash';
+      liveDeskField(f.elements.reference);
+    });
+    el('qdDrawerBody').addEventListener('focusout', e => liveDeskField(e.target));
+    el('qdDrawerBody').addEventListener('click', (e) => {
+      const form = el('qdPriceForm'); if (!form || !form.contains(e.target)) return;
+      if (e.target.closest('[data-use-sys]')) { const u = form.elements.unit; u.dataset.auto = '1'; const n = form.querySelector('[data-unit-note]'); if (n) n.textContent = 'filled in with the suggested price'; fillUnit(form); u.focus(); }
+      if (e.target.closest('[data-radd]')) { readRecipe(form); S.lines.push({ sku: '', qtyPerPiece: '', unit: '' }); renderRecipe(form); const all = form.querySelectorAll('.qd-rline [data-rsku]'); if (all.length) all[all.length - 1].focus(); }
+      if (e.target.closest('[data-rdel]')) { readRecipe(form); S.lines.splice(+e.target.closest('.qd-rline').dataset.i, 1); S.recipeMode = 'edited'; renderRecipe(form); recalcDraft(form); }
+      if (e.target.closest('[data-rauto]')) { S.recipeMode = 'auto'; S.lines = null; S.recipeAuto = true; recalcDraft(form); }
     });
 
     el('pqClarifyCancel').addEventListener('click', closeClarify);
@@ -812,10 +1283,18 @@
     el('pqProvince').addEventListener('change', pqOnProvince);
     el('pqCity').addEventListener('change', pqOnCity);
     el('pqBrgy').addEventListener('change', pqOnBarangay);
-    el('pqFlexible').addEventListener('change', () => { const x = pqNeededEl(); if (!x) return; x.disabled = isFlexible(); if (isFlexible()) { x.value = ''; pqErr('neededBy', ''); } });
-    Object.keys(PQ_IDS).forEach((f) => { const x = el(PQ_IDS[f]); x.addEventListener('blur', () => pqField(f)); x.addEventListener('input', () => { if (x.classList.contains('is-bad')) pqField(f); el('pqErr').textContent = ''; }); });
+    el('pqFlexible').addEventListener('change', () => { const x = pqNeededEl(); if (!x) return; x.disabled = isFlexible(); if (isFlexible()) x.value = ''; pqField('neededBy'); });
+    Object.keys(PQ_IDS).forEach((f) => { const x = el(PQ_IDS[f]); x.addEventListener('blur', () => pqField(f)); x.addEventListener('input', () => { pqField(f); el('pqErr').textContent = ''; }); });
     el('pqPhone').addEventListener('input', () => { const p = el('pqPhone'), d = p.value.replace(/[^\d+\s]/g, ''); if (d !== p.value) p.value = d; });
     el('pqForm').addEventListener('submit', (e) => { e.preventDefault(); saveWalkIn(); });
+    if (FA) {
+      el('pqForm').addEventListener('input', (e) => { if (e.target.id === 'pqQty') pqMinWarn(); });
+      el('pqProduct').addEventListener('change', pqMinWarn);
+      ['pqPhone', 'pqEmail'].forEach((id) => el(id).addEventListener('blur', () => setTimeout(() => pqMatch(el(id)), 0)));   // after the phone is put in its one format
+      FA.zipFill({ before: el('pqRegion').closest('.q-grid'), region: el('pqRegion'), province: el('pqProvince'), city: el('pqCity'), barangay: el('pqBrgy'), api: (u) => api(u) });
+      FA.keyboard(el('pqForm'));
+      FA.guard(el('pqForm'));
+    }
     el('qdReview').addEventListener('click', (e) => {
       if (e.target.closest('[data-act="edit"]')) showFormStep();
       if (e.target.closest('#qdConfirmSave')) commitWalkIn();

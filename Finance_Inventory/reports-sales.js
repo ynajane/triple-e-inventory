@@ -160,7 +160,7 @@
       const tip = esc(x.label) + '|POS ' + peso(x.pos) + '|Online ' + peso(x.online) + '|Net ' + peso(x.net) + '|' + int(x.count) + ' transaction' + (x.count === 1 ? '' : 's');
       g += '<g class="rs-bar" data-tip="' + tip + '"><rect class="rs-hit" x="' + (cx - step / 2) + '" y="' + T + '" width="' + step + '" height="' + ih + '"/>' +
         (p ? '<rect class="rs-pos" x="' + (cx - bw / 2) + '" y="' + y(p) + '" width="' + bw + '" height="' + (y(0) - y(p)) + '" rx="2"/>' : '') +
-        (o ? '<rect class="rs-online" x="' + (cx - bw / 2) + '" y="' + y(p + o) + '" width="' + bw + '" height="' + (y(0) - y(p + o)) + '" rx="2"/>' : '') + '</g>';
+        (o ? '<rect class="rs-online" x="' + (cx - bw / 2) + '" y="' + y(p + o) + '" width="' + bw + '" height="' + (y(p) - y(p + o)) + '" rx="2"/>' : '') + '</g>';
       if (i % every === 0) g += '<text class="rs-ax" x="' + cx + '" y="' + (H - 10) + '" text-anchor="middle">' + esc(x.label) + '</text>';
     });
     const grainName = { day: 'daily', week: 'weekly', month: 'monthly', year: 'yearly' }[d.range.grain] || '';
@@ -199,7 +199,7 @@
 
   function notes(d) {
     let h = '';
-    if (d.customQuotes && d.customQuotes.received > 0) h += '<div class="rs-note">Custom-quote down payments of <strong>' + peso(d.customQuotes.received) + '</strong> (' + int(d.customQuotes.quotes) + ' quotation' + (d.customQuotes.quotes === 1 ? '' : 's') + ' not yet converted) were received in this period. They are not in net sales; once a quotation becomes an order or POS receipt, its money is counted there, once.</div>';
+    if (d.customQuotes && d.customQuotes.received > 0) h += '<div class="rs-note">Custom-quote down payments of <strong>' + peso(d.customQuotes.received) + '</strong> (' + int(d.customQuotes.quotes) + ' quotation' + (d.customQuotes.quotes === 1 ? '' : 's') + ' not yet converted) were received in this period. They are not in net sales; once a quotation becomes an order or POS invoice, its money is counted there, once.</div>';
     if (d.keptAdvances && d.keptAdvances.amount > 0) h += '<div class="rs-note">Kept from cash orders the customer did not receive or pick up: <strong>' + peso(d.keptAdvances.amount) + '</strong> (' + int(d.keptAdvances.orders) + ' order' + (d.keptAdvances.orders === 1 ? '' : 's') + ', delivery fees and down payments paid online). These orders are cancelled, so this money is not in the sales totals above.</div>';
     h += '<div class="rs-note faint">Refunds are deducted from the day of the original sale, so each period stays consistent with the product ranking. Delivery fees of ' + peso(d.kpis.deliveryFees) + ' are included in net sales.</div>';
     return '<div class="rs-notes">' + h + '</div>';

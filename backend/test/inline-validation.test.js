@@ -1,0 +1,181 @@
+'use strict';
+// Same optional simulated browser used by quote-fields-ui.test.js.
+// JSDOM_DIR=/path/to/test-tools node --test test/inline-validation.test.js
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+let JSDOM;
+try { ({ JSDOM } = require('jsdom')); }
+catch { ({ JSDOM } = require(path.join(process.env.JSDOM_DIR || '/home/claude/jsd', 'node_modules/jsdom'))); }
+const source = fs.readFileSync(path.join(__dirname, '../../Finance_Inventory/form-assist.js'), 'utf8');
+
+test('material issue refuses invalid lines before confirmation and preserves valid quantities', async t => {
+  const {window} = fixture(t), doc = window.document;
+  doc.body.insertAdjacentHTML('beforeend', '<div id="qdDrawerBody"><div data-job><input data-jsku="RM-A" value="2"><input data-jsku="RM-B" value="1.234"><input data-recv></div></div>');
+  const deskSource = fs.readFileSync(path.join(__dirname, '../../Finance_Inventory/quote-desk-ui.js'), 'utf8');
+  const section = (start, end) => deskSource.slice(deskSource.indexOf(start), deskSource.indexOf(end, deskSource.indexOf(start)));
+  window.S = {detail:{id:'QR-TEST'}, jobKey:'synthetic-key',job:{materials:[{sku:'RM-A',onHand:10,unit:'kg'},{sku:'RM-B',onHand:5,unit:'kg'}]}};
+  window.el = id => doc.getElementById(id);
+  let confirmations = 0, requests = [];
+  window.pqConfirm = async () => { confirmations++; return true; };
+  window.call = async (url, options) => requests.push({url,body:JSON.parse(options.body)});
+  window.openDetail = window.loadDesk = window.toast = () => {};
+  window.fieldErr = error => error.message;
+  window.eval(section('  function liveDeskField(', '  async function call(') + section('  async function jobAction(', '  /* ================= 5.'));
+  const input = doc.querySelector('[data-jsku="RM-B"]');
+  await window.jobAction('jobissue');
+  assert.equal(confirmations, 0, 'a bad line cannot silently disappear from a material issue');
+  assert.equal(requests.length, 0);
+  assert.match(input.nextElementSibling.textContent, /2 decimals/);
+  input.value = '6'; await window.jobAction('jobissue');
+  assert.equal(requests.length, 0); assert.match(input.nextElementSibling.textContent, /stock/);
+  input.value = '1.25'; await window.jobAction('jobissue');
+  assert.equal(confirmations, 1);
+  assert.deepEqual(requests[0].body.items.map(i=>i.quantity), ['2','1.25']);
+  requests = [];
+  await window.jobAction('complete');
+  assert.equal(requests.length, 0, 'completion needs a recipient before posting');
+  assert.match(doc.querySelector('[data-recv]').nextElementSibling.textContent, /recipient/);
+});
+function fixture(t) {
+  const dom = new JSDOM('<form><input id="value" aria-describedby="hint"><p id="hint">Existing hint</p><p id="serverError"></p></form>', { runScripts: 'outside-only' });
+  t.after(() => dom.window.close());
+  dom.window.eval(source);
+  const input = dom.window.document.getElementById('value');
+  // jsdom does not lay out elements; explicitly model visibility for this unit test.
+  input.getClientRects = () => input.hidden ? [] : [{}];
+  const fire = (type) => input.dispatchEvent(new dom.window.Event(type, { bubbles: true }));
+  return { window: dom.window, input, fire, validation: dom.window.FormAssist.validation };
+}
+test('field feedback appears on edits, retains hints, and clears only after correction', (t) => {
+  const { window, input, fire, validation } = fixture(t);
+  const check = validation.bind(input, value => value.trim().length < 3 ? 'Use at least 3 characters.' : '');
+  assert.equal(check(false), '');
+  assert.equal(window.document.querySelector('.fa-error'), null);
+  input.value = 'ab'; fire('input');
+  const message = window.document.querySelector('.fa-error');
+  assert.equal(message.textContent, 'Use at least 3 characters.');
+  assert.equal(input.getAttribute('aria-invalid'), 'true');
+  assert.equal(input.getAttribute('aria-describedby'), 'hint ' + message.id);
+  input.value = 'a'; fire('blur');
+  assert.equal(input.getAttribute('aria-invalid'), 'true');
+  assert.equal(window.document.querySelectorAll('.fa-error').length, 1);
+  input.value = 'abc'; fire('change');
+  assert.equal(input.getAttribute('aria-invalid'), 'false');
+  assert.equal(message.textContent, '');
+});
+test('reset and inactive fields clear feedback; rebinding updates the rule without duplicate listeners', (t) => {
+  const { window, input, fire, validation } = fixture(t);
+  let calls = 0;
+  const check = validation.bind(input, () => 'Required.');
+  fire('input');
+  input.disabled = true; assert.equal(check(true), '');
+  input.disabled = false; input.readOnly = true; assert.equal(check(true), '');
+  input.readOnly = false; input.hidden = true; assert.equal(check(true), '');
+  input.hidden = false;
+  validation.bind(input, () => { calls++; return 'New rule.'; });
+  fire('input'); assert.equal(calls, 1);
+  assert.equal(window.document.querySelector('.fa-error').textContent, 'New rule.');
+  input.form.reset();
+  assert.equal(input.getAttribute('aria-invalid'), 'false');
+  assert.equal(check(false), '');
+});
+test('server error slots are reused and direct feedback does not accumulate messages', (t) => {
+  const { window, input, fire, validation } = fixture(t);
+  const box = window.document.getElementById('serverError');
+  validation.bind(input, value => value ? '' : 'Required.', box);
+  fire('input');
+  assert.equal(box.textContent, 'Required.');
+  assert.equal(box.getAttribute('aria-live'), 'polite');
+  assert.equal(window.document.querySelector('.fa-error'), null);
+  validation.show(input, 'Server refused this value.');
+  assert.equal(box.textContent, 'Server refused this value.');
+  input.value = 'corrected'; fire('input'); assert.equal(box.textContent, '');
+  const other = window.document.createElement('input'); input.after(other);
+  validation.show(other, 'First error.'); validation.show(other, 'Second error.');
+  assert.equal(window.document.querySelectorAll('.fa-error').length, 1);
+  assert.equal(other.nextElementSibling.textContent, 'Second error.');
+});
+
+test('delegated constraints validate dynamic controls on the first edit without submitting', (t) => {
+  const {window} = fixture(t), doc = window.document;
+  const add = html => { doc.body.insertAdjacentHTML('beforeend', html); const input = doc.body.lastElementChild; input.getClientRects = () => [{}]; return input; };
+  const edit = (input, value) => { input.value = value; input.dispatchEvent(new window.Event('input', {bubbles:true})); return input.nextElementSibling?.textContent; };
+  const email = add('<input type="email" required>');
+  assert.match(edit(email, 'bad'), /email address/);
+  assert.equal(edit(email, 'person@example.com'), '');
+  assert.match(edit(email, ''), /required/);
+  const note = add('<textarea minlength="5" maxlength="20"></textarea>');
+  assert.match(edit(note, 'abc'), /at least 5/);
+  assert.equal(edit(note, ''), '', 'optional fields stay optional');
+  const amount = add('<input type="number" min="0" max="10" step="0.5">');
+  assert.match(edit(amount, '-1'), /0/);
+  assert.match(edit(amount, '11'), /10/);
+  assert.match(edit(amount, '1.2'), /increments/);
+  assert.equal(edit(amount, '1.5'), '');
+});
+test('business feedback takes precedence, reset is clean, and errors do not split quantity controls', (t) => {
+  const {window, input, fire, validation} = fixture(t);
+  input.type = 'number'; input.min = '1';
+  input.value = '0'; fire('input');
+  validation.bind(input, () => 'Minimum order is 10 pieces.'); fire('input');
+  assert.equal(input.nextElementSibling.textContent, 'Minimum order is 10 pieces.');
+  validation.reset(input.form);
+  assert.equal(input.nextElementSibling.textContent, '');
+  input.value = '1'; fire('input');
+  assert.equal(input.nextElementSibling.textContent, 'Minimum order is 10 pieces.');
+  const ctl = window.document.createElement('div'); ctl.className = 'ctl';
+  ctl.innerHTML = '<div class="qty"><button>−</button><input><button>+</button></div>';
+  window.document.body.append(ctl);
+  validation.show(ctl.querySelector('input'), 'Only 5 left.');
+  assert.equal(ctl.querySelector('.qty').children.length, 3);
+  assert.equal(ctl.lastElementChild.textContent, 'Only 5 left.');
+});
+test('reason dialog requires a meaningful note and supports cancellation', async (t) => {
+  const {window} = fixture(t);
+  window.HTMLDialogElement.prototype.showModal = function() { this.open = true; };
+  window.HTMLDialogElement.prototype.close = function() { this.open = false; this.dispatchEvent(new window.Event('close')); };
+  const answer = window.FormAssist.askReason({title:'Reject return', min:5, max:200});
+  const dialog = window.document.querySelector('dialog'), input = dialog.querySelector('textarea');
+  input.getClientRects = () => [{}];
+  const edit = value => { input.value = value; input.dispatchEvent(new window.Event('input', {bubbles:true})); };
+  edit('     ');
+  assert.match(dialog.querySelector('.fa-error').textContent, /at least 5/);
+  dialog.querySelector('form').dispatchEvent(new window.Event('submit', {bubbles:true,cancelable:true}));
+  assert.equal(dialog.open, true);
+  edit('Wrong item received');
+  dialog.querySelector('form').dispatchEvent(new window.Event('submit', {bubbles:true,cancelable:true}));
+  assert.equal(await answer, 'Wrong item received');
+  const canceled = window.FormAssist.askReason({title:'Reject return'});
+  window.document.querySelector('dialog [type=button]').click();
+  assert.equal(await canceled, null);
+});
+test('Finance cancellation validates notes live and excludes inactive deposit choices from submission', async (t) => {
+  const {window} = fixture(t), writes = [];
+  window.HTMLDialogElement.prototype.showModal = function() { this.open = true; };
+  window.HTMLDialogElement.prototype.close = function() { this.open = false; this.dispatchEvent(new window.Event('close')); };
+  window.fetch = async (url, options) => { if (options?.method === 'POST') writes.push(JSON.parse(options.body)); return {ok:true,json:async()=>({madeToOrder:true,paid:200})}; };
+  window.eval(fs.readFileSync(path.join(__dirname, '../../Finance_Inventory/payment-safeguards.js'), 'utf8'));
+  const result = window.PaymentSafeguards.cancel('ORD-TEST', false);
+  await new Promise(resolve => setImmediate(resolve));
+  const dialog = window.document.querySelector('dialog');
+  for (const input of dialog.querySelectorAll('input, select, textarea')) input.getClientRects = () => input.disabled ? [] : [{}];
+  const edit = (name, value, event='input') => { const input = dialog.querySelector('[name='+name+']'); input.value = value; input.dispatchEvent(new window.Event(event, {bubbles:true})); return input; };
+  const note = edit('note', '     ');
+  assert.match(note.nextElementSibling.textContent, /Finance note/);
+  edit('reasonCode','balance_unpaid','change');
+  const deposit = dialog.querySelector('[name=depositDisposition]');
+  assert.equal(deposit.required, true); assert.equal(deposit.disabled, false);
+  edit('depositDisposition','forfeit','change');
+  edit('reasonCode','other','change');
+  assert.equal(deposit.required, false); assert.equal(deposit.disabled, true);
+  assert.equal(new window.FormData(dialog.querySelector('form')).has('depositDisposition'), false);
+  edit('note','Documented cancellation');
+  const event = new window.Event('submit',{bubbles:true,cancelable:true});
+  Object.defineProperty(event,'submitter',{value:dialog.querySelector('[type=submit]')});
+  dialog.querySelector('form').dispatchEvent(event);
+  await result;
+  assert.equal(writes.length, 1); assert.equal(writes[0].note, 'Documented cancellation');
+  assert.equal(writes[0].depositDisposition, undefined);
+});

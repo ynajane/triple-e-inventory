@@ -82,7 +82,7 @@ function fakeRow(fields, data) {
 const clickOn = (handle, node) => ({ preventDefault() {}, target: { closest: (sel) => (sel === handle ? { closest: () => node } : null) } });
 
 async function main() {
-  const child = await startHarness({ CASHIER_QUOTE_LIMIT_PHP: '60000' });
+  const child = await startHarness({ CASHIER_QUOTE_LIMIT_PHP: '60000', HARNESS_QUOTE_BAND_PCT: '1000' });
   try {
     /* ---- stage the money the screen must show, through the shipped routes ---- */
     await call('finance', 'POST', '/api/finance/payment-terms/half',

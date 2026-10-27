@@ -70,6 +70,11 @@ const pageInformation = {
         subtitle: "Movement entry"
     },
 
+    stockcount: {
+        title: "Stock Count",
+        subtitle: "Physical inventory audit and variance reconciliation"
+    },
+
     products: {
         title: "Products",
         subtitle: "Manage products and inventory information"
@@ -91,8 +96,8 @@ const pageInformation = {
     },
 
     "payment-terms": {
-        title: "Payment Terms",
-        subtitle: "Which terms are offered, partial-term approvals and balances owed"
+        title: "Policies & Rates",
+        subtitle: "Corporate payment terms, cash on delivery thresholds, automated delivery rates, and weight surcharges"
     },
 
     reviews: {
@@ -112,6 +117,31 @@ const pageInformation = {
         subtitle: "System activity record"
     },
 
+    notifications: {
+        title: "Notifications",
+        subtitle: "System alerts, reorder triggers, and approval notices"
+    },
+
+    "sales-hub": {
+        title: "Sales",
+        subtitle: "Overview, online orders, POS sales, quotes, customers, and policies on one page"
+    },
+
+    "sales-overview": {
+        title: "Sales Overview",
+        subtitle: "Comprehensive transactions, approvals, and performance metrics"
+    },
+
+    orders: {
+        title: "Online Orders",
+        subtitle: "Customer orders, order queue, dispatch, and cancellation decisions"
+    },
+
+    sales: {
+        title: "POS Counter Sales",
+        subtitle: "Store register transactions, cashier shifts, and void/return decisions"
+    },
+
     reports: {
         title: "Reports",
         subtitle: "View reports and analytics"
@@ -125,27 +155,31 @@ function navigateToPage(pageId) {
     const navItems = document.querySelectorAll(".nav-item");
     const pages = document.querySelectorAll(".page");
 
+    // Sales is ONE page (#sales-hub) that holds six sections, each keeping its old id.
+    // Asking for one of those ids (a link, a notification, a dashboard shortcut, a saved #hash)
+    // opens the Sales page and scrolls to that section.
+    const SALES_SECTIONS = ['sales-overview', 'orders', 'sales', 'quotes', 'payments', 'customers', 'payment-terms'];
+    const salesTarget = SALES_SECTIONS.includes(pageId) ? pageId : null;
+    if (salesTarget) pageId = 'sales-hub';
+    const inSales = pageId === 'sales-hub';
+
     navItems.forEach(item => {
-        item.classList.toggle("active", item.dataset.page === pageId);
-    });
-    const SALES_PAGES = ['sales-overview','orders','sales','payment-terms'];   // the pages in the sidebar's Sales group
-    const inSales = SALES_PAGES.includes(pageId);
-    const parent = document.querySelector('.sales-parent');
-    if (parent) parent.classList.toggle('sales-section-active', inSales);
-    const salesTabs = document.getElementById('salesTabs');
-    if (salesTabs) salesTabs.hidden = !inSales;                       // one shared tab strip on every Sales page
-    document.querySelectorAll('.sales-tab').forEach(tab => {
-        const on = tab.dataset.page === pageId;
-        tab.classList.toggle('active', on);
-        tab.setAttribute('aria-selected', String(on));
+        item.classList.toggle('active', item.dataset.page === pageId);
     });
 
     pages.forEach(page => {
+        // the sections inside the Sales page switch on and off together with it
+        const insideSales = inSales && page.classList.contains('sales-sec');
         page.classList.toggle(
             "active-page",
-            page.id === pageId
+            page.id === pageId || insideSales
         );
     });
+
+    if (salesTarget) {
+        // after the page is shown (and after api-bridge.js scrolls to the top)
+        setTimeout(() => { if (window.TripleESalesHub) window.TripleESalesHub.show(salesTarget); }, 80);
+    }
 
     const information = pageInformation[pageId];
 
@@ -1706,6 +1740,14 @@ function renderCategoryPills() {
     });
 }
 
+// Products table: one inline icon per department (no emojis), used in the name cell
+const PRODUCT_DEPT_ICONS = {
+    "Raw Materials": '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>',
+    "Finishing Supplies": '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.7s6 6.1 6 10.6a6 6 0 0 1-12 0C6 8.8 12 2.7 12 2.7z"/><path d="M9.5 14a2.6 2.6 0 0 0 2.5 2.4"/></svg>',
+    "Finished Goods": '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>'
+};
+const PRODUCT_DEPT_CLASS = { "Raw Materials": "dept-raw", "Finishing Supplies": "dept-fin", "Finished Goods": "dept-fg" };
+
 function renderProductTable(items) {
     const tableBody = document.getElementById("productTableBody");
     if (!tableBody) return;
@@ -1714,9 +1756,9 @@ function renderProductTable(items) {
     if (!items || items.length === 0) {
         tableBody.innerHTML = `
             <tr class="no-results-row">
-                <td colspan="9">
+                <td colspan="8" class="pr-empty">
                     ${archivedView
-                        ? "No archived products. Archive a product from its details and it will be kept here."
+                        ? "No deleted products. A product you delete from its details is kept here and can be restored."
                         : "No products match your search or category."}
                 </td>
             </tr>
@@ -1728,16 +1770,21 @@ function renderProductTable(items) {
         const costLabel = "/" + (item.costUnit || item.unit || "kg");
         const metaLine = [item.grade, item.form].filter(Boolean).join(" · ");
         return `
-            <tr class="product-row${archivedView ? " is-archived" : ""}" data-sku="${escapeHTML(item.sku)}" tabindex="0" title="Click to view details">
+            <tr class="product-row ${PRODUCT_DEPT_CLASS[item.department] || ""}${archivedView ? " is-archived" : ""}" data-sku="${escapeHTML(item.sku)}" tabindex="0" title="Click to view details, BOM, or edit">
                 <td class="pt-name">
-                    <div class="supplier-name">${escapeHTML(item.name)}</div>
-                    <div class="supplier-meta mono">${escapeHTML(item.sku)}${metaLine ? " · " + escapeHTML(metaLine) : ""}</div>
+                    <div class="pr-name">
+                        <span class="pr-ico">${PRODUCT_DEPT_ICONS[item.department] || PRODUCT_DEPT_ICONS["Finished Goods"]}</span>
+                        <span class="pr-name-text">
+                            <span class="supplier-name">${escapeHTML(item.name)}</span>
+                            <span class="supplier-meta mono">${escapeHTML(item.sku)}${metaLine ? " · " + escapeHTML(metaLine) : ""}</span>
+                        </span>
+                    </div>
                 </td>
                 <td>
                     <div>${escapeHTML(item.category)}</div>
-                    <div class="supplier-meta">${escapeHTML(item.department || "\u2014")}</div>
+                    <div class="pr-dept">${escapeHTML(item.department || "\u2014")}</div>
                 </td>
-                <td class="pt-num">${formatNumber(item.available)} ${escapeHTML(item.unit)}</td>
+                <td class="pt-num${!archivedView && item.status === "low" ? " pr-low" : ""}"><b>${formatNumber(item.available)}</b> <span class="pr-unit">${escapeHTML(item.unit)}</span></td>
                 <td class="pt-num dim">₱${item.stdCost.toFixed(2)}<span class="supplier-meta"> ${costLabel}</span></td>
                 <td class="pt-num">
                     ${item.department === "Finished Goods"
@@ -1746,36 +1793,18 @@ function renderProductTable(items) {
                 </td>
                 <td>
                     ${item.department === "Finished Goods" && item.listPrice > 0
-                        ? `<span class="margin-value">${item.margin.toFixed(1)}%</span>`
+                        ? `<span class="margin-value pr-margin${item.margin < 0 ? " neg" : ""}">${item.margin.toFixed(1)}%</span>`
                         : `<span class="dim">&mdash;</span>`}
                 </td>
                 <td class="dim">${renderProductSuppliers(item)}</td>
                 <td>
                     ${archivedView
-                        ? `<span class="status-pill archived">Archived</span>`
+                        ? `<span class="status-pill archived" title="${escapeHTML(item.deleteReason || "")}">Deleted</span>`
                         : `<span class="status-pill ${item.status}">${getStockStatusLabel(item.status)}</span>`}
-                </td>
-                <td class="prod-actions">
-                    ${archivedView
-                        ? `<button type="button" class="btn-secondary btn-sm product-restore-btn" data-sku="${escapeHTML(item.sku)}">Restore</button>`
-                        : `<button type="button" class="btn-secondary btn-sm product-edit-btn" data-sku="${escapeHTML(item.sku)}">Edit</button>`}
                 </td>
             </tr>
         `;
     }).join("");
-
-    tableBody.querySelectorAll(".product-edit-btn").forEach(button => {
-        button.addEventListener("click", (e) => {
-            e.stopPropagation();
-            openNewProductModal(button.dataset.sku);
-        });
-    });
-    tableBody.querySelectorAll(".product-restore-btn").forEach(button => {
-        button.addEventListener("click", (e) => {
-            e.stopPropagation();
-            restoreProduct(button.dataset.sku);
-        });
-    });
 }
 
 // Suppliers shown in the Products table: every supplier linked to the product, primary first.
@@ -1813,7 +1842,7 @@ function renderProductSuppliers(item) {
                     ? ` <em class="prod-tag">Primary</em>`
                     : "")
                 + (archived
-                    ? ` <em class="prod-tag muted">Archived</em>`
+                    ? ` <em class="prod-tag muted">Deleted</em>`
                     : "")
                 + `</span>`;
 
@@ -1851,7 +1880,7 @@ function applyCatalogFilters() {
     const sub = document.getElementById("productListSub");
     if (sub) {
         sub.textContent =
-            `${filtered.length} ${catalogView === "archived" ? "archived " : ""}product${filtered.length === 1 ? "" : "s"}`;
+            `${filtered.length} ${catalogView === "archived" ? "deleted " : ""}product${filtered.length === 1 ? "" : "s"}`;
     }
     renderProductTable(filtered);
 }
@@ -1869,7 +1898,7 @@ function syncCatalogViewToggle() {
         if (c) c.textContent = counts[b.dataset.view];
     });
     const title = document.querySelector("#products .panel-title");
-    if (title) title.textContent = catalogView === "archived" ? "Archived Products" : "Product Catalog";
+    if (title) title.textContent = catalogView === "archived" ? "Deleted Products" : "Product Catalog";
     const btn = document.getElementById("newProductBtn");
     if (btn) btn.hidden = catalogView === "archived";
 }
@@ -1897,8 +1926,10 @@ const PD_ICONS = {
 let productDetailSku = null;
 
 function findCatalogProduct(sku) {
-    return productCatalogData.find(p => p.sku === sku) ||
-        archivedProductData.find(p => p.sku === sku) || null;
+    if (!sku) return null;
+    const target = String(sku).trim().toUpperCase();
+    return productCatalogData.find(p => String(p.sku || "").trim().toUpperCase() === target) ||
+        archivedProductData.find(p => String(p.sku || "").trim().toUpperCase() === target) || null;
 }
 
 function ensureProductDetailModal() {
@@ -1937,7 +1968,7 @@ function openProductDetails(sku) {
     productDetailSku = sku;
     const archived = !!p.archived || archivedProductData.some(x => x.sku === sku);
     const sells = p.department === "Finished Goods";
-    const stockLabel = archived ? "Archived" : getStockStatusLabel(p.status);
+    const stockLabel = archived ? "Deleted" : getStockStatusLabel(p.status);
     const stockClass = archived ? "archived" : p.status;
     const row = (label, value) =>
         `<div class="pd-row"><dt>${label}</dt><dd>${value}</dd></div>`;
@@ -1950,15 +1981,15 @@ function openProductDetails(sku) {
                 <div class="pd-sub"><span class="mono">${escapeHTML(p.sku)}</span> <span class="status-pill ${stockClass}">${stockLabel}</span></div>
             </div>
         </div>
-        ${archived ? `<div class="pd-note">This product is archived. It is hidden from stock lists, the shop, POS and production. Restore it to use it again.</div>` : ""}
+        ${archived ? `<div class="pd-note">This product is deleted. It is hidden from stock lists, the shop, POS and production. Restore it to use it again.${p.deleteReason ? `<br><b>Reason:</b> ${escapeHTML(p.deleteReason)}` : ""}</div>` : ""}
         <dl class="pd-grid">
             ${row("Category", escapeHTML(p.category || "Uncategorized"))}
             ${row("Department", escapeHTML(p.department || "\u2014"))}
-            ${row("In stock", `${formatNumber(p.available)} ${escapeHTML(p.unit)}`)}
-            ${row("Reorder level", `${formatNumber(p.reorderLevel ?? 0)} ${escapeHTML(p.unit)}${p.reorderAuto ? " (automatic)" : ""}`)}
-            ${row("Standard cost", `₱${p.stdCost.toFixed(2)} /${escapeHTML(p.costUnit || p.unit)}`)}
-            ${row("Selling price", sells ? (p.listPrice > 0 ? `₱${p.listPrice.toFixed(2)}` : "Not set") : "Not sold")}
-            ${row("Margin", sells && p.listPrice > 0 ? `${p.margin.toFixed(1)}%` : "\u2014")}
+            ${row("In stock", `${formatNumber(p.available != null ? p.available : (p.onHand != null ? p.onHand : 0))} ${escapeHTML(p.unit || "")}`)}
+            ${row("Reorder level", `${formatNumber(p.reorderLevel ?? 0)} ${escapeHTML(p.unit || "")}${p.reorderAuto ? " (automatic)" : ""}`)}
+            ${row("Standard cost", `₱${(Number(p.stdCost != null ? p.stdCost : (p.unitCost != null ? p.unitCost : 0))).toFixed(2)} /${escapeHTML(p.costUnit || p.unit || "")}`)}
+            ${row("Selling price", sells ? ((p.listPrice > 0) ? `₱${Number(p.listPrice).toFixed(2)}` : "Not set") : "Not sold")}
+            ${row("Margin", sells && p.listPrice > 0 ? `${Number(p.margin != null ? p.margin : 0).toFixed(1)}%` : "\u2014")}
             ${row("Location", escapeHTML(p.location || "\u2014"))}
             ${p.grade || p.form ? row("Grade / form", escapeHTML([p.grade, p.form].filter(Boolean).join(" · "))) : ""}
             ${row("Source", renderProductSuppliers(p))}
@@ -1968,7 +1999,7 @@ function openProductDetails(sku) {
             <button type="button" class="btn-secondary" data-pd="close">Close</button>
             ${archived
                 ? `<button type="button" class="btn-primary" data-pd="restore">${PD_ICONS.restore} Restore product</button>`
-                : `<button type="button" class="btn-secondary pd-archive" data-pd="archive">${PD_ICONS.archive} Archive</button>
+                : `<button type="button" class="btn-secondary pd-archive" data-pd="archive">${PD_ICONS.archive} Delete</button>
                    <button type="button" class="btn-primary" data-pd="edit">${PD_ICONS.edit} Edit</button>`}
         </div>`;
     overlay.classList.add("open");
@@ -2005,8 +2036,9 @@ async function archiveProduct(sku) {
     const p = findCatalogProduct(sku);
     if (!p) return;
     const stock = p.available > 0 ? ` It still has ${formatNumber(p.available)} ${p.unit} in stock.` : "";
-    if (!(await uiConfirm({ title: `Archive ${p.name}?`, message: `${p.sku} will be hidden from stock lists, the shop, POS and production.${stock} You can restore it from the Archived tab.`, confirm: "Archive", danger: true }))) return;
-    productAction("/products/" + encodeURIComponent(sku), { method: "DELETE" }, "Product archived");
+    const reason = await uiConfirm({ title: `Delete ${p.name}?`, message: `${p.sku} will be hidden from stock lists, the shop, POS and production.${stock} It is kept, not erased: you can restore it from the Deleted tab.`, confirm: "Delete", danger: true, reason: { label: "Reason for deleting" } });
+    if (!reason) return;
+    productAction("/products/" + encodeURIComponent(sku), { method: "DELETE", body: JSON.stringify({ reason }) }, "Product deleted");
 }
 
 async function restoreProduct(sku) {
@@ -2402,7 +2434,7 @@ let editingSupplierId = null;
 function getSupplierStatusLabel(status) {
 
     return status === "archived"
-        ? "Archived"
+        ? "Deleted"
         : "Active";
 
 }
@@ -2442,7 +2474,7 @@ const SUPPLIER_PILLS = [
     { key: "Raw Materials", label: "Raw Materials" },
     { key: "Finishing Supplies", label: "Finishing Supplies" },
     { key: "Finished Goods", label: "Finished Goods" },
-    { key: "archived", label: "Archived" }
+    { key: "archived", label: "Deleted" }
 ];
 
 let activeSupplierPill = "all";
@@ -2522,125 +2554,52 @@ function renderSupplierLocationSelect() {
 
 function renderSupplierTable(items) {
 
-    const tableBody =
-        document.getElementById(
-            "supplierTableBody"
-        );
-
-    if (!tableBody) {
-        return;
-    }
+    const tableBody = document.getElementById("supplierTableBody");
+    if (!tableBody) return;
 
     if (!items || items.length === 0) {
-
         tableBody.innerHTML = `
-
             <tr class="no-results-row">
-
-                <td colspan="6">
-                    No suppliers match your filters.
-                </td>
-
-            </tr>
-
-        `;
-
+                <td colspan="5">No suppliers match these filters. Clear the search or pick another status.</td>
+            </tr>`;
         return;
-
     }
 
-    tableBody.innerHTML =
-        items.map(supplier => `
+    const PIN = `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
+    const MAX_CHIPS = 2;
 
-            <tr class="supplier-row${supplier.status === "archived" ? " is-archived" : ""}"
-                data-supplier-id="${escapeHTML(supplier.id)}" tabindex="0" title="Click to view details">
+    const contactHTML = raw => {
+        const text = String(raw || "").trim();
+        if (!text) return `<span class="sp-none">No contact</span>`;
+        const parts = text.split("·").map(p => p.trim()).filter(Boolean);
+        if (parts.length < 2) return `<div class="sp-contact"><span>${escapeHTML(parts[0])}</span></div>`;
+        return `<div class="sp-contact"><b>${escapeHTML(parts[0])}</b><span>${escapeHTML(parts.slice(1).join(" · "))}</span></div>`;
+    };
 
-                <td>
+    const suppliesHTML = raw => {
+        const list = String(raw || "").split(",").map(p => p.trim()).filter(Boolean);
+        if (!list.length) return `<span class="sp-none">None linked yet</span>`;
+        const shown = list.slice(0, MAX_CHIPS).map(n => `<span class="sp-chip" title="${escapeHTML(n)}">${escapeHTML(n)}</span>`).join("");
+        const rest = list.slice(MAX_CHIPS);
+        const more = rest.length ? `<span class="sp-chip more" title="${escapeHTML(rest.join(", "))}">+${rest.length}</span>` : "";
+        return `<div class="sp-chips">${shown}${more}</div>`;
+    };
 
-                    <div class="supplier-row-name">
-
-                        <div class="supplier-avatar">
-                            ${escapeHTML(
-                                supplier.initials
-                            )}
-                        </div>
-
-                        ${escapeHTML(
-                            supplier.name
-                        )}
-
-                    </div>
-
-                </td>
-
-                <td class="dim">
-                    ${escapeHTML(
-                        supplier.fullAddress || supplier.location
-                    )}
-                </td>
-
-                <td class="dim">
-                    ${escapeHTML(
-                        supplier.contact
-                    )}
-                </td>
-
-                <td class="dim">
-                    ${escapeHTML(
-                        supplier.supplies
-                    )}
-                </td>
-
-                <td>
-
-                    <span
-                        class="status-pill ${supplier.status}"
-                    >
-                        ${getSupplierStatusLabel(
-                            supplier.status
-                        )}
-                    </span>
-
-                </td>
-
-                <td>
-
-                    <button
-                        type="button"
-                        class="btn-secondary btn-sm supplier-edit-btn"
-                        data-supplier-id="${escapeHTML(
-                            supplier.id
-                        )}"
-                    >
-                        Edit
-                    </button>
-
-                </td>
-
-            </tr>
-
-        `).join("");
-
-
-    tableBody
-        .querySelectorAll(
-            ".supplier-edit-btn"
-        )
-        .forEach(button => {
-
-            button.addEventListener(
-                "click",
-                () => {
-
-                    openNewSupplierModal(
-                        button.dataset.supplierId
-                    );
-
-                }
-            );
-
-        });
-
+    tableBody.innerHTML = items.map(supplier => `
+        <tr class="supplier-row${supplier.status === "archived" ? " is-archived" : ""}"
+            data-supplier-id="${escapeHTML(supplier.id)}" tabindex="0" title="Click to view details">
+            <td>
+                <div class="supplier-row-name">
+                    <div class="supplier-avatar">${escapeHTML(supplier.initials)}</div>
+                    <span class="sp-name">${escapeHTML(supplier.name)}</span>
+                </div>
+            </td>
+            <td><div class="sp-loc">${PIN}<span>${escapeHTML(supplier.fullAddress || supplier.location)}</span></div></td>
+            <td>${contactHTML(supplier.contact)}</td>
+            <td>${suppliesHTML(supplier.supplies)}</td>
+            <td><span class="status-pill ${supplier.status}">${getSupplierStatusLabel(supplier.status)}</span></td>
+        </tr>
+    `).join("");
 }
 
 
@@ -2659,12 +2618,12 @@ function applySupplierFilters() {
         supplierMatchesSearch(s, term));
 
     if (countEl) {
-        const label = activeSupplierPill === "archived" ? "archived supplier" : "supplier";
+        const label = activeSupplierPill === "archived" ? "deleted supplier" : "supplier";
         countEl.textContent = `${filtered.length} ${label}${filtered.length === 1 ? "" : "s"}`;
     }
 
     const title = document.querySelector("#suppliers .panel-title");
-    if (title) title.textContent = activeSupplierPill === "archived" ? "Archived Suppliers" : "Supplier List";
+    if (title) title.textContent = activeSupplierPill === "archived" ? "Deleted Suppliers" : "Supplier List";
 
     renderSupplierTable(filtered);
 }
@@ -2729,7 +2688,7 @@ function openSupplierDetails(id) {
                 <div class="pd-sub"><span class="status-pill ${archived ? "archived" : s.status}">${getSupplierStatusLabel(s.status)}</span></div>
             </div>
         </div>
-        ${archived ? `<div class="pd-note">This supplier is archived. It is hidden from Stock In and the product supplier lists. Restore it to use it again.</div>` : ""}
+        ${archived ? `<div class="pd-note">This supplier is deleted. It is hidden from Stock In and the product supplier lists. Restore it to use it again.${s.deleteReason ? `<br><b>Reason:</b> ${escapeHTML(s.deleteReason)}` : ""}</div>` : ""}
         <dl class="pd-grid">
             ${row("Contact person", dash(s.contactPerson))}
             ${row("Phone", dash(s.phone))}
@@ -2742,7 +2701,7 @@ function openSupplierDetails(id) {
             <button type="button" class="btn-secondary" data-sd="close">Close</button>
             ${archived
                 ? `<button type="button" class="btn-primary" data-sd="restore">${PD_ICONS.restore} Restore supplier</button>`
-                : `<button type="button" class="btn-secondary pd-archive" data-sd="archive">${PD_ICONS.archive} Archive</button>
+                : `<button type="button" class="btn-secondary pd-archive" data-sd="archive">${PD_ICONS.archive} Delete</button>
                    <button type="button" class="btn-primary" data-sd="edit">${PD_ICONS.edit} Edit</button>`}
         </div>`;
     overlay.classList.add("open");
@@ -2765,13 +2724,15 @@ async function setSupplierStatus(id, next) {
     const s = supplierData.find(x => x.id === id);
     const bridge = window.TripleEBridge;
     if (!s || !bridge) return;
-    if (!(await uiConfirm({ title: (next === "archived" ? "Archive " : "Restore ") + s.name + "?", message: next === "archived" ? "The supplier is hidden from new purchase records. You can restore it later." : "The supplier can be used again.", confirm: next === "archived" ? "Archive" : "Restore", danger: next === "archived" }))) return;
+    const del = next === "archived";
+    const reason = await uiConfirm({ title: (del ? "Delete " : "Restore ") + s.name + "?", message: del ? "The supplier is hidden from new purchase records. It is kept, not erased: you can restore it from the Deleted tab." : "The supplier can be used again.", confirm: del ? "Delete" : "Restore", danger: del, reason: del ? { label: "Reason for deleting" } : undefined });
+    if (!reason) return;
     try {
         await bridge.api("/suppliers/" + encodeURIComponent(id) + "/status",
-            { method: "PATCH", body: JSON.stringify({ status: next }) });
+            { method: "PATCH", body: JSON.stringify(del ? { status: next, reason } : { status: next }) });
         closeSupplierDetails();
         await bridge.reload();
-        bridge.toast("Supplier " + (next === "archived" ? "archived" : "restored"));
+        bridge.toast("Supplier " + (del ? "deleted" : "restored"));
     } catch (e) {
         bridge.toast(e.message || "Something went wrong", "error");
     }
@@ -4482,6 +4443,8 @@ const userAccountsData = [
 ];
 
 const pendingInvitesData = [];
+let accountView = "current";
+let accountReloadVersion = 0;
 
 
 function getInitials(name) {
@@ -4519,25 +4482,34 @@ function renderAccountsTable() {
         return;
     }
 
-    // staff AND customer accounts are managed here (create by invitation, edit, disable / enable, delete a customer with no history)
-    const staffCount = userAccountsData.filter(u => u.roleKey !== "customer").length;
-    const custCount = userAccountsData.length - staffCount;
+    // Deleted accounts have their own view; ordinary counts and filters use current accounts.
+    const viewUsers = userAccountsData.filter(u => !!u.deletedAt === (accountView === "deleted"));
+    document.querySelectorAll("#accountViewToggle [data-view]").forEach(button => {
+        const selected = button.dataset.view === accountView;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-pressed", String(selected));
+        button.querySelector(".count").textContent = String(userAccountsData.filter(u => !!u.deletedAt === (button.dataset.view === "deleted")).length);
+    });
+    const staffCount = viewUsers.filter(u => u.roleKey !== "customer").length;
+    const custCount = viewUsers.length - staffCount;
     if (count) count.textContent = `${staffCount} staff \u00B7 ${custCount} customer${custCount === 1 ? "" : "s"}`;
 
     const roleSel = document.getElementById("accountRoleFilter");
     const roleWanted = roleSel ? roleSel.value : "all";
     // status filter: active accounts, or disabled ones (anything that is not active cannot sign in)
     const statusSel = document.getElementById("accountStatusFilter");
-    const statusWanted = statusSel ? statusSel.value : "all";
+    const statusWanted = statusSel && accountView !== "deleted" ? statusSel.value : "all";
+    if (statusSel) statusSel.hidden = accountView === "deleted";
     const isActive = (u) => u.status === "active";
     if (statusSel) {
-        const act = userAccountsData.filter(isActive).length, dis = userAccountsData.length - act;
-        statusSel.options[0].textContent = `All statuses (${userAccountsData.length})`;
+        const act = viewUsers.filter(isActive).length, dis = viewUsers.length - act;
+        statusSel.options[0].textContent = `All statuses (${viewUsers.length})`;
         statusSel.options[1].textContent = `Active accounts (${act})`;
         statusSel.options[2].textContent = `Disabled accounts (${dis})`;
     }
     const visible = userAccountsData
         .map((user, index) => ({ user, index }))
+        .filter(x => !!x.user.deletedAt === (accountView === "deleted"))
         .filter(x => roleWanted === "all" || (roleWanted === "staff" ? x.user.roleKey !== "customer" : x.user.roleKey === roleWanted))
         .filter(x => statusWanted === "all" || (statusWanted === "active" ? isActive(x.user) : !isActive(x.user)))
         // latest sign-in on top; accounts that have never signed in go to the bottom (then by name)
@@ -4545,14 +4517,14 @@ function renderAccountsTable() {
             String(a.user.name || "").localeCompare(String(b.user.name || "")));
 
     if (count && (roleWanted !== "all" || statusWanted !== "all")) {
-        count.textContent = `${visible.length} of ${userAccountsData.length} accounts`;
+        count.textContent = `${visible.length} of ${viewUsers.length} accounts`;
     }
 
     if (visible.length === 0) {
 
         tableBody.innerHTML = `
             <tr class="no-results-row">
-                <td colspan="6">${statusWanted === "disabled" ? "No disabled accounts." : statusWanted === "active" ? "No active accounts match this filter." : "No accounts found."}</td>
+                <td colspan="5">${accountView === "deleted" ? "No deleted accounts match this filter." : statusWanted === "disabled" ? "No disabled accounts." : statusWanted === "active" ? "No active accounts match this filter." : "No accounts found."}</td>
             </tr>
         `;
 
@@ -4562,7 +4534,7 @@ function renderAccountsTable() {
     tableBody.innerHTML =
         visible.map(({ user, index }) => `
 
-            <tr>
+            <tr class="user-row" data-index="${index}" style="cursor:pointer">
 
                 <td>
                     <div class="user-row-name">
@@ -4586,7 +4558,7 @@ function renderAccountsTable() {
 
                 <td>
                     <span class="status-pill ${user.status}">
-                        ${user.status === "active" ? "Active" : "Disabled"}
+                        ${user.deletedAt ? "Deleted" : user.status === "active" ? "Active" : "Disabled"}
                     </span>
                 </td>
 
@@ -4594,107 +4566,19 @@ function renderAccountsTable() {
                     ${escapeHTML(user.lastLogin)}
                 </td>
 
-                <td>
-                    <div class="row-actions">
-
-                        <button
-                            type="button"
-                            class="btn-secondary btn-sm user-edit-btn"
-                            data-index="${index}"
-                        >
-                            Edit
-                        </button>
-
-                        ${user.isYou ? `<span class="um-you" title="Another Finance-Admin has to disable your account">You</span>` : `
-                        <button
-                            type="button"
-                            class="btn-danger-sm user-disable-btn"
-                            data-index="${index}"
-                        >
-                            ${user.status === "active" ? "Disable" : "Enable"}
-                        </button>`}
-                        ${user.roleKey === "customer" ? `<button type="button" class="btn-danger-sm user-delete-btn" data-index="${index}" title="Only an account with no orders, quotations or reviews can be deleted">Delete</button>` : ""}
-
-                    </div>
-                </td>
-
             </tr>
 
         `).join("");
 
-
     tableBody
-        .querySelectorAll(".user-edit-btn")
-        .forEach(button => {
-
-            button.addEventListener("click", () => {
-
-                openEditUserModal(
-                    Number(button.dataset.index)
-                );
-
+        .querySelectorAll("tr.user-row")
+        .forEach(row => {
+            row.addEventListener("click", () => {
+                openEditUserModal(Number(row.dataset.index));
             });
-
-        });
-
-    tableBody
-        .querySelectorAll(".user-delete-btn")
-        .forEach(button => {
-            button.addEventListener("click", async () => {
-                const user = userAccountsData[Number(button.dataset.index)];
-                if (!(await uiConfirm({ title: `Delete ${user.name}?`, message: "The customer account is removed for good. This only works for an account with no orders, quotations or reviews; otherwise disable it instead.", confirm: "Delete account", danger: true }))) return;
-                button.disabled = true;
-                try {
-                    const res = await fetch("/api/users/" + user.id, { method: "DELETE", credentials: "same-origin" });
-                    const data = await res.json().catch(() => ({}));
-                    if (!res.ok) throw new Error((data.fields && Object.values(data.fields)[0]) || data.error || "Could not delete the account");
-                    const at = userAccountsData.indexOf(user); if (at >= 0) userAccountsData.splice(at, 1);
-                    renderAccountsTable();
-                    inviteToast(user.name + "\u2019s account was deleted.");
-                } catch (err) {
-                    button.disabled = false;
-                    inviteToast(err.message, true);
-                }
-            });
-        });
-
-    tableBody
-        .querySelectorAll(".user-disable-btn")
-        .forEach(button => {
-
-            button.addEventListener("click", async () => {
-
-                const user =
-                    userAccountsData[Number(button.dataset.index)];
-
-                const next = user.status === "active" ? "disabled" : "active";
-
-                if (!(await uiConfirm({ title: `${next === "disabled" ? "Disable" : "Re-enable"} ${user.name}?`, message: next === "disabled" ? (user.roleKey === "finance" ? "This Finance-Admin is signed out right away and cannot sign in until another Finance-Admin re-enables the account. At least one Finance-Admin must stay active." : "They are signed out right away and cannot sign in until the account is re-enabled.") : "They will be able to sign in again.", confirm: next === "disabled" ? "Disable" : "Re-enable", danger: next === "disabled" }))) {
-                    return;
-                }
-
-                try {
-                    const res = await fetch("/api/users/" + user.id + "/status", {
-                        method: "PATCH",
-                        credentials: "same-origin",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ status: next })
-                    });
-                    const data = await res.json().catch(() => ({}));
-                    if (!res.ok) throw new Error(data.error || "Request failed");
-                    user.status = next;
-                    renderAccountsTable();
-                    inviteToast(`${user.name} ${next === "disabled" ? "disabled" : "re-enabled"}`);
-                } catch (err) {
-                    inviteToast(err.message, true);
-                }
-
-            });
-
         });
 
 }
-
 
 function inviteToast(message, isError) {
 
@@ -4827,6 +4711,7 @@ async function handleInviteAction(event) {
     }
 
     await loadPendingInvites();
+    await reloadUserAccounts();
 
 }
 
@@ -4879,12 +4764,55 @@ function closeInviteUserModal() {
 }
 
 
+async function reloadUserAccounts(showSpinner) {
+    const version = ++accountReloadVersion;
+    const tableBody = document.getElementById("accountsTableBody");
+    if (showSpinner && tableBody && userAccountsData.length === 0) {
+        tableBody.innerHTML = `
+            <tr class="no-results-row">
+                <td colspan="5" class="dim">Loading accounts...</td>
+            </tr>
+        `;
+    }
+    try {
+        const [res, deletedRes] = await Promise.all([fetch("/api/users", {
+            credentials: "same-origin",
+            headers: { "Accept": "application/json" }
+        }), fetch("/api/users?deleted=1", { credentials: "same-origin", headers: { "Accept": "application/json" } })]);
+        if (version !== accountReloadVersion) return;
+        if (res.status === 401) return;
+        if (!res.ok || !deletedRes.ok) throw new Error("Could not load accounts");
+        {
+            const [data, deleted] = await Promise.all([res.json(), deletedRes.json()]);
+            if (version !== accountReloadVersion) return;
+            if (Array.isArray(data) && Array.isArray(deleted)) {
+                userAccountsData.splice(0, userAccountsData.length, ...data, ...deleted);
+                renderAccountsTable();
+            }
+        }
+    } catch (err) {
+        console.warn("[users] could not reload accounts:", err.message);
+        inviteToast("Could not refresh accounts. Try Refresh again.", true);
+    }
+    if (typeof loadPendingInvites === "function") {
+        loadPendingInvites().catch(() => {});
+    }
+}
+window.reloadUserAccounts = reloadUserAccounts;
+
 function initUserManagement() {
 
     renderAccountsTable();
     renderPendingInvites();
     loadPendingInvites();
+    reloadUserAccounts(false);
     initEditUserModal();
+    document.querySelectorAll("#accountViewToggle [data-view]").forEach(button => {
+        button.addEventListener("click", () => {
+            accountView = button.dataset.view;
+            renderAccountsTable();
+        });
+    });
 
     const accountRoleFilter = document.getElementById("accountRoleFilter");
     if (accountRoleFilter) accountRoleFilter.addEventListener("change", renderAccountsTable);
@@ -4907,7 +4835,59 @@ function initUserManagement() {
             "click",
             openInviteUserModal
         );
+        const actions = inviteButton.parentElement;
+        if (actions && !document.getElementById("accountRefreshBtn")) {
+            const refreshBtn = document.createElement("button");
+            refreshBtn.type = "button";
+            refreshBtn.id = "accountRefreshBtn";
+            refreshBtn.className = "btn-secondary";
+            refreshBtn.textContent = "Refresh";
+            refreshBtn.title = "Reload user and customer accounts list";
+            refreshBtn.addEventListener("click", () => {
+                const orig = refreshBtn.textContent;
+                refreshBtn.disabled = true;
+                refreshBtn.textContent = "Refreshing...";
+                reloadUserAccounts(true).finally(() => {
+                    refreshBtn.disabled = false;
+                    refreshBtn.textContent = orig;
+                });
+            });
+            actions.insertBefore(refreshBtn, inviteButton.nextSibling);
+        }
     }
+
+    document.querySelectorAll('[data-page="usermgmt"]').forEach(b => {
+        b.addEventListener("click", () => reloadUserAccounts(false));
+    });
+
+    const userPage = document.getElementById("usermgmt");
+    if (userPage) {
+        let wasActive = userPage.classList.contains("active-page");
+        if (wasActive) reloadUserAccounts(false);
+        new MutationObserver(() => {
+            const on = userPage.classList.contains("active-page");
+            if (on && !wasActive) reloadUserAccounts(false);
+            wasActive = on;
+        }).observe(userPage, { attributes: true, attributeFilter: ["class"] });
+    }
+
+    window.addEventListener("focus", () => {
+        const up = document.getElementById("usermgmt");
+        if (up && up.classList.contains("active-page")) reloadUserAccounts(false);
+    });
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            const up = document.getElementById("usermgmt");
+            if (up && up.classList.contains("active-page")) reloadUserAccounts(false);
+        }
+    });
+
+    setInterval(() => {
+        const up = document.getElementById("usermgmt");
+        if (up && up.classList.contains("active-page") && document.visibilityState === "visible") {
+            reloadUserAccounts(false);
+        }
+    }, 10000);
 
 
     const overlay =
@@ -5015,6 +4995,7 @@ function initUserManagement() {
                 );
 
                 await loadPendingInvites();
+                await reloadUserAccounts();
 
             } catch (err) {
 
@@ -5038,76 +5019,141 @@ function initUserManagement() {
    EDIT USER MODAL
 ===================================================== */
 
-let editingUserIndex = null;
+let editingUserId = null;
 let editUserMounted = false;
 let editUserLoaded = false;
 
 
 function openEditUserModal(index) {
 
-    const overlay =
-        document.getElementById("editUserModalOverlay");
+    const overlay = document.getElementById("editUserModalOverlay");
+    const user = userAccountsData[index];
+    if (!overlay || !user) return;
+    editingUserId = user.id;
 
-    const user =
-        userAccountsData[index];
-
-    if (!overlay || !user) {
-        return;
-    }
-
-    editingUserIndex = index;
-
-    const role =
-        document.getElementById("editUserRole");
-
-    // the same profile fields the person has in My Profile (name parts, email, mobile, birthdate, gender, company for customers)
-    if (!editUserMounted) {
-        ProfileEdit.mount(document.getElementById("editUserMount"), "eu");
-        editUserMounted = true;
-    }
-
+    // Finance does not edit personal information: the details are shown read-only, only the role can change
     const isCust = user.roleKey === "customer";
-    ProfileEdit.fill("eu", {}, isCust);
-    ProfileEdit.setBusy("eu", true);
-    editUserLoaded = false;
-
+    const canChange = !isCust && !user.isYou && !user.deletedAt;
+    const role = document.getElementById("editUserRole");
+    const info = document.getElementById("editUserInfo");
+    const title = document.getElementById("editUserTitle");
     const saveBtn = document.querySelector("#editUserForm [type=\"submit\"]");
     const err = document.getElementById("editUserFormError");
-    if (saveBtn) saveBtn.disabled = true;
+    if (title) title.textContent = canChange ? "Change role" : "Account details";
+    if (saveBtn) { saveBtn.style.display = canChange ? "" : "none"; saveBtn.disabled = true; saveBtn.textContent = "Save role"; }
     if (err) err.classList.remove("show");
+    editUserLoaded = false;
 
+    const row = (k, v) => `<div class="eu-row"><dt>${k}</dt><dd>${v ? escapeHTML(v) : '<span class="dim">\u2014</span>'}</dd></div>`;
+    if (info) info.innerHTML = '<p class="dim">Loading\u2026</p>';
     fetch("/api/users/" + user.id + "/profile", { credentials: "same-origin" })
         .then(async res => {
             const d = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(d.error || "Could not load this profile");
-            if (editingUserIndex !== index) return;
-            ProfileEdit.fill("eu", d, isCust);
-            ProfileEdit.setBusy("eu", false);
+            if (!res.ok) throw new Error(d.error || "Could not load this account");
+            if (editingUserId !== user.id) return;
+            const born = d.birthdate ? new Date(d.birthdate + "T00:00:00").toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" }) : "";
+            if (info) info.innerHTML = '<dl class="eu-grid">' +
+                row("Name", d.name) + row("Email", d.email) + row("Mobile", d.phone) +
+                row("Status", user.deletedAt ? "Deleted" : d.status === "active" ? "Active" : "Disabled") +
+                (user.deletedAt ? row("Deleted", new Date(user.deletedAt).toLocaleString("en-PH")) : "") + row("Birthdate", born) + row("Gender", d.gender) +
+                (isCust ? row("Company", d.companyName) + row("Position", d.companyPosition) + row("TIN", d.companyTin) : "") + '</dl>';
             editUserLoaded = true;
-            if (saveBtn) saveBtn.disabled = false;
-            const first = document.getElementById("euFirst");
-            if (first) first.focus();
+            if (saveBtn) saveBtn.disabled = !canChange;
         })
-        .catch(e => {
-            if (err) { err.textContent = e.message; err.classList.add("show"); }
-        });
+        .catch(e => { if (err) { err.textContent = e.message; err.classList.add("show"); } if (info) info.innerHTML = ""; });
 
     if (role) {
-        // a customer stays a customer; staff can only be Finance-Admin or Cashier
-        const isCustomer = user.roleKey === "customer";
-        role.querySelectorAll("option").forEach(o => {
-            o.hidden = o.disabled = isCustomer ? o.value !== "Customer" : o.value === "Customer";
-        });
-        role.value = isCustomer ? "Customer"
-            : user.roleKey === "cashier" ? "Cashier" : "Finance-Admin Officer";
-        role.disabled = isCustomer;
+        // a customer stays a customer; staff can only be Finance-Admin or Cashier; nobody changes their own role
+        role.querySelectorAll("option").forEach(o => { o.hidden = o.disabled = isCust ? o.value !== "Customer" : o.value === "Customer"; });
+        role.value = isCust ? "Customer" : user.roleKey === "cashier" ? "Cashier" : "Finance-Admin Officer";
+        role.disabled = !canChange;
+        role.title = isCust ? "A customer account stays a customer" : user.isYou ? "Another Finance-Admin has to change your role" : "";
     }
 
-    overlay.classList.add("open");
+    let statusBtn = document.getElementById("editUserStatusBtn");
+    if (!statusBtn) {
+        statusBtn = document.createElement("button");
+        statusBtn.type = "button";
+        statusBtn.id = "editUserStatusBtn";
+        const footer = overlay.querySelector(".modal-footer");
+        if (footer) footer.insertBefore(statusBtn, footer.firstChild);
+    }
+    if (user.isYou || user.deletedAt) {
+        statusBtn.style.display = "none";
+    } else {
+        statusBtn.style.display = "";
+        statusBtn.textContent = user.status === "active" ? "Disable account" : "Enable account";
+        statusBtn.className = user.status === "active" ? "btn-danger-sm" : "btn-secondary";
+        statusBtn.onclick = async () => {
+            const next = user.status === "active" ? "disabled" : "active";
+            if (!(await uiConfirm({
+                title: `${next === "disabled" ? "Disable" : "Re-enable"} ${user.name}?`,
+                message: next === "disabled"
+                    ? (user.roleKey === "finance"
+                        ? "This Finance-Admin is signed out right away and cannot sign in until another Finance-Admin re-enables the account."
+                        : "They are signed out right away and cannot sign in until the account is re-enabled.")
+                    : "They will be able to sign in again.",
+                confirm: next === "disabled" ? "Disable" : "Re-enable",
+                danger: next === "disabled"
+            }))) return;
 
+            try {
+                const res = await fetch("/api/users/" + user.id + "/status", {
+                    method: "PATCH",
+                    credentials: "same-origin",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: next })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || "Request failed");
+                user.status = next;
+                renderAccountsTable();
+                inviteToast(`${user.name} ${next === "disabled" ? "disabled" : "re-enabled"}`);
+                closeEditUserModal();
+            } catch (err) {
+                inviteToast(err.message, true);
+            }
+        };
+    }
+
+    let deleteBtn = document.getElementById("editUserDeleteBtn");
+    if (!deleteBtn) {
+        deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.id = "editUserDeleteBtn";
+        overlay.querySelector(".modal-footer").prepend(deleteBtn);
+    }
+    deleteBtn.hidden = !!user.isYou;
+    deleteBtn.disabled = false;
+    deleteBtn.className = user.deletedAt ? "btn-secondary" : "btn-danger-sm";
+    deleteBtn.textContent = user.deletedAt ? "Restore account" : "Delete account";
+    deleteBtn.onclick = async () => {
+        const restore = !!user.deletedAt;
+        deleteBtn.disabled = true;
+        try {
+            if (!(await uiConfirm({
+                title: `${restore ? "Restore" : "Delete"} ${user.name}?`,
+                message: restore
+                    ? "The account returns to the accounts list as disabled. Enable it separately to allow sign-in again."
+                    : "The account moves to Deleted and all sessions end. Orders, payments and audit history are kept. You can restore the account later.",
+                confirm: restore ? "Restore" : "Delete account", danger: !restore
+            }))) return;
+            const res = await fetch("/api/users/" + user.id + (restore ? "/restore" : ""), {
+                method: restore ? "POST" : "DELETE", credentials: "same-origin",
+                headers: { "Content-Type": "application/json" }
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error((data.fields && data.fields.id) || data.error || "Request failed");
+            closeEditUserModal();
+            await reloadUserAccounts(false);
+            inviteToast(user.name + (restore ? " restored as disabled" : " moved to Deleted"));
+        } catch (e) { inviteToast(e.message, true); }
+        finally { deleteBtn.disabled = false; }
+    };
+
+    overlay.classList.add("open");
     document.body.style.overflow = "hidden";
     document.documentElement.style.overflow = "hidden";
-
 }
 
 
@@ -5139,7 +5185,7 @@ function closeEditUserModal() {
         error.classList.remove("show");
     }
 
-    editingUserIndex = null;
+    editingUserId = null;
 
 }
 
@@ -5201,37 +5247,21 @@ function initEditUserModal() {
 
             event.preventDefault();
 
-            const user = userAccountsData[editingUserIndex];
+            const user = userAccountsData.find(u => u.id === editingUserId);
 
             if (!user || !editUserLoaded) {
                 return;
             }
 
             const isCust = user.roleKey === "customer";
-            const bad = ProfileEdit.check("eu", isCust);
-
-            if (Object.keys(bad).length) {
-                ProfileEdit.showErrors("eu", bad);
-                if (error) {
-                    error.textContent = "Please fix the highlighted fields.";
-                    error.classList.add("show");
-                }
-                return;
-            }
-
-            if (error) {
-                error.classList.remove("show");
-            }
-
+            if (isCust || user.isYou || user.deletedAt) return;                       // nothing Finance can change here
+            if (error) error.classList.remove("show");
             const roleSel = document.getElementById("editUserRole");
-            const roleKey = isCust ? "customer"
-                : roleSel.value === "Cashier" ? "cashier" : "finance";
+            const roleKey = roleSel.value === "Cashier" ? "cashier" : "finance";
             const submitBtn = form.querySelector('[type="submit"]');
-
+            if (roleKey === user.roleKey) { closeEditUserModal(); return; }
             if (submitBtn) submitBtn.disabled = true;
-
-            const body = ProfileEdit.read("eu", isCust);
-            body.roleKey = roleKey;
+            const body = { roleKey };                               // role only: personal details are never sent
 
             fetch("/api/users/" + user.id, {
                 method: "PATCH",
@@ -5242,19 +5272,16 @@ function initEditUserModal() {
                 .then(async res => {
                     const data = await res.json().catch(() => ({}));
                     if (!res.ok) throw Object.assign(new Error(data.error || "Request failed"), { fields: data.fields });
-                    user.name = data.name;
-                    user.email = data.email;
                     user.roleKey = roleKey;
                     user.role = roleKey === "finance" ? "Finance-Admin Officer"
                         : roleKey === "cashier" ? "Sales Staff / Cashier" : "Customer";
                     closeEditUserModal();
                     renderAccountsTable();
-                    inviteToast("Account updated" + (data.message ? " \u2014 " + data.message : ""));
+                    inviteToast(user.name + " is now " + user.role + ".");
                 })
                 .catch(err => {
-                    if (ProfileEdit.showErrors("eu", err.fields)) {
-                        if (error) { error.textContent = "Please fix the highlighted fields."; error.classList.add("show"); }
-                    } else if (error) {
+                    if (error) {
+                        err.message = (err.fields && (err.fields.role || err.fields.id)) || err.message;
                         error.textContent = err.message;
                         error.classList.add("show");
                     } else {
@@ -5338,16 +5365,38 @@ const auditLogData = [
 function getAuditActionClass(action) {
 
     switch (action) {
-        case "Login":           return "login";
-        case "Logout":          return "login";
-        case "Record added":    return "added";
-        case "Record edited":   return "edited";
-        case "Account created": return "account";
-        case "Cash shift":      return "cashshift";
-        case "Return":          return "return";
-        default:                return "";
+        case "Login":                 return "login";
+        case "Logout":                return "logout";
+        case "Record added":          return "added";
+        case "Record edited":         return "edited";
+        case "Record deleted":        return "deleted";
+        case "Account created":       return "account";
+        case "Cash shift":            return "cashshift";
+        case "Return":                return "return";
+        case "Profile updated":       return "profile";
+        case "Production recorded":
+        case "Material requirements": return "production";
+        case "Quote decision":
+        case "Price override approved": return "approval";
+        case "Price override refused": return "deleted";
+        default:
+            return /^cost/i.test(String(action)) ? "cost" : "";
     }
 
+}
+
+/* "2026-08-16 07:14 AM" -> { date: "Aug 16, 2026", time: "07:14 AM" } (falls back to the raw text) */
+function splitAuditStamp(stamp) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})\s+(.+)$/.exec(String(stamp || "").trim());
+    if (!m) return { date: String(stamp || ""), time: "" };
+    const mon = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][Number(m[2]) - 1] || m[2];
+    return { date: mon + " " + Number(m[3]) + ", " + m[1], time: m[4] };
+}
+
+function auditInitials(name) {
+    const parts = String(name || "?").replace(/[^A-Za-z\s]/g, " ").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
 }
 
 
@@ -5395,9 +5444,9 @@ function applyAuditFilters() {
 
             const searchMatch =
                 !term ||
-                entry.user.toLowerCase().includes(term) ||
-                entry.action.toLowerCase().includes(term) ||
-                entry.detail.toLowerCase().includes(term);
+                String(entry.user || "").toLowerCase().includes(term) ||
+                String(entry.action || "").toLowerCase().includes(term) ||
+                String(entry.detail || "").toLowerCase().includes(term);
 
             return roleMatch && actionMatch && searchMatch;
 
@@ -5421,37 +5470,33 @@ function applyAuditFilters() {
     }
 
     tableBody.innerHTML =
-        filtered.map(entry => `
+        filtered.map(entry => {
 
+            const when = splitAuditStamp(entry.timestamp);
+            const roleClass = /cashier/i.test(entry.role) ? "cashier" : /customer/i.test(entry.role) ? "customer" : "";
+
+            return `
             <tr>
-
-                <td class="mono">
-                    ${escapeHTML(entry.timestamp)}
+                <td class="au-when">
+                    <span class="au-date">${escapeHTML(when.date)}</span>
+                    <span class="au-time">${escapeHTML(when.time)}</span>
                 </td>
-
                 <td>
-                    ${escapeHTML(entry.user)}
+                    <div class="au-person">
+                        <span class="au-avatar" aria-hidden="true">${escapeHTML(auditInitials(entry.user))}</span>
+                        <span class="au-name">${escapeHTML(entry.user)}</span>
+                    </div>
                 </td>
-
                 <td>
-                    <span class="role-tag ${/cashier/i.test(entry.role) ? "cashier" : /customer/i.test(entry.role) ? "customer" : ""}">
-                        ${escapeHTML(entry.role)}
-                    </span>
+                    <span class="role-tag ${roleClass}">${escapeHTML(entry.role)}</span>
                 </td>
-
                 <td>
-                    <span class="action-tag ${getAuditActionClass(entry.action)}">
-                        ${escapeHTML(entry.action)}
-                    </span>
+                    <span class="action-tag ${getAuditActionClass(entry.action)}">${escapeHTML(entry.action)}</span>
                 </td>
+                <td class="audit-detail">${escapeHTML(entry.detail)}</td>
+            </tr>`;
 
-                <td class="audit-detail">
-                    ${escapeHTML(entry.detail)}
-                </td>
-
-            </tr>
-
-        `).join("");
+        }).join("");
 
 }
 

@@ -168,7 +168,8 @@ async function main() {
     let t = tryProduct(prod({ unit: 'kg' }));
     ok('a finished good in kg is refused', t.fields && /sold by the piece/.test(t.fields.unit), t);
     ok('a finished good in sheet is refused', !!(tryProduct(prod({ unit: 'sheet' })).fields || {}).unit);
-    ok('a raw material is still allowed in kg', !!tryProduct(prod({ department: 'Raw Materials', unit: 'kg', listPrice: undefined })).v);
+    ok('a raw material is still allowed in kg', !!tryProduct(prod({ department: 'Raw Materials', category: 'Aluminum Alloy', unit: 'kg', listPrice: undefined })).v);
+    ok('a finished-goods category is refused for a new raw material', !!(tryProduct(prod({ department: 'Raw Materials', unit: 'kg', listPrice: undefined })).fields || {}).category);
     ok('a finishing supply is still allowed in liters', !!tryProduct(prod({ department: 'Finishing Supplies', unit: 'liter', listPrice: undefined })).v);
   } finally { child.kill(); }
   console.log('\n' + passed + ' passed, ' + failed + ' failed');

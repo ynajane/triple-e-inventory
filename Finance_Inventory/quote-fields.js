@@ -32,6 +32,52 @@
   var dayText = function (s) { return new Date(s + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }); };
 
   // earliest / latest date: the server tells us (Philippine time); this is only the fallback
+  function minWorkingDaysDate(days) {
+    var d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+    var added = 0;
+    while (added < days) {
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() !== 0) added++; // Skip Sundays
+    }
+    return ymd(d);
+  }
+  function leadForQty(qty) {
+    var q = Number(String(qty || '').replace(/,/g, '').trim()) || 0;
+    if (q > 500) return { days: 12, minDate: minWorkingDaysDate(12) };
+    if (q > 100) return { days: 7, minDate: minWorkingDaysDate(7) };
+    return { days: 2, minDate: minWorkingDaysDate(2) };
+  }
+  function updateLeadRule(p) {
+    var qEl = $(p + 'Qty'), nEl = $(p + 'Needed'), hEl = $(p + 'NeededHint'), qhEl = $(p + 'QtyHint');
+    if (!qEl || !nEl) return;
+    var q = Number((qEl.value || '').replace(/,/g, '').trim()) || 0;
+    var lead = leadForQty(q);
+    state[p].minLeadDate = lead.minDate;
+    state[p].minLeadDays = lead.days;
+    nEl.min = lead.minDate;
+    if (hEl) {
+      if (q > 100) {
+        hEl.innerHTML = 'Orders over 100 units require at least <b>' + lead.days + ' working days</b> for fabrication &amp; QC. Earliest available date: <b>' + dayText(lead.minDate) + '</b>.';
+      } else {
+        hEl.textContent = 'Pick a date from ' + dayText(lead.minDate) + ' up to ' + dayText(limits(state[p].options).max) + '.';
+      }
+    }
+    if (qhEl) {
+      var mq = state[p].options.minQty || 20;
+      if (q > 0 && q < mq && !state[p].locked) {
+        qhEl.innerHTML = '<span style="color:#b45309">Minimum order for custom fabrication is ' + mq + ' ' + $(p + 'Unit').value + '.</span>';
+      } else if (q > 500) {
+        qhEl.innerHTML = '<span style="color:#1d4ed8;font-weight:600">Large batch (500+ units) · min. 12 working days fabrication &amp; QC.</span>';
+      } else if (q > 100) {
+        qhEl.innerHTML = '<span style="color:#1d4ed8;font-weight:600">Volume batch (100+ units) · min. 7 working days fabrication &amp; QC.</span>';
+      } else if (q >= mq) {
+        qhEl.textContent = 'Standard order batch · typical lead time 3–5 working days.';
+      } else {
+        qhEl.textContent = '';
+      }
+    }
+    if (nEl.value) check(p, 'neededBy');
+  }
   function limits(o) {
     if (o.neededMin && o.neededMax) return { min: o.neededMin, max: o.neededMax };
     var today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' })), min = new Date(today), max = new Date(today);
@@ -42,7 +88,8 @@
 
   function mount(host, cfg) {
     var p = cfg.prefix, o = cfg.options || {}, lim = limits(o);
-    state[p] = { options: o, picked: false, hint: null, offKey: null, timer: null, flexible: cfg.flexible || null, locked: false };
+    state[p] = { options: o, picked: false, hint: null, offKey: null, timer: null, flexible: cfg.flexible || null, locked: false,
+      estimate: cfg.estimate || null, productSku: cfg.productSku || null, estTimer: null, estSeq: 0 };
     var hasTypes = !!(o.itemTypes && o.itemTypes.length && o.matrix);
     var h = '<div class="qx-title">Sizes and details</div>' +
       '<div class="qx-narrow" id="' + p + 'Narrow" hidden></div>' +
@@ -58,7 +105,7 @@
           '<select id="' + p + 'S_' + k + '">' + opts(o[k] || [], 'Choose ' + f[1].toLowerCase()) + (custom ? '<option value="' + OTHER + '">Other (type it)</option>' : '') + '</select>' +
           // the typed value is built from the small boxes below it (length x width x height + unit, a pipe size + unit, a thickness in mm)
           (custom ? '<input id="' + p + 'C_' + k + '" type="hidden" hidden><div class="qx-typed" id="' + p + 'X_' + k + '" hidden></div>' : '') +
-          '<div class="err-text" id="' + p + 'E_' + k + '"></div></div>';
+          '<small class="q-hint qx-stock" id="' + p + 'Stock_' + k + '" hidden></small><div class="err-text" id="' + p + 'E_' + k + '"></div></div>';
       }).join('') + '</div>' +
       '<div class="q-grid">' +
       '<div class="q-field"><label for="' + p + 'Qty">Quantity</label>' +
@@ -68,8 +115,9 @@
       '<div class="q-field"><label for="' + p + 'Needed">Needed by</label>' +
         '<input id="' + p + 'Needed" type="date" min="' + lim.min + '" max="' + lim.max + '">' +
         '<small id="' + p + 'NeededHint" class="q-hint">Pick a date from ' + esc(dayText(lim.min)) + ' up to ' + esc(dayText(lim.max)) + '.</small><div class="err-text" id="' + p + 'E_neededBy"></div></div></div>' +
+      (cfg.estimate ? '<div class="qx-est" id="' + p + 'Est" aria-live="polite" hidden></div>' : '') +
       '<div class="q-field"><label for="' + p + 'Notes">Extra notes <span class="q-optional">(optional)</span></label>' +
-        '<textarea id="' + p + 'Notes" rows="3" maxlength="1000" placeholder="e.g. drawing reference, hole spacing"></textarea>' +
+        '<textarea id="' + p + 'Notes" rows="3" maxlength="1000" placeholder="e.g. hole spacing, thread type, packing"></textarea>' +
         '<div class="q-meta"><div class="err-text" id="' + p + 'E_notes"></div><span class="q-count" id="' + p + 'NotesCount">0 / 1000</span></div></div>';
     host.innerHTML = h;
     FIELDS.forEach(function (f) {
@@ -83,12 +131,12 @@
         if (k === 'material' && !state[p].locked) cascade(p, sel.value ? 'the material ' + sel.value : '');     // finish, thickness and cutting that do not go with it are dropped
         check(p, k);
       });
-      if (c) { c.addEventListener('input', function () { if (c.classList.contains('is-bad')) check(p, k); }); c.addEventListener('blur', function () { check(p, k); }); }
+      if (c) { c.addEventListener('input', function () { check(p, k); }); c.addEventListener('blur', function () { check(p, k); }); }
       var box = $(p + 'X_' + k);
       if (box) {
         box.addEventListener('input', function (e) {
           if (e.target.matches('input[data-n]')) { var t = e.target, clean = t.value.replace(t.getAttribute('data-n') === 'pipe' ? /[^\d.\/\- ]/g : /[^\d.]/g, ''); if (clean !== t.value) t.value = clean; }
-          compose(p, k); if (sel.classList.contains('is-bad') || box.querySelector('.is-bad')) check(p, k);
+          compose(p, k); check(p, k);
         });
         box.addEventListener('change', function () { compose(p, k); if (box.querySelector('input[data-n]').value) check(p, k); });
         box.addEventListener('focusout', function (e) { if (!box.contains(e.relatedTarget)) { compose(p, k); check(p, k); } });
@@ -104,13 +152,60 @@
       cascade(p, r ? r.label : '', true); check(p, 'itemType'); describeNote(p);
     });
     $(p + 'Qty').addEventListener('blur', function () { check(p, 'quantity'); });
-    $(p + 'Qty').addEventListener('input', function () { var el = $(p + 'Qty'), d = el.value.replace(wholeUnit(p) ? /[^\d,]/g : /[^\d.,]/g, ''); if (d !== el.value) el.value = d; if (el.classList.contains('is-bad')) check(p, 'quantity'); });
+    $(p + 'Qty').addEventListener('input', function () { var el = $(p + 'Qty'), d = el.value.replace(wholeUnit(p) ? /[^\d,]/g : /[^\d.,]/g, ''); if (d !== el.value) el.value = d; if (el.value || el.classList.contains('is-bad')) check(p, 'quantity'); updateLeadRule(p); });
     $(p + 'Unit').addEventListener('change', function () { state[p].unitTouched = true; var el = $(p + 'Qty'); if (wholeUnit(p)) el.value = el.value.replace(/\..*$/, ''); if (el.value) check(p, 'quantity'); });
-    $(p + 'Needed').addEventListener('change', function () { check(p, 'neededBy'); neededNote(p); });
-    $(p + 'Notes').addEventListener('input', function () { $(p + 'NotesCount').textContent = $(p + 'Notes').value.length + ' / 1000'; });
+    ['input', 'change'].forEach(function (event) { $(p + 'Needed').addEventListener(event, function () { check(p, 'neededBy'); neededNote(p); }); });
+    $(p + 'Notes').addEventListener('input', function () { $(p + 'NotesCount').textContent = $(p + 'Notes').value.length + ' / 1000'; check(p, 'notes'); });
     $(p + 'Narrow').addEventListener('click', function (e) { if (e.target.closest('[data-showall]')) { state[p].offKey = state[p].hint && state[p].hint.key; refresh(p); } });
     var item = itemInput(p); if (item) item.addEventListener('input', function () { clearTimeout(state[p].timer); state[p].timer = setTimeout(function () { refresh(p); }, 250); });
     refresh(p); syncUnits(p);
+    updateLeadRule(p);
+    // automatic price: every change re-works the estimate (pricing.js on the server does the maths, so every screen agrees)
+    if (cfg.estimate) {
+      var again = function () { clearTimeout(state[p].estTimer); state[p].estTimer = setTimeout(function () { estimate(p); }, 400); };
+    host.addEventListener('change', function (e) { if (e.target && /S_size$|XU_size$/.test(e.target.id) && $(p + 'S_thickness') && $(p + 'S_thickness').value) check(p, 'thickness'); });
+      host.addEventListener('change', again); host.addEventListener('input', again);
+      estimate(p);
+    }
+  }
+
+  // ---- the price estimate under the form ---------------------------------------------------------------------------------
+  var peso = function (n) { return '\u20B1' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  function estimate(p) {
+    var s = state[p], box = $(p + 'Est'); if (!s || !box) return;
+    var r = read(p), sku = typeof s.productSku === 'function' ? s.productSku() : '';
+    var body = { itemType: r.itemType || (s.locked ? s.catalogType : undefined), quantity: r.quantity, specs: r.specs, productSku: sku || undefined };
+    var my = ++s.estSeq;
+    fetch('/api/pricing/quote-estimate', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (d) {
+        if (my !== s.estSeq || !d) return;
+        box.hidden = false;
+        if (d.status === 'incomplete' || (!d.ok && d.missing)) {
+          box.className = 'qx-est is-wait';
+          box.innerHTML = '<b>Automatic price</b><span>Choose the ' + esc((d.missing || []).join(', ')) + ' to see the estimated price.</span>';
+          return;
+        }
+        var staff = s.estimate === 'staff';
+        // never a wrong number: no cost on file -> "cannot price yet"; stock that cannot cover the quantity -> "short by X"
+        if (!d.ok) {
+          box.className = 'qx-est is-wait';
+          box.innerHTML = '<b>' + (staff ? 'Cannot price yet' : 'Estimated price') + '</b><span>' + esc(staff ? (d.problems || []).map(function (x) { return x.message; }).join(' ') : (d.cannotPrice || 'Our staff will work out this price.')) + '</span>';
+          return;
+        }
+        var num = function (n) { return (+Number(n).toFixed(4)).toLocaleString('en-PH', { maximumFractionDigits: 4 }); };
+        box.className = 'qx-est' + (d.status === 'short' || d.stockNote ? ' is-short' : '');
+        box.innerHTML = '<div class="qx-est-head"><b>' + (staff ? 'System price' : 'Estimated price') + '</b><strong>' + peso(d.total) + '</strong></div>' +
+          '<span>' + peso(d.pricePerPiece) + ' per piece \u00D7 ' + esc(d.quantity) + (d.catalog ? ' (catalog price)' : '') + '</span>' +
+          (staff && d.lines ? '<details class="qx-est-how"><summary>Materials and stock</summary><ul>' +
+            d.lines.map(function (l) { return '<li><span>' + esc(l.name) + ': ' + num(l.needed) + ' ' + esc(l.unit) + ' for the order' + (l.estimate ? ' <i>(estimate)</i>' : '') +
+              '<br><small>' + (l.short > 0 ? '<em class="qx-short">short by ' + num(l.short) + ' ' + esc(l.unit) + '</em> \u00B7 ' : '') + num(l.onHand) + ' ' + esc(l.unit) + ' on hand</small></span><b>' + peso(l.costPerPiece) + '/pc</b></li>'; }).join('') +
+            '<li class="sum"><span>Cost per piece \u00B7 total cost ' + peso(d.costTotal) + '</span><b>' + peso(d.costPerPiece) + '</b></li>' +
+            '<li class="sum"><span>Price = cost \u00D7 ' + (1 + d.markupPct / 100).toFixed(2) + ' \u00B7 margin ' + esc(d.marginPct) + '%</span><b>' + peso(d.pricePerPiece) + '</b></li></ul></details>' : '') +
+          (d.notes && d.notes.length ? '<small>' + esc(d.notes.join(' ')) + '</small>' : '') +
+          (d.stockNote ? '<small class="qx-short">' + esc(d.stockNote) + '</small>' : '') +
+          '<small>' + (staff ? 'Materials only, priced at today\u2019s costs; the weight per piece is an estimate. Price the request on the Quotations desk.' : 'A first estimate from your details, at today\u2019s material prices. Our staff confirm the final price in your quotation.') + '</small>';
+      }).catch(function () {});
   }
 
   // ---- the item type and the material decide what the other details can be ------------------------------------------------
@@ -312,7 +407,7 @@
       var empty = sel.parentNode.querySelector('.qx-empty');
       if (!valid && !empty) { empty = document.createElement('small'); empty.className = 'qx-empty q-hint'; sel.parentNode.appendChild(empty); }
       var typeOnly = !valid && !!sel.querySelector('option[value="' + OTHER + '"]'), tr = f[0] === 'size' ? typedRule(p, 'size') : null;
-      if (empty) { empty.textContent = valid ? '' : typeOnly ? (tr ? 'Made to your drawing \u2014 type the size below.' : 'Type it below.') : 'No predefined options. Contact staff for a custom specification.'; empty.hidden = !!valid; }
+      if (empty) { empty.textContent = valid ? '' : typeOnly ? (tr ? 'Made to order \u2014 type the size below.' : 'Type it below.') : 'No predefined options. Contact staff for a custom specification.'; empty.hidden = !!valid; }
       sel.setAttribute('aria-label', f[1] + (valid ? ' (' + valid + ' available)' : ' (no predefined options)'));
     });
   }
@@ -365,7 +460,12 @@
     if (field === 'neededBy') {
       var d = $(p + 'Needed').value, lim = limits(state[p].options), flex = state[p].flexible;
       if (!d) return (flex && flex()) ? '' : 'Choose the date you need it.';
-      if (d < lim.min) return 'Choose a date after today (' + dayText(lim.min) + ' or later).';
+      var q = Number(($(p + 'Qty').value || '').replace(/,/g, '').trim()) || 0;
+      var lead = leadForQty(q);
+      if (d < lead.minDate) {
+        if (q > 100) return 'Orders over 100 units require at least ' + lead.days + ' working days for fabrication & QC. Please choose ' + dayText(lead.minDate) + ' or later.';
+        return 'Choose a date from ' + dayText(lead.minDate) + ' or later.';
+      }
       if (d > lim.max) return 'Choose a date within the next 6 months (up to ' + dayText(lim.max) + ').';
       return '';
     }
@@ -391,9 +491,24 @@
         return '';
       }
       return t.length >= 2 && t.length <= 40 && (!NEEDS_NUMBER[field] || /\d/.test(t)) && CUSTOM_RE.test(t) && !/[<>]/.test(t) ? '' : NEEDS_NUMBER[field] ? 'Type the ' + label + ' with its number, ' + CUSTOM_HINT[field] + '.' : 'Type the ' + label + ' (2 to 40 letters or numbers), ' + CUSTOM_HINT[field] + '.'; }
+    // required per item type (same rule as the server): a part typed as length x width only cannot be priced without its wall thickness
+    if (field === 'thickness' && !/\d\s*mm$/i.test(v2) && needsWall(p)) return 'A size with only length and width needs the wall thickness too. Choose it, or type it in mm.';
     return '';
   }
-  function check(p, field) { return setErr(p, field, rule(p, field)); }
+  function needsWall(p) {
+    var r = typeRule(p), sel = $(p + 'S_size'); if (!r || !r.thicknessFor2D || !sel || state[p].locked) return false;
+    var v = sel.value === OTHER ? ($(p + 'C_size') ? $(p + 'C_size').value.trim() : '') : sel.value;
+    return !!v && (r.sizes || []).indexOf(v) < 0 && !/^[\u00D8\u00F8\u2300]/.test(v) && sizeMm(v).length === 2;
+  }
+  // what the stock records say about the chosen material / finish (options.inventory comes from the server)
+  function stockNote(p, field) {
+    var el = $(p + 'Stock_' + field), sel = $(p + 'S_' + field), inv = state[p] && state[p].options.inventory; if (!el || !sel) return;
+    var e = inv && inv[field === 'material' ? 'materials' : 'finishes'] ? inv[field === 'material' ? 'materials' : 'finishes'][sel.value] : null;
+    if (!sel.value || !e || e.free || state[p].locked) { el.hidden = true; el.textContent = ''; return; }
+    el.hidden = false; el.setAttribute('data-stock', e.status);
+    el.textContent = e.status === 'out' ? 'Not on the shelf right now. We order it first, so this may take longer.' : 'Available in our stock.';
+  }
+  function check(p, field) { if (field === 'material' || field === 'finish') stockNote(p, field); return setErr(p, field, rule(p, field)); }
   // a typed pipe size that is already in the list ("1 in" -> 1") — pick it from the list instead, so the request is not "custom"
   function PIPE_SIZES_IN(t, o) {
     var m = /^\s*([\d.\/\- ]+?)\s*(in|inch|inches|")\s*$/i.exec(t); if (!m) return '';
@@ -495,17 +610,11 @@
     var h = detect(p), fromName = h && (h.pick || h.famName);              // a grade in the name (ADC12) gives the exact material; a name that only says "brass" gives "Brass"
     // what kind of item the product is (from its name), so a detail its record leaves out offers the right choices
     s.catalogType = h && h.types && h.types.length === 1 ? h.types[0] : null;
-    var open = [];
     Object.keys(ALIAS).forEach(function (k) {
       var v = ALIAS[k].map(function (a) { return lower[a]; }).filter(Boolean)[0], why = 'From the product record. Locked.';
       if (!v && k === 'material' && fromName) { v = fromName; why = 'Read from the product name. Locked.'; }
-      if (!v) { open.push(k); return; }                                            // not on the record: it has to be chosen (the server checks the same)
+      if (!v) { v = NOT_SET; why = 'Not stated on the product record. Sold as is.'; }
       setLocked(p, k, v, why);
-    });
-    open.forEach(function (k) {
-      unlock(p, k); rebuild(p, k);
-      lockNote(p, $(p + 'S_' + k), 'Not on the product record \u2014 required. Choose what the customer needs.');
-      $(p + 'S_' + k).parentNode.classList.add('qx-required');
     });
     updateAvailability(p);
     setLocked(p, 'service', AS_IS, 'Ready-made item, sold as is. Locked.');
@@ -526,8 +635,13 @@
     '.qx-unit{flex:0 0 96px;min-width:96px}.q-grid>.q-field.qx-wide{grid-column:1/-1}.qx-suffix{padding-bottom:10px;font-weight:650;color:var(--text-dim)}.qx-typed .q-hint{display:block;margin-top:6px}' +
     '.qx-wait select{opacity:.6;cursor:not-allowed}.qx-required>label:after{content:" *";color:var(--red)}.qx-required .q-hint{color:var(--amber)}' +
     '.qx-narrow{margin:-4px 0 12px;font-size:12.5px;color:var(--text-faint)}.qx-narrow b{color:var(--text-dim);font-weight:600}' +
+    '.qx-est{margin:2px 0 14px;padding:12px 14px;border:1px solid var(--blue-bright);border-radius:10px;background:var(--inset);display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--text-dim)}' +
+    '.qx-est.is-wait{border-color:var(--border);border-style:dashed}.qx-est-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}.qx-est-head b{color:var(--text);font-size:13.5px}' +
+    '.qx-est-head strong{font-size:19px;color:var(--blue-bright);font-weight:750}.qx-est small{color:var(--text-faint);font-size:12px}.qx-est-how summary{cursor:pointer;color:var(--blue-bright);font-weight:600;margin-top:2px}' +
+    '.qx-est.is-short{border-color:var(--amber)}.qx-short{color:var(--amber);font-style:normal;font-weight:650}.qx-est-how i{font-style:normal;color:var(--text-faint)}' +
+    '.qx-est-how ul{list-style:none;margin:6px 0 0;padding:0}.qx-est-how li{display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px dashed var(--border)}.qx-est-how li b{white-space:nowrap;color:var(--text)}.qx-est-how li.sum{font-weight:650;color:var(--text)}' +
     '.qx-link{background:transparent;border:1px solid var(--border);border-radius:7px;padding:5px 9px;margin:4px 0 0 6px;font:inherit;font-weight:650;color:var(--blue-bright);cursor:pointer;min-height:30px}.qx-link:hover,.qx-link:focus-visible{background:var(--hover);border-color:var(--blue-bright);outline-offset:2px}.qx-narrow{padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--inset);line-height:1.6}.qx-empty{display:block;margin-top:6px}.q-field select{width:100%;max-width:100%;min-height:40px}.q-grid{min-width:0}.q-field{min-width:0}@media(max-width:600px){.qx-narrow{padding:9px}.qx-link{display:inline-block;margin-left:0}}';
   document.head.appendChild(st);
 
-  window.QuoteFields = { mount: mount, read: read, validate: validate, reset: reset, showServerError: showServerError, setUnit: setUnit, autofill: autofill, setHint: setHint, setQuantity: setQuantity, setNotes: setNotes };
+  window.QuoteFields = { estimate: estimate, mount: mount, read: read, validate: validate, reset: reset, showServerError: showServerError, setUnit: setUnit, autofill: autofill, setHint: setHint, setQuantity: setQuantity, setNotes: setNotes };
 })();

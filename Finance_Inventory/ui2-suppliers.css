@@ -1,0 +1,278 @@
+/* =========================================================
+   ui2-suppliers.css — Suppliers page only (#suppliers.ui2)
+   Load order: ui2-core.css, product-details.css, then this file.
+   Every colour is a token, so light and dark both work.
+========================================================= */
+
+html #suppliers { --u-on-accent: #06121f; }
+html[data-theme="light"] #suppliers { --u-on-accent: #ffffff; }
+
+#suppliers > .ui2-hero { margin-bottom: 22px; }
+#suppliers .panel { padding: 0; overflow: hidden; }
+
+/* ---------- panel header ---------- */
+#suppliers .panel-head {
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 18px;
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 22px 24px 4px;
+}
+#suppliers #supplierCount {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    letter-spacing: .6px;
+    color: var(--text-dim);
+}
+
+/* ---------- toolbar (inside the panel) ---------- */
+#suppliers .catalog-toolbar {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px 16px;
+    margin: 0;
+    padding: 16px 24px 20px;
+    border-bottom: 1px solid var(--u-line-soft);
+}
+#suppliers .catalog-toolbar-right {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* status pills: one soft track (overrides product-details.css nowrap) */
+#suppliers #warehousePills {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 3px;
+    padding: 4px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line-soft);
+    background: var(--u-surface-flat);
+}
+#suppliers .pill-btn,
+#suppliers .catalog-toolbar .pill-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 6px 14px;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 99px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-dim);
+    transition: background .15s, color .15s, box-shadow .15s;
+}
+#suppliers .pill-btn:hover { background: var(--u-hover); color: var(--text); border-color: transparent; }
+#suppliers .pill-btn .count {
+    min-width: 22px;
+    padding: 1px 7px;
+    border-radius: 99px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-align: center;
+    opacity: 1;
+    color: var(--text-dim);
+    background: var(--u-track);
+}
+#suppliers .pill-btn.active,
+html[data-theme="light"] #suppliers .pill-btn.active {
+    color: var(--u-on-accent);
+    font-weight: 600;
+    border-color: transparent;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 10px 20px -12px color-mix(in srgb, var(--blue-bright) 90%, transparent);
+}
+#suppliers .pill-btn.active .count { color: var(--u-on-accent); background: rgba(255,255,255,.22); }
+
+/* location select, search, add button */
+#suppliers .inv-search,
+#suppliers .inv-select,
+#suppliers .catalog-toolbar-right .inv-select {
+    min-height: 42px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background-color: var(--u-surface-flat);
+    color: var(--text);
+    transition: border-color .15s, box-shadow .15s;
+}
+#suppliers .inv-select,
+#suppliers .catalog-toolbar-right .inv-select { min-width: 160px; padding: 8px 14px; color: var(--text-dim); }
+#suppliers #supplierSearch {
+    flex: 1 1 220px;
+    min-width: 180px;
+    max-width: 300px;
+    padding: 8px 16px 8px 42px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238fa1b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 15px 50%;
+    background-size: 17px 17px;
+}
+#suppliers .inv-search:hover,
+#suppliers .inv-select:hover { border-color: var(--u-chip-line); }
+#suppliers .inv-search:focus,
+#suppliers .inv-select:focus {
+    border-color: var(--blue-bright);
+    box-shadow: 0 0 0 3px var(--u-chip-bg);
+    outline: none;
+}
+#suppliers #supplierSearch::placeholder { color: var(--text-faint); }
+
+#suppliers #onboardSupplierBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 9px 18px;
+    border-radius: 12px;
+    font-weight: 600;
+    letter-spacing: .4px;
+    white-space: nowrap;
+    box-shadow: 0 12px 24px -14px color-mix(in srgb, var(--blue-bright) 85%, transparent);
+    transition: transform .15s, filter .15s;
+}
+#suppliers #onboardSupplierBtn:hover { transform: translateY(-1px); filter: brightness(1.06); }
+#suppliers #onboardSupplierBtn .ico { width: 17px; height: 17px; margin: 0; vertical-align: 0; stroke-width: 2.4; }
+
+/* ---------- table (fixed) ----------
+   Fixes: style.css gives every .table-wrapper table min-width 650px and
+   sticky, opaque headers; the plain-text address/contact/supplies cells
+   wrapped into tall uneven rows. Columns now have set widths and the
+   cells are structured (see renderSupplierTable in suppliers-changes.txt). */
+#suppliers .table-wrapper { border: 0; border-radius: 0; background: transparent; overflow-x: auto; }
+#suppliers .table-wrapper table {
+    width: 100%;
+    min-width: 860px;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+#suppliers thead th {
+    position: static;
+    padding: 13px 16px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 1.4px;
+    text-align: left;
+    white-space: nowrap;
+    color: var(--text-dim);
+    background: var(--u-head-bg);
+    border-bottom: 1px solid var(--u-line-soft);
+}
+#suppliers thead th:nth-child(1) { width: 27%; }
+#suppliers thead th:nth-child(2) { width: 21%; }
+#suppliers thead th:nth-child(3) { width: 21%; }
+#suppliers thead th:nth-child(4) { width: 20%; }
+#suppliers thead th:nth-child(5) { width: 11%; }
+#suppliers thead th:first-child,
+#suppliers tbody td:first-child { padding-left: 24px; }
+#suppliers thead th:last-child,
+#suppliers tbody td:last-child { padding-right: 24px; }
+#suppliers tbody td {
+    padding: 14px 16px;
+    vertical-align: middle;
+    font-size: 14.5px;
+    border-bottom: 1px solid var(--u-line-soft);
+    overflow-wrap: anywhere;
+}
+#suppliers tbody tr:last-child td { border-bottom: 0; }
+
+/* row: blue rail + soft hover */
+#suppliers tbody tr.supplier-row {
+    cursor: pointer;
+    box-shadow: inset 3px 0 0 transparent;
+    transition: background .14s, box-shadow .14s;
+}
+#suppliers tbody tr.supplier-row:hover,
+#suppliers tbody tr.supplier-row:focus-visible {
+    background: var(--u-hover);
+    box-shadow: inset 3px 0 0 var(--blue-bright);
+}
+#suppliers tbody tr.supplier-row:focus-visible { outline: 2px solid var(--blue-bright); outline-offset: -2px; }
+#suppliers tbody tr.supplier-row.is-archived { opacity: .72; }
+#suppliers tbody tr.supplier-row.is-archived .supplier-avatar { filter: grayscale(1); }
+
+/* supplier cell: initials tile + name */
+#suppliers .supplier-row-name { display: flex; align-items: center; gap: 14px; min-width: 0; }
+#suppliers .supplier-avatar {
+    width: 40px; height: 40px;
+    flex: none;
+    border-radius: 12px;
+    font-size: 16px;
+    letter-spacing: .5px;
+    color: var(--blue-bright);
+    background: color-mix(in srgb, var(--blue-bright) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--blue-bright) 34%, transparent);
+}
+#suppliers .sp-name { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.3; min-width: 0; }
+
+/* location with pin */
+#suppliers .sp-loc { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; color: var(--text-dim); }
+#suppliers .sp-loc .ico { width: 15px; height: 15px; margin-top: 2px; flex: none; vertical-align: 0; color: var(--blue-bright); }
+
+/* contact: person on top, phone / email underneath */
+#suppliers .sp-contact { display: grid; gap: 2px; line-height: 1.35; }
+#suppliers .sp-contact b { font-weight: 600; color: var(--text); }
+#suppliers .sp-contact span {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    letter-spacing: .2px;
+    color: var(--text-dim);
+}
+
+/* supplies as soft chips */
+#suppliers .sp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+#suppliers .sp-chip {
+    display: inline-block;
+    max-width: 100%;
+    padding: 3px 11px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background: var(--u-surface-flat);
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#suppliers .sp-chip.more {
+    font-family: "IBM Plex Mono", monospace;
+    font-weight: 600;
+    color: var(--blue-bright);
+    background: var(--u-chip-bg);
+    border-color: var(--u-chip-line);
+    cursor: help;
+}
+#suppliers .sp-none { font-size: 13px; color: var(--text-faint); }
+
+/* status chip: archived joins the shared set */
+#suppliers .status-pill.archived { color: var(--u-bad-fg); background: var(--u-bad-bg); border-color: var(--u-bad-line); }
+
+/* empty state */
+#suppliers .no-results-row:hover { background: transparent; }
+#suppliers .no-results-row td { padding: 44px 16px; text-align: center; color: var(--text-dim); font-size: 14.5px; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1100px) {
+    #suppliers .catalog-toolbar-right { flex-basis: 100%; justify-content: flex-start; }
+    #suppliers #supplierSearch { max-width: none; }
+}
+@media (max-width: 700px) {
+    #suppliers .panel-head { padding: 18px 16px 4px; }
+    #suppliers .catalog-toolbar { padding: 14px 16px 16px; }
+    #suppliers thead th:first-child,
+    #suppliers tbody td:first-child { padding-left: 16px; }
+    #suppliers thead th:last-child,
+    #suppliers tbody td:last-child { padding-right: 16px; }
+    #suppliers .catalog-toolbar-right > * { flex: 1 1 100%; }
+    #suppliers .catalog-toolbar-right > button { justify-content: center; }
+}

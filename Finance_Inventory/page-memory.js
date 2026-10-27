@@ -7,7 +7,7 @@
   'use strict';
   var file = decodeURIComponent((location.pathname.split('/').pop() || '')).toLowerCase();
   var CFG = {
-    'pos_cashier.html':  { fn: 'showPage', home: 'terminal', ids: ['terminal', 'sales', 'shift', 'quotes', 'notifications'] },
+    'pos_cashier.html':  { fn: 'showPage', home: 'terminal', ids: ['terminal', 'sales', 'shift', 'orders', 'quotes', 'customers', 'reviews', 'notifications'] },
     'shop_customer.html': { fn: 'show',     home: 'catalog',  ids: ['catalog', 'cart', 'orders', 'quote', 'notifications'] }
   }[file];
   if (!CFG) return;

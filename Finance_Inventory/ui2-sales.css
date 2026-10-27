@@ -1,0 +1,240 @@
+/* =========================================================
+   ui2-sales.css — Sales page only (#sales-hub.ui2)
+   Load AFTER ui2-core.css and sales-hub.css (it restyles them).
+   Looks only: no scripts or behaviour change. Tokens only, so
+   light and dark both work.
+========================================================= */
+
+html #sales-hub { --u-on-accent: #06121f; --sh-radius: var(--u-r); --sh-line: var(--u-line-soft); --sh-soft: var(--u-surface-flat); --sh-tint: var(--u-hover); --sh-shadow: var(--u-shadow); }
+html[data-theme="light"] #sales-hub { --u-on-accent: #ffffff; }
+
+/* ---------- hero ---------- */
+#sales-hub > .ui2-hero { margin: 4px 0 20px; }
+
+/* ---------- tab bar: one soft track, blue active tab ---------- */
+#salesHubTabs.rep-nav {
+    margin: 0 0 28px;
+    padding: 5px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line-soft);
+    background: var(--u-surface);
+    box-shadow: var(--u-shadow);
+}
+@supports (backdrop-filter: blur(6px)) {
+    #salesHubTabs.rep-nav { background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+}
+#salesHubTabs .rep-tab {
+    min-height: 38px;
+    padding: 7px 16px;
+    font-size: 14.5px;
+    font-weight: 500;
+    border-radius: 99px;
+    color: var(--text-dim);
+}
+#salesHubTabs .rep-tab:hover { color: var(--text); background: var(--u-hover); }
+#salesHubTabs .rep-tab.active {
+    color: var(--u-on-accent);
+    font-weight: 600;
+    border-color: transparent;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 10px 20px -12px color-mix(in srgb, var(--blue-bright) 90%, transparent);
+}
+#salesHubTabs .rep-nav-period {
+    font-size: 12.5px;
+    letter-spacing: .6px;
+    background: var(--u-chip-bg);
+    border-color: var(--u-chip-line);
+}
+#salesHubTabs .sh-pending { border-radius: 14px; background: var(--u-warn-bg); border-color: var(--u-warn-line); }
+
+/* ---------- section headings ---------- */
+#sales-hub .sales-flow { gap: 52px; }
+#sales-hub .sales-sec > .catalog-header { margin: 0 0 18px; }
+#sales-hub .sales-sec > .catalog-header > div:first-child { grid-template-columns: 46px minmax(0, 1fr); column-gap: 14px; }
+#sales-hub .sales-sec > .catalog-header > div:first-child::before {
+    width: 46px; height: 46px;
+    border-radius: 13px;
+    background-size: 23px, auto;
+    box-shadow: 0 12px 24px -14px color-mix(in srgb, var(--blue-bright) 85%, transparent), inset 0 1px 0 rgba(255,255,255,.3);
+}
+#sales-hub .sales-sec > .catalog-header .catalog-title {
+    font-family: "Oswald", sans-serif;
+    font-weight: 600;
+    font-size: clamp(24px, 2.4vw, 30px);
+    letter-spacing: .3px;
+}
+#sales-hub .sales-sec > .catalog-header .panel-sub,
+#sales-hub .sales-sec > .catalog-header .faint,
+#sales-hub .sales-sec > .catalog-header p { font-size: 14.5px; max-width: 72ch; }
+
+/* ---------- panels ---------- */
+#sales-hub .panel {
+    background: var(--u-surface);
+    border: 1px solid var(--u-line);
+    border-radius: var(--u-r);
+    box-shadow: var(--u-shadow);
+    padding: 22px 24px;
+}
+#sales-hub .panel-head { margin-bottom: 16px; gap: 14px 18px; flex-wrap: wrap; }
+#sales-hub .panel-title {
+    font-family: "Oswald", sans-serif;
+    font-weight: 600;
+    font-size: 18px;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+}
+#sales-hub .panel-sub { font-size: 14px; }
+
+/* "view only" note: calm info strip */
+#sales-hub .sales-view-note {
+    border-radius: 12px;
+    border: 1px solid var(--u-chip-line);
+    border-left: 3px solid var(--blue-bright);
+    background: var(--u-chip-bg);
+    font-size: 14.5px;
+}
+
+/* ---------- KPI cards (same look as dashboard stat cards) ---------- */
+#sales-hub .sa-kpis { gap: 16px; }
+#sales-hub .sa-kpi {
+    min-height: 128px;
+    border-radius: var(--u-r);
+    border: 1px solid var(--u-line);
+    background: var(--u-surface);
+    box-shadow: var(--u-shadow);
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+#sales-hub .sa-kpi::before {            /* corner glow in the card colour (replaces the flat top bar) */
+    left: auto; right: -46px; top: -46px;
+    width: 150px; height: 150px;
+    border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--kpi, var(--blue-bright)) 26%, transparent), transparent 68%);
+    pointer-events: none;
+}
+#sales-hub .sa-kpi::after { border: 1px solid color-mix(in srgb, var(--kpi, var(--blue-bright)) 34%, transparent); }
+#sales-hub .sa-kpi:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--kpi, var(--blue-bright)) 55%, var(--u-line));
+    box-shadow: var(--u-shadow), 0 18px 36px -22px color-mix(in srgb, var(--kpi, var(--blue-bright)) 70%, transparent);
+}
+#sales-hub .sa-kpi.on { border-color: var(--kpi, var(--blue-bright)); box-shadow: 0 0 0 1px var(--kpi, var(--blue-bright)) inset, var(--u-shadow); }
+#sales-hub .sa-kpi-label { font-size: 12px; letter-spacing: 1.5px; font-weight: 600; color: var(--text-dim); }
+#sales-hub .sa-kpi-value { font-size: clamp(28px, 2.4vw, 36px); letter-spacing: .3px; }
+
+/* decisions */
+#sales-hub .sa-decisions-panel { border-radius: var(--u-r); border: 1px solid var(--u-line); background: var(--u-surface); box-shadow: var(--u-shadow); }
+#sales-hub .sa-decision-card { border-radius: 12px; border: 1px solid var(--u-line-soft); background: var(--u-surface-flat); }
+#sales-hub .sa-dec-reason { border-radius: 10px; }
+
+/* ---------- filters, inputs, buttons ---------- */
+#sales-hub .sa-source-tabs {
+    padding: 4px; gap: 3px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line-soft);
+    background: var(--u-surface-flat);
+}
+#sales-hub .sa-source-tab { border-radius: 99px; padding: 8px 18px; font-size: 14px; font-weight: 500; color: var(--text-dim); }
+#sales-hub .sa-source-tab.active,
+html[data-theme="dark"] #sales-hub .sa-source-tab.active {
+    color: var(--u-on-accent) !important;
+    font-weight: 600;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 10px 20px -12px color-mix(in srgb, var(--blue-bright) 90%, transparent);
+}
+#sales-hub input[type="text"],
+#sales-hub input[type="search"],
+#sales-hub input[type="date"],
+#sales-hub select,
+#sales-hub .inv-search,
+#sales-hub .inv-select {
+    min-height: 42px;
+    border-radius: 12px;
+    border: 1px solid var(--u-line);
+    background-color: var(--u-surface-flat);
+    transition: border-color .15s, box-shadow .15s;
+}
+#sales-hub input[type="search"],
+#sales-hub .inv-search { border-radius: 99px; }
+#sales-hub .inv-search:hover, #sales-hub .inv-select:hover { border-color: var(--u-chip-line); }
+#sales-hub input:focus, #sales-hub select:focus {
+    border-color: var(--blue-bright);
+    box-shadow: 0 0 0 3px var(--u-chip-bg);
+    outline: none;
+}
+#sales-hub .btn-primary {
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 12px 24px -14px color-mix(in srgb, var(--blue-bright) 85%, transparent);
+}
+#sales-hub .btn-secondary { border-color: var(--u-line); background: var(--u-surface-flat); }
+#sales-hub .btn-secondary:hover { border-color: var(--blue-bright); background: var(--u-hover); }
+
+/* POS date range quick buttons: soft pills */
+#sales-hub .pos-period-btn,
+#sales-hub .pos-export-btn {
+    min-height: 36px;
+    padding: 6px 14px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background: var(--u-surface-flat);
+    color: var(--text-dim);
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: background .15s, color .15s, border-color .15s;
+}
+#sales-hub .pos-period-btn:hover,
+#sales-hub .pos-export-btn:hover { background: var(--u-hover); color: var(--text); border-color: var(--u-chip-line); }
+#sales-hub .pos-period-btn.active {
+    color: var(--u-on-accent);
+    font-weight: 600;
+    border-color: transparent;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+}
+
+/* ---------- tables ---------- */
+#sales-hub .table-wrapper {
+    border: 1px solid var(--u-line-soft);
+    border-radius: 12px;
+    background: var(--u-surface-flat);
+}
+#sales-hub thead th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 1.4px;
+    padding: 13px 14px;
+    color: var(--text-dim);
+    background: var(--u-head-bg);
+    border-bottom: 1px solid var(--u-line-soft);
+}
+#sales-hub tbody td { padding: 13px 14px; font-size: 14.5px; border-bottom: 1px solid var(--u-line-soft); }
+#sales-hub .sa-table tbody td { padding: 13px 14px; }
+#sales-hub tbody tr { transition: background .12s ease; }
+#sales-hub tbody tr:hover { background: var(--u-hover); }
+#sales-hub tbody tr:last-child td { border-bottom: 0; }
+#sales-hub .sa-ref { font-weight: 600; }
+#sales-hub .sa-empty { color: var(--text-dim); }
+
+/* ---------- chips (status, channel, flags) ---------- */
+#sales-hub .sa-pill { font-size: 12.5px; font-weight: 600; letter-spacing: .3px; padding: 4px 11px; }
+#sales-hub .sa-pill.ok   { color: var(--u-ok-fg);   background: var(--u-ok-bg);   border-color: var(--u-ok-line); }
+#sales-hub .sa-pill.warn { color: var(--u-warn-fg); background: var(--u-warn-bg); border-color: var(--u-warn-line); }
+#sales-hub .sa-pill.bad  { color: var(--u-bad-fg);  background: var(--u-bad-bg);  border-color: var(--u-bad-line); }
+#sales-hub .sa-pill.info { color: var(--blue-bright); background: var(--u-chip-bg); border-color: var(--u-chip-line); }
+html[data-theme="light"] #sales-hub .sa-pill.ok   { color: var(--u-ok-fg); }
+html[data-theme="light"] #sales-hub .sa-pill.warn { color: var(--u-warn-fg); }
+html[data-theme="light"] #sales-hub .sa-pill.bad  { color: var(--u-bad-fg); }
+html[data-theme="light"] #sales-hub .sa-pill.info { color: #1d5f9e; }
+#sales-hub .sa-src { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; letter-spacing: .6px; }
+
+/* ---------- keyboard focus + motion ---------- */
+#sales-hub :focus-visible { outline: 2px solid var(--blue-bright); outline-offset: 3px; }
+#salesHubTabs .rep-tab:focus-visible { outline: 2px solid var(--blue-bright); outline-offset: 2px; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 760px) {
+    #salesHubTabs.rep-nav { border-radius: 18px; }
+    #sales-hub .panel { padding: 18px 16px; }
+    #sales-hub .sales-flow { gap: 40px; }
+    #sales-hub .sales-sec > .catalog-header > div:first-child { grid-template-columns: 40px minmax(0, 1fr); }
+    #sales-hub .sales-sec > .catalog-header > div:first-child::before { width: 40px; height: 40px; border-radius: 12px; background-size: 20px, auto; }
+}

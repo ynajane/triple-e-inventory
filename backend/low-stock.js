@@ -71,8 +71,54 @@ ${link ? `<p style="margin:20px 0 0"><a href="${esc(link)}" style="background:#1
       const recovered = await pool.query(`DELETE FROM low_stock_alerts a USING products p WHERE p.product_id = a.product_id
                           AND (p.on_hand > p.reorder_level OR p.reorder_level <= 0 OR p.is_archived)
                           RETURNING a.product_id`);
-      if (recovered.rowCount && app.locals.notifications)
-        await app.locals.notifications.resolveLowStock(recovered.rows.map((r) => r.product_id));
+      if (recovered.rowCount) {
+        if (app.locals.notifications)
+          await app.locals.notifications.resolveLowStock(recovered.rows.map((r) => r.product_id));
+        await pool.query(
+          `UPDATE purchase_suggestions
+              SET status = 'ordered', note = COALESCE(note, 'Restocked above reorder level')
+            WHERE product_id = ANY($1) AND status = 'open' AND source = 'low_stock'`,
+          [recovered.rows.map((r) => r.product_id)]
+        ).catch((e) => console.warn('[low-stock] resolve suggestion failed:', e.message));
+      }
+
+      // ensure suggested purchase orders exist for any products currently below reorder level
+      try {
+        const lowProducts = await pool.query(
+          `SELECT p.product_id, p.sku, p.name, p.unit, p.department, p.on_hand, p.reorder_level, p.unit_cost,
+                  s.supplier_id, s.name AS supplier_name, s.lead_time_days
+             FROM products p
+             LEFT JOIN product_suppliers ps ON ps.product_id = p.product_id AND ps.is_primary = TRUE
+             LEFT JOIN suppliers s ON s.supplier_id = ps.supplier_id AND s.status = 'active'
+            WHERE NOT p.is_archived AND p.reorder_level > 0 AND p.on_hand <= p.reorder_level`
+        );
+        for (const item of lowProducts.rows) {
+          const shortage = Math.max(1, Math.round(+item.reorder_level - +item.on_hand));
+          const unitCost = +item.unit_cost > 0 ? +item.unit_cost : null;
+          const estCost = unitCost ? Math.round(shortage * unitCost * 100) / 100 : null;
+          await pool.query(
+            `INSERT INTO purchase_suggestions (
+               product_id, sku, name, unit, quantity, source,
+               supplier_id, supplier_name, unit_cost, estimated_cost, lead_time_days
+             ) VALUES ($1, $2, $3, $4, $5, 'low_stock', $6, $7, $8, $9, $10)
+             ON CONFLICT (product_id) WHERE status = 'open' AND source = 'low_stock'
+             DO UPDATE SET
+               quantity = EXCLUDED.quantity,
+               unit_cost = EXCLUDED.unit_cost,
+               estimated_cost = EXCLUDED.estimated_cost,
+               supplier_id = COALESCE(EXCLUDED.supplier_id, purchase_suggestions.supplier_id),
+               supplier_name = COALESCE(EXCLUDED.supplier_name, purchase_suggestions.supplier_name),
+               lead_time_days = COALESCE(EXCLUDED.lead_time_days, purchase_suggestions.lead_time_days)`,
+            [
+              item.product_id, item.sku, item.name, item.unit || 'pcs',
+              shortage, item.supplier_id || null, item.supplier_name || null,
+              unitCost, estCost, item.lead_time_days != null ? item.lead_time_days : null
+            ]
+          ).catch((e) => console.warn('[low-stock] purchase_suggestion sync failed:', e.message));
+        }
+      } catch (err) {
+        console.warn('[low-stock] suggestion sync failed:', err.message);
+      }
       // claim the newly low products; if two servers run at once only one of them gets each product
       const claimed = await pool.query(
         `INSERT INTO low_stock_alerts (product_id, on_hand)
@@ -115,7 +161,7 @@ ${link ? `<p style="margin:20px 0 0"><a href="${esc(link)}" style="background:#1
   // for Cloud Scheduler (or any timer): keeps alerts working when the server has been idle
   const cron = async (req, res) => {
     const key = env('LOW_STOCK_CRON_KEY');
-    if (!key || req.get('x-cron-key') !== key) return res.status(404).json({ error: 'Not found' });
+    if (!key || !require('./security').safeEqual(req.get('x-cron-key'), key)) return res.status(404).json({ error: 'Not found' });
     res.json(await check());
   };
   app.get('/api/low-stock/check', cron);

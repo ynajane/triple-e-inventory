@@ -1,0 +1,37 @@
+/* =========================================================
+   ui2-pager.css — the one table pager (.pager, built by api-bridge.js)
+   on every .ui2 page. Load AFTER style.css and the ui2-*.css files.
+   Tokens only, so light and dark both work.
+========================================================= */
+html .ui2 .pager {
+    margin-top: 14px;
+    padding: 14px 4px 0;
+    border-top: 1px solid var(--u-line-soft);
+    font-size: 13.5px;
+    color: var(--text-dim);
+}
+html .ui2 .pager-info { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; letter-spacing: .4px; }
+html .ui2 .pager-info strong { color: var(--text); }
+html .ui2 .pager-btn {
+    min-width: 36px; height: 36px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background: var(--u-surface-flat);
+    color: var(--text-dim);
+    font-weight: 500;
+    transition: background .15s, color .15s, border-color .15s;
+}
+html .ui2 .pager-btn:hover:not(:disabled):not(.active) { border-color: var(--blue-bright); background: var(--u-hover); color: var(--text); }
+html .ui2 .pager-btn.active {
+    color: var(--u-on-accent, #fff);
+    font-weight: 600;
+    border-color: transparent;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 10px 20px -12px color-mix(in srgb, var(--blue-bright) 90%, transparent);
+}
+html .ui2 .pager-btn:disabled { opacity: .4; cursor: default; }
+@media (max-width: 700px) {
+    html .ui2 .pager { justify-content: center; }
+    html .ui2 .pager-nums { display: none; }
+    html .ui2 .pager-count { display: inline; }
+}

@@ -174,9 +174,12 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
     await tx(async (client) => {
       await consume(client, u.user_id, 'reset', b.code);
       await client.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [hash, u.user_id]);
+      if (app.locals.sessionRevocation) await app.locals.sessionRevocation.bump(client, u.user_id);   // a reset signs the account out everywhere (someone else may have had the old password)
+      if (app.locals.userSessions) await app.locals.userSessions.revokeOthers(client, u.user_id, null, 'password');   // ...and frees every device's place
       await audit(client, { id: u.user_id, name: u.full_name, roleLabel: u.label }, 'Profile updated', 'Reset password with a one-time code');
       await client.query('DELETE FROM login_lockouts WHERE user_id = $1', [u.user_id]).catch(() => {});   // proving the email/phone also lifts a sign-in lock
     });
+    if (app.locals.forgetAccountCheck) app.locals.forgetAccountCheck(u.user_id);
     res.json({ ok: true });
   }));
 

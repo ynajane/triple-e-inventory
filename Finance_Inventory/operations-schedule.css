@@ -1,0 +1,49 @@
+/* operations-schedule.css — Operations Planning & Delivery Schedule widget for Finance */
+.ops-panel { margin-bottom: 24px; }
+.ops-panel .panel-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.ops-tabs { display: inline-flex; align-items: center; gap: 6px; padding: 3px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); border-radius: 8px; }
+html[data-theme="light"] .ops-tabs { background: rgba(15, 40, 60, 0.04); border-color: #d3dde7; }
+.ops-tab { padding: 6px 14px; border: none; background: transparent; color: var(--text-dim); font-size: 13px; font-weight: 500; font-family: inherit; border-radius: 6px; cursor: pointer; transition: all .15s ease; display: inline-flex; align-items: center; gap: 6px; }
+.ops-tab:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+html[data-theme="light"] .ops-tab:hover { background: rgba(15, 40, 60, 0.06); }
+.ops-tab.active { background: var(--blue-bright, #4a90d9); color: #fff; font-weight: 600; }
+.ops-tab-count { font-size: 11px; padding: 2px 6px; border-radius: 10px; background: rgba(0, 0, 0, 0.2); }
+.ops-tab.active .ops-tab-count { background: rgba(255, 255, 255, 0.25); }
+
+.ops-head-actions { display: flex; align-items: center; gap: 8px; }
+.ops-btn-refresh { font-size: 12.5px; padding: 6px 12px; }
+
+/* Table and rows */
+.ops-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: rgba(255, 255, 255, 0.015); }
+.ops-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+.ops-table th { padding: 10px 14px; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--text-dim); border-bottom: 1px solid var(--border); background: rgba(255, 255, 255, 0.02); }
+html[data-theme="light"] .ops-table th { background: rgba(15, 40, 60, 0.03); }
+.ops-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.ops-table tr:last-child td { border-bottom: none; }
+.ops-table tr:hover td { background: rgba(74, 144, 217, 0.04); }
+
+/* Badges */
+.ops-badge-due { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 5px; font-size: 11.5px; font-weight: 600; background: rgba(240, 180, 60, 0.18); color: #f0b43c; border: 1px solid rgba(240, 180, 60, 0.35); }
+.ops-badge-sched { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 5px; font-size: 11.5px; font-weight: 500; background: rgba(74, 144, 217, 0.12); color: var(--blue-bright, #4a90d9); border: 1px solid rgba(74, 144, 217, 0.25); }
+.ops-badge-ready { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 5px; font-size: 11.5px; font-weight: 600; background: rgba(67, 196, 122, 0.15); color: #43c47a; border: 1px solid rgba(67, 196, 122, 0.3); }
+.ops-badge-short { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 5px; font-size: 11.5px; font-weight: 500; background: rgba(239, 122, 122, 0.15); color: #ef7a7a; border: 1px solid rgba(239, 122, 122, 0.3); }
+
+/* Materials Chips inside table */
+.ops-mat-list { display: flex; flex-wrap: wrap; gap: 4px; max-width: 380px; }
+.ops-mat-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); color: var(--text-dim); }
+html[data-theme="light"] .ops-mat-chip { background: rgba(15, 40, 60, 0.04); }
+.ops-mat-chip.short { border-color: rgba(239, 122, 122, 0.4); color: #ef7a7a; background: rgba(239, 122, 122, 0.08); font-weight: 500; }
+
+/* Empty state */
+.ops-empty { padding: 28px 14px; text-align: center; color: var(--text-dim); font-size: 13.5px; }
+
+/* automatic stock-in: replaces the old Receive / Run buttons */
+.ops-auto { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 99px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  color: var(--text-dim); background: rgba(74, 144, 217, 0.10); border: 1px solid rgba(74, 144, 217, 0.28); }
+.ops-auto::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--blue-bright, #4a90d9); }
+.ops-auto.now { color: #43c47a; background: rgba(67, 196, 122, 0.12); border-color: rgba(67, 196, 122, 0.32); }
+.ops-auto.now::before { background: #43c47a; }
+.ops-auto.wait { color: #f0b43c; background: rgba(240, 180, 60, 0.14); border-color: rgba(240, 180, 60, 0.35); }
+.ops-auto.wait::before { background: #f0b43c; }
+html[data-theme="light"] .ops-auto.now { color: #14753f; }
+html[data-theme="light"] .ops-auto.wait { color: #86560a; }

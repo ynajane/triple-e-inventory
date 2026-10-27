@@ -11,6 +11,7 @@
    and no finished goods are added. A one-time request key stops a double click / retry from deducting twice.
 
    Tables are created automatically when the server starts. db/008_production.sql is the same thing for running by hand. */
+const rcPure = require('./recipe-costing').pure;      // unit conversion shared with recipe costing
 module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, str, TZ }) {
   const MATERIAL_DEPTS = ['Raw Materials', 'Finishing Supplies'];
   const MAX_MATERIALS = 30;
@@ -87,7 +88,11 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
   const lineQty = (perUnit, qty) => Math.round(scaled(perUnit, 4) * scaled(qty, 2) / 1e4) / 100;   // 2 decimals, like the ledger
 
   function num(e, key, v, label, { max, dp, gt = true } = {}) {
-    if (v === undefined || v === null || String(v).trim() === '') { e[key] = `${label} is required`; return null; }
+    if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) { e[key] = `${label} is required`; return null; }
+    if ((typeof v !== 'number' && typeof v !== 'string') ||
+        (typeof v === 'string' && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(v.trim()))) {
+      e[key] = `${label} must be a number`; return null;
+    }
     const n = Number(v);
     if (!Number.isFinite(n)) { e[key] = `${label} must be a number`; return null; }
     if (gt ? n <= 0 : n < 0) { e[key] = gt ? `${label} must be more than 0` : `${label} cannot be negative`; return null; }
@@ -132,7 +137,7 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
     const rows = await requirementRows(pool, fg.product_id);
     res.json({ sku: fg.sku, name: fg.name, unit: fg.unit,
       materials: rows.map((r) => ({ sku: r.sku, name: r.name, department: r.department, unit: r.unit, onHand: +r.on_hand,
-        unitCost: +r.unit_cost, qtyPerUnit: +r.qty_per_unit, archived: r.is_archived, unitChanged: r.req_unit !== r.unit })) });
+        unitCost: +r.unit_cost, qtyPerUnit: +r.qty_per_unit, archived: r.is_archived, unitChanged: r.req_unit !== r.unit, recipeUnit: r.req_unit })) });
   }));
 
   // where-used: the finished goods that need this raw material / finishing supply (shown in the product details)
@@ -163,19 +168,28 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
         if (!sku) throw new ValidationError({ materials: `Line ${i + 1}: choose a material` });
         if (seen.has(sku)) throw new ValidationError({ materials: `${sku} is listed twice — each material can only appear once` });
         seen.add(sku);
-        const q = num(e, 'q', row.qtyPerUnit, `Line ${i + 1}: quantity per unit`, { max: 1e6, dp: 4 });
+        const entryUnit = str(row.unit);                                  // optional: the unit the quantity was typed in (g for a kg item ...)
+        const q = num(e, 'q', row.qtyPerUnit, `Line ${i + 1}: quantity per unit`, { max: 1e6, dp: entryUnit ? 6 : 4 });
         if (e.q) throw new ValidationError({ materials: e.q, ['mat:' + sku]: e.q });
-        clean.push({ sku, q });
+        clean.push({ sku, q, entryUnit });
       }
       const mats = clean.length ? (await client.query(
         `SELECT product_id, sku, name, department, unit, is_archived FROM products WHERE sku = ANY($1)`, [clean.map((c) => c.sku)])).rows : [];
       const bySku = new Map(mats.map((m) => [m.sku, m]));
+      const converted = [];
       for (const c of clean) {
         const m = bySku.get(c.sku);
         if (!m) throw new ValidationError({ materials: `${c.sku} does not exist` });
         if (m.is_archived) throw new ValidationError({ materials: `${m.name} is archived — remove it or restore it first` });
         if (!MATERIAL_DEPTS.includes(m.department))
           throw new ValidationError({ materials: `${m.name} is ${m.department} — only Raw Materials and Finishing Supplies can be used as materials` });
+        // unit mismatch (recipe in g, stock in kg): convert when the two units are the same kind, otherwise block with a clear message
+        if (c.entryUnit && rcPure.normUnit(c.entryUnit) !== rcPure.normUnit(m.unit)) {
+          const cv = rcPure.convert(c.q, c.entryUnit, m.unit);
+          if (!cv.ok) throw new ValidationError({ materials: `${m.name}: ${cv.reason}`, ['mat:' + c.sku]: cv.reason });
+          converted.push(`${m.name} ${fmt(c.q)} ${c.entryUnit} = ${fmt(cv.qty)} ${m.unit}`);
+          c.q = cv.qty;
+        } else if (Math.abs(c.q * 1e4 - Math.round(c.q * 1e4)) > 1e-6) throw new ValidationError({ materials: `${m.name}: use at most 4 decimal places`, ['mat:' + c.sku]: 'Use at most 4 decimal places' });
       }
       await client.query('DELETE FROM product_materials WHERE finished_product_id = $1', [fg.product_id]);
       for (const c of clean) {
@@ -185,8 +199,17 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
           [fg.product_id, m.product_id, c.q, m.unit, req.user.id]);
       }
       await audit(client, req.user, 'Material requirements',
-        `${fg.name} (${fg.sku}) — ${clean.length ? clean.map((c) => `${bySku.get(c.sku).name} ${fmt(c.q)} ${bySku.get(c.sku).unit}`).join(', ') + ' per ' + fg.unit : 'all materials removed'}`);
-      return { saved: clean.length };
+        `${fg.name} (${fg.sku}) — ${clean.length ? clean.map((c) => `${bySku.get(c.sku).name} ${fmt(c.q)} ${bySku.get(c.sku).unit}`).join(', ') + ' per ' + fg.unit : 'all materials removed'}` +
+        (converted.length ? ` (units converted: ${converted.join('; ')})` : ''));
+      // the recipe changed, so the cost (and the automatic price) follows straight away
+      const rc = app.locals.recipeCosting;
+      let cost = null;
+      if (clean.length && rc && (await rc.ready)) {
+        cost = await rc.recalcOne(client, fg.product_id, { user: req.user, why: 'recipe changed' });
+        if (cost.status === 'updated') await rc.flagQuotes(client, [cost], 'recipe changed');
+      }
+      return { saved: clean.length, converted, cost: cost ? { status: cost.status, oldCost: cost.oldCost, newCost: cost.newCost, oldPrice: cost.oldPrice, newPrice: cost.newPrice,
+        problems: cost.problems ? cost.problems.map((p) => p.message) : undefined, belowCost: cost.belowCost || undefined, quotesFlagged: cost.quotesFlagged } : undefined };
     });
     res.json(out);
   }));
@@ -269,6 +292,18 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
           throw new ValidationError({ materials: `The unit of ${l.s.name} changed from ${l.r.req_unit} to ${l.s.unit} — save the material requirements again` });
       }
 
+      // 2b) the batch is booked at the RECIPE cost: recalculate from the materials' cost right now (they are locked), never a typed standard cost.
+      //     A finished good whose cost Finance overrode (with a reason) keeps that cost. If a material has no cost the batch is NOT booked at a wrong number.
+      const rc = app.locals.recipeCosting;
+      let batchCost = null;
+      if (rc && (await rc.ready)) {
+        const r2 = await rc.recalcOne(client, fgInfo.product_id, { user: req.user, why: `production ${prod.ref} confirmed` });
+        if (r2.status === 'blocked')
+          throw new ValidationError({ materials: 'The cost of this batch cannot be worked out yet: ' + r2.problems.map((p) => p.message).join(' ') });
+        batchCost = r2.newCost == null ? r2.oldCost : r2.newCost;
+        if (r2.status === 'updated') await rc.flagQuotes(client, [r2], `production ${prod.ref}`);
+      }
+
       // 3) enough stock? list EVERY material that is short, not just the first
       const short = lines.filter((l) => l.qty > +l.s.on_hand);
       if (short.length) {
@@ -295,14 +330,14 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
 
       // 5) add the finished goods (Stock In, "Produced")
       const fgMv = await client.query(
-        // the finished good keeps Finance's standard cost: it includes labour and overhead, which the materials alone do not
+        // the finished good is booked at its recipe cost (materials only: no labour, process or tooling)
         `INSERT INTO stock_movements (product_id, movement_type, reason, quantity, handled_by, source_type, source_id, note, unit_cost)
-         VALUES ($1,'in','produced_batch',$2,$3,'production',$4,$5,(SELECT unit_cost FROM products WHERE product_id = $1)) RETURNING ref`,
-        [fgInfo.product_id, quantity, req.user.id, prod.production_id, `${prod.ref} — produced internally`]);
-      await client.query('UPDATE production_records SET fg_movement_ref = $1 WHERE production_id = $2', [fgMv.rows[0].ref, prod.production_id]);
+         VALUES ($1,'in','produced_batch',$2,$3,'production',$4,$5,COALESCE($6::numeric, (SELECT unit_cost FROM products WHERE product_id = $1))) RETURNING ref`,
+        [fgInfo.product_id, quantity, req.user.id, prod.production_id, `${prod.ref} — produced internally at the recipe cost`, batchCost]);
+      await client.query('UPDATE production_records SET fg_movement_ref = $1, unit_cost = $3 WHERE production_id = $2', [fgMv.rows[0].ref, prod.production_id, batchCost]);
 
       await audit(client, req.user, 'Production recorded',
-        `${prod.ref} — ${fgInfo.name} +${quantity} ${fgInfo.unit}; used ` +
+        `${prod.ref} — ${fgInfo.name} +${quantity} ${fgInfo.unit}` + (batchCost != null ? ` at the recipe cost of ₱${Number(batchCost).toFixed(2)} each` : '') + `; used ` +
         lines.map((l) => `${l.s.name} -${fmt(l.qty)} ${l.s.unit}`).join(', '));
       return { id: prod.production_id, duplicate: false };
     });
@@ -321,7 +356,7 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
       `SELECT pr.production_id, pr.ref, pr.product_sku, pr.product_name, pr.unit, pr.quantity, pr.status, pr.note, pr.fg_movement_ref,
               COALESCE(pr.recorded_by_name, '—') AS recorded_by,
               to_char(pr.created_at AT TIME ZONE $3, 'Mon DD, YYYY HH12:MI AM') AS dt,
-              to_char(pr.created_at AT TIME ZONE $3, 'YYYY-MM-DD') AS d,
+              to_char(pr.created_at AT TIME ZONE $3, 'YYYY-MM-DD') AS d, pr.unit_cost,
               COALESCE(json_agg(json_build_object('sku', pi.material_sku, 'name', pi.material_name, 'department', pi.department,
                          'unit', pi.unit, 'perUnit', pi.qty_per_unit, 'calculated', pi.calculated_qty, 'actual', pi.actual_qty,
                          'movementRef', pi.movement_ref) ORDER BY pi.department, pi.material_name) FILTER (WHERE pi.item_id IS NOT NULL), '[]') AS items
@@ -330,7 +365,7 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
         GROUP BY pr.production_id ORDER BY pr.created_at DESC, pr.production_id DESC LIMIT $2`, [onlyId || null, limit, TZ]);
     return rows.map((r) => ({
       ref: r.ref, sku: r.product_sku, product: r.product_name, unit: r.unit, quantity: +r.quantity, status: r.status,
-      note: r.note || undefined, recordedBy: r.recorded_by, dateTime: r.dt, date: r.d, stockInRef: r.fg_movement_ref,
+      note: r.note || undefined, unitCost: r.unit_cost == null ? undefined : +r.unit_cost, recordedBy: r.recorded_by, dateTime: r.dt, date: r.d, stockInRef: r.fg_movement_ref,
       rawMaterials: r.items.filter((i) => i.department === 'Raw Materials'),
       finishingSupplies: r.items.filter((i) => i.department === 'Finishing Supplies')
     }));
@@ -343,6 +378,7 @@ module.exports = function ({ app, pool, auth, wrap, tx, audit, ValidationError, 
 
   // used by GET /api/movements to show the production reference + related finished product on each movement
   return {
+    ready,
     async infoFor(productionIds) {
       if (!productionIds.length) return new Map();
       try {

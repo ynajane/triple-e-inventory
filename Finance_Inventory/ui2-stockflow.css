@@ -1,0 +1,266 @@
+/* =========================================================
+   ui2-stockflow.css — Stock In / Out page only (#stockflow.ui2)
+   Needs ui2-core.css loaded before it.
+   (Uses #stockflow so it wins over style.css / production.css.)
+========================================================= */
+
+/* ---------- layout ---------- */
+#stockflow .stockflow-grid {
+    grid-template-columns: minmax(340px, 400px) minmax(0, 1fr);
+    gap: 22px;
+    margin-top: 0;
+    margin-bottom: 22px;
+}
+@media (max-width: 1100px) {
+    #stockflow .stockflow-grid { grid-template-columns: minmax(0, 1fr); }
+}
+#stockflow .prod-panel { margin-top: 0; }
+
+/* ---------- record card (the entry form) ---------- */
+#stockflow .record-card {
+    --accent: var(--green);
+    position: sticky;
+    top: 16px;
+    overflow: hidden;
+    background: var(--u-surface);
+    border: 1px solid var(--u-line);
+    border-radius: var(--u-r);
+    box-shadow: var(--u-shadow);
+    padding: 24px 24px 22px;
+}
+@media (max-width: 1100px) { #stockflow .record-card { position: relative; top: 0; } }
+/* card follows the Stock In (green) / Stock Out (red) toggle */
+#stockflow .record-card:has(.seg-out.active) { --accent: var(--red); }
+
+#stockflow .record-card::before {                /* corner glow */
+    content: "";
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 190px; height: 190px;
+    border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 24%, transparent), transparent 68%);
+    pointer-events: none;
+    transition: background .25s ease;
+}
+#stockflow .record-card::after {                 /* top accent line */
+    content: "";
+    position: absolute;
+    left: 18px; right: 18px; top: 0;
+    height: 2px;
+    border-radius: 0 0 4px 4px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    pointer-events: none;
+    transition: background .25s ease;
+}
+#stockflow .record-card > * { position: relative; z-index: 1; }
+#stockflow .corner-dot { display: none; }        /* old screw-head dots */
+
+#stockflow .record-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 12px;
+    letter-spacing: 2.2px;
+}
+#stockflow .record-eyebrow::before {
+    content: "";
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+    transition: background .25s ease, box-shadow .25s ease;
+}
+#stockflow .record-product-name {
+    font-size: 23px;
+    margin: 10px 0 20px;
+    letter-spacing: .2px;
+}
+
+/* In / Out toggle: one pill track, two halves */
+#stockflow .segmented {
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 22px;
+    border-radius: 12px;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line-soft);
+}
+#stockflow .seg-btn {
+    padding: 10px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    background: transparent;
+    font-size: 13px;
+    letter-spacing: 1.4px;
+}
+#stockflow .seg-btn:hover { background: var(--u-hover); border-color: transparent; }
+#stockflow .seg-btn.seg-in.active {
+    background: var(--u-ok-bg);
+    border-color: var(--u-ok-line);
+    color: var(--u-ok-fg);
+    box-shadow: 0 8px 18px -12px rgba(67,196,122,.9);
+}
+#stockflow .seg-btn.seg-out.active {
+    background: var(--u-bad-bg);
+    border-color: var(--u-bad-line);
+    color: var(--u-bad-fg);
+    box-shadow: 0 8px 18px -12px rgba(227,91,91,.9);
+}
+
+/* ---------- form fields ---------- */
+#stockflow .form-group { margin-bottom: 18px; }
+#stockflow .form-label {
+    font-size: 11.5px;
+    letter-spacing: 1.6px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+}
+#stockflow .form-input,
+#stockflow .form-select,
+#stockflow .form-textarea {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 15.5px;
+    border-radius: 10px;
+    border: 1px solid var(--u-line);
+    background-color: var(--u-surface-flat);
+    color: var(--text);
+}
+#stockflow .form-textarea { min-height: 72px; }
+#stockflow .form-input:hover,
+#stockflow .form-select:hover,
+#stockflow .form-textarea:hover { border-color: var(--u-chip-line); }
+#stockflow .form-input:focus,
+#stockflow .form-select:focus,
+#stockflow .form-textarea:focus {
+    border-color: var(--blue-bright);
+    box-shadow: 0 0 0 3px var(--u-chip-bg);
+    outline: none;
+}
+#stockflow .form-input[readonly] {
+    background-color: var(--u-head-bg);
+    color: var(--text-dim);
+}
+#stockflow .field-hint { font-size: 13px; color: var(--text-dim); margin-top: 6px; }
+#stockflow .form-error {
+    margin: -6px 0 16px;
+    padding: 9px 13px;
+    border-radius: 10px;
+    background: var(--u-bad-bg);
+    border: 1px solid var(--u-bad-line);
+    color: var(--u-bad-fg);
+    font-size: 14px;
+}
+#stockflow .form-input.field-invalid,
+#stockflow .form-select.field-invalid,
+#stockflow .form-textarea.field-invalid { border-color: var(--red); }
+
+/* stock summary: before / after */
+#stockflow .stock-summary {
+    padding: 14px 16px;
+    margin: 4px 0 20px;
+    border-radius: 12px;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line-soft);
+}
+#stockflow .stock-summary-row { font-size: 14.5px; padding: 5px 0; }
+#stockflow .stock-summary-row.highlight {
+    margin-top: 6px;
+    padding-top: 11px;
+    border-top: 1px dashed var(--u-line-soft);
+    color: var(--text);
+}
+#stockflow .stock-summary-row.highlight span:last-child { font-size: 16.5px; color: var(--accent); }
+
+/* save button follows the In / Out accent */
+#stockflow .btn-full {
+    padding: 13px;
+    border-radius: 12px;
+    font-weight: 600;
+    letter-spacing: .4px;
+    box-shadow: 0 14px 26px -14px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+
+/* production preview inside the form */
+#stockflow .prod-preview {
+    border-radius: 12px;
+    border: 1px solid var(--u-line-soft);
+    background: var(--u-surface-flat);
+    padding: 14px;
+}
+#stockflow .prod-preview h4 {
+    font-family: "Oswald", sans-serif;
+    font-size: 14px; letter-spacing: .8px; text-transform: uppercase;
+}
+#stockflow .prod-table th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--text-dim);
+}
+#stockflow .prod-table td { border-top-color: var(--u-line-soft); }
+#stockflow .prod-in {
+    background: var(--u-surface-flat);
+    border-color: var(--u-line);
+    border-radius: 8px;
+}
+#stockflow .prod-ok  { color: var(--u-ok-fg); }
+#stockflow .prod-bad { color: var(--u-bad-fg); }
+#stockflow .prod-warn { border-radius: 10px; border-color: var(--u-bad-line); background: var(--u-bad-bg); color: var(--u-bad-fg); }
+#stockflow .prod-info { border-radius: 10px; border-color: var(--u-line-soft); background: var(--u-surface-flat); }
+#stockflow .prod-btn { border-radius: 10px; background: linear-gradient(180deg, var(--blue-bright), var(--blue)); }
+#stockflow .prod-btn.ghost { background: transparent; border-color: var(--u-line); }
+
+/* ---------- movement log + production history ---------- */
+#stockflow .panel-head {
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px 18px;
+    flex-wrap: wrap;
+}
+#stockflow .table-wrapper { overflow-x: auto; }
+#stockflow tbody tr.mov-row,
+#stockflow tbody tr.prod-row { cursor: pointer; }
+#stockflow tbody td.dim { color: var(--text-dim); }
+#stockflow tbody td:nth-child(2) { color: var(--text); font-weight: 500; }
+
+/* filters: same pill look as Inventory */
+#stockflow .inv-filters { gap: 10px; }
+#stockflow .inv-search,
+#stockflow .inv-select {
+    min-height: 42px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background-color: var(--u-surface-flat);
+    color: var(--text);
+    transition: border-color .15s, box-shadow .15s, background-color .15s;
+}
+#stockflow .inv-search {
+    min-width: 240px;
+    padding: 8px 16px 8px 42px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238fa1b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 15px 50%;
+    background-size: 17px 17px;
+}
+#stockflow .inv-select { padding: 8px 14px; color: var(--text-dim); }
+#stockflow .inv-search:hover,
+#stockflow .inv-select:hover { border-color: var(--u-chip-line); }
+#stockflow .inv-search:focus,
+#stockflow .inv-select:focus {
+    border-color: var(--blue-bright);
+    box-shadow: 0 0 0 3px var(--u-chip-bg);
+    outline: none;
+}
+
+/* "In" / "Out" pills reuse the core chips; "Details" buttons get compact */
+#stockflow .btn-sm { padding: 6px 13px; font-size: 13px; border-radius: 99px; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+    #stockflow .inv-filters { width: 100%; }
+    #stockflow .inv-search { flex: 1 1 220px; min-width: 0; }
+}
+@media (max-width: 700px) {
+    #stockflow .record-card { padding: 20px 16px; }
+    #stockflow .record-product-name { font-size: 20px; }
+}

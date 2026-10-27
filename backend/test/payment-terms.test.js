@@ -24,7 +24,7 @@ function ok(label, cond, detail) {
 async function start(p, env) {
   port = p;
   const child = spawn(process.execPath, [path.join(__dirname, 'desk-browser-harness.js'), String(p)],
-    { cwd: path.join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, env) });
+    { cwd: path.join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { XENDIT_SECRET_KEY: '' }, env) });
   const err = [];
   child.stderr.on('data', (b) => err.push(String(b)));
   const deadline = Date.now() + 15000;
@@ -45,23 +45,23 @@ const state = () => call('cashier', 'GET', '/__harness/state').then((r) => r.bod
 const termOf = (rows, key) => rows.find((t) => t.key === key);
 
 /* a shop customer's quote for a catalog product: ready stock, so no fabrication service */
-const shopQuote = () => ({ contactName: 'Eva Son', phone: '0921 123 4567', sku: 'ANG-0203', quantity: 4, quantityUnit: 'length',
+const shopQuote = () => ({ contactName: 'Eva Son', phone: '0921 123 4567', sku: 'ANG-0203', quantity: 4, quantityUnit: 'pcs',
   fulfillment: 'Pickup', neededBy: '2026-12-15',
-  specs: { material: 'Carbon Steel', size: '2 x 2 in', thickness: '3.0 mm', finish: 'Raw / Unfinished', service: 'None (as is)' } });
+  specs: { material: 'Aluminum ADC12', size: '2"', thickness: '3.0 mm', finish: 'Raw / Unfinished', service: 'None (as is)' } });
 
 async function main() {
-  const child = await start(PORT, { CASHIER_QUOTE_LIMIT_PHP: '60000' });
+  const child = await start(PORT, { CASHIER_QUOTE_LIMIT_PHP: '60000', HARNESS_QUOTE_BAND_PCT: '1000' });
   try {
     /* ---------------- 1. the policy: percentages are a proposal until Finance switches them on ---------------- */
     console.log('\n1. payment terms ship switched off except Full Payment, and only Finance can change them');
     const cfg = await call('finance', 'GET', '/api/finance/payment-terms');
-    ok('Finance can read the policy table', cfg.status === 200 && cfg.body.terms.length === 4, cfg.body);
+    ok('Finance can read the policy table: Full, Half and Down Payment (custom partial payment was removed)', cfg.status === 200 && cfg.body.terms.map((t) => t.key).join() === 'full,half,down', cfg.body);
     ok('ledgerReady comes from the database, not a guess', cfg.body.ledgerReady === true, cfg.body.ledgerReady);
     ok('Full Payment is the only term switched on at the start',
-      termOf(cfg.body.terms, 'full').enabled === true && ['half', 'down', 'custom'].every((k) => termOf(cfg.body.terms, k).enabled === false),
+      termOf(cfg.body.terms, 'full').enabled === true && ['half', 'down'].every((k) => termOf(cfg.body.terms, k).enabled === false) && !termOf(cfg.body.terms, 'custom'),
       cfg.body.terms.map((t) => [t.key, t.enabled]));
     ok('no partial term is authorised for any order type yet',
-      ['half', 'down', 'custom'].every((k) => termOf(cfg.body.terms, k).retailAllowed === false && termOf(cfg.body.terms, k).madeToOrderAllowed === false));
+      ['half', 'down'].every((k) => termOf(cfg.body.terms, k).retailAllowed === false && termOf(cfg.body.terms, k).madeToOrderAllowed === false));
 
     const asCashier = await call('cashier', 'POST', '/api/finance/payment-terms/half', { enabled: true, retailAllowed: true });
     ok('a cashier cannot switch a payment term on', asCashier.status === 403, asCashier);
@@ -99,6 +99,10 @@ async function main() {
     ok('a term switched on for made-to-order is not offered on a ready-stock quote', retailHalf.status === 400 && retailHalf.body.fields.termKey, retailHalf);
     const customByCashier = await call('cashier', 'POST', '/api/pos/quotes/' + no + '/terms', { termKey: 'custom', percent: 40 });
     ok('a cashier cannot invent a custom percentage', customByCashier.status === 400 && customByCashier.body.fields.termKey, customByCashier);
+    const customByFinance = await call('finance', 'POST', '/api/finance/quotes/' + no + '/terms', { termKey: 'custom', percent: 40 });
+    ok('custom partial payment is gone for Finance too', customByFinance.status === 400 && /no longer offered/.test(JSON.stringify(customByFinance.body)), customByFinance);
+    const switchOn = await call('finance', 'POST', '/api/finance/payment-terms/custom', { enabled: true, madeToOrderAllowed: true });
+    ok('…and it cannot be switched back on', switchOn.status === 400, switchOn);
     const disabledDown = await call('finance', 'POST', '/api/finance/quotes/' + no + '/terms', { termKey: 'down' });
     ok('even Finance cannot attach a term that is switched off — the policy comes first', disabledDown.status === 400 && disabledDown.body.fields.termKey, disabledDown);
 
@@ -121,11 +125,19 @@ async function main() {
 
     /* ---------------- 3. acceptance covers the terms; then the ledger takes the money ---------------- */
     console.log('\n3. the initial payment is recorded once, the balance stays outstanding');
-    const accepted = await call('customer', 'POST', '/api/shop/quotes/' + no + '/respond', { action: 'accept', payMethod: 'cod' });
+    const depositCod = await call('customer', 'POST', '/api/shop/quotes/' + no + '/respond', { action: 'accept', payMethod: 'cod' });
+    ok('a required deposit cannot be deferred to COD', depositCod.status === 400 && depositCod.body.fields.payMethod, depositCod);
+    const accepted = await call('customer', 'POST', '/api/shop/quotes/' + no + '/respond', { action: 'accept', payMethod: 'online' });
     ok('the customer accepted the quote', accepted.status === 200 && accepted.body.status === 'accepted', accepted);
     const afterAccept = await call('cashier', 'GET', '/api/pos/quote-desk/' + no);
     ok('acceptance stamps the terms as reviewed by the customer', afterAccept.body.terms.seenAt > 0, afterAccept.body.terms);
     ok('accepting does not mark anything paid', +afterAccept.body.paidAmount === 0 && afterAccept.body.paymentState === 'unpaid', afterAccept.body);
+
+    for (const amount of [true, [100], {}, '0x10', '1e2']) {
+      const invalid = await call('finance', 'POST', '/api/finance/quotes/' + no + '/payment', { amount, method: 'Cash' });
+      ok('malformed payment amount is refused: ' + JSON.stringify(amount), invalid.status === 400 && invalid.body.fields.amount, invalid);
+    }
+    ok('invalid payment input leaves the ledger empty', (await state()).payments.length === 0);
 
     const initial = await call('finance', 'POST', '/api/finance/quotes/' + no + '/payment',
       { amount: '4500', method: 'Cash', note: 'Down payment at the counter', requestId: 'pay-test-initial-0001' });
@@ -239,7 +251,7 @@ async function main() {
     ok('cash keeps tendered and change, so the till and the drawer agree',
       counter.body.tendered === 1000 && counter.body.change === 500, { tendered: counter.body.tendered, change: counter.body.change });
     ok('the state comes from the ledger: partially paid, not paid', counter.body.paymentState === 'partially_paid', counter.body.paymentState);
-    ok('every payment gets its own receipt number', counter.body.receiptNo === 'RCP-' + ordNo + '-' + counter.body.paymentId, counter.body.receiptNo);
+    ok('every payment gets its own receipt number', counter.body.receiptNo === 'INV-' + ordNo + '-' + counter.body.paymentId, counter.body.receiptNo);
     st = await state();
     const onRows = st.payments.filter((p) => p.paid_for === 'order' && Number(p.order_id) === Number(order2.order_id));
     ok('one ledger row, the initial payment, in the cashier\u2019s own open drawer — not the shift number the page sent',
@@ -501,9 +513,9 @@ async function main() {
 
     /* ---------------- 11. the online callback records money once, however many times Xendit repeats it ---------------- */
     console.log('\n11. a paid online invoice lands on the quotation once, even when Xendit repeats the callback');
-    const webQ = await call('customer', 'POST', '/api/shop/quotes', Object.assign(shopQuote(), { contactName: 'Eva Son', quantity: 6 }));
+    const webQ = await call('customer', 'POST', '/api/shop/quotes', Object.assign(shopQuote(), { contactName: 'Eva Son', quantity: 4 }));   // 4 lengths: ₱3,000 is above their cost (the price routing refuses a loss)
     const webNo = webQ.body.id;
-    await call('cashier', 'POST', '/api/pos/quotes/' + webNo + '/price', { amount: '3000', leadTime: '1 to 3 working days', validDays: 7, note: 'Six lengths' });
+    await call('cashier', 'POST', '/api/pos/quotes/' + webNo + '/price', { amount: '3000', leadTime: '1 to 3 working days', validDays: 7, note: 'Four lengths' });
     const acc3 = await call('customer', 'POST', '/api/shop/quotes/' + webNo + '/respond', { action: 'accept', payMethod: 'online' });
     ok('the third quotation is accepted with the money still to come online', acc3.status === 200 && acc3.body.status === 'accepted', acc3.body);
     const qid = (st) => Number(st.quotes.find((q) => q.quote_no === webNo).quote_id);

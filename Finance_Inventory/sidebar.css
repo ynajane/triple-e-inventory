@@ -1,8 +1,7 @@
 /* sidebar.css — compact, collapsible sidebar for Finance_Inventory.html
    Loaded after style.css. Everything is scoped to .sidebar.sb2 so it wins over the older sidebar rules.
    Layout: brand (fixed) / nav (scrolls only if it must) / footer (fixed).
-   States:  .nav-group.open        section expanded
-            html.sb-rail           icon-only rail (desktop only, >= 1025px)
+   States:  html.sb-rail           icon-only rail (desktop only, >= 1025px)
             <= 1024px              unchanged slide-in drawer, same markup */
 
 /* ---------- frame ---------- */
@@ -20,41 +19,13 @@
     .sidebar.sb2 { width: 288px; }
 }
 
-/* ---------- brand ---------- */
+/* ---------- brand ----------
+   The logo itself (60px mark, name, "Product Co" pill) comes from style.css, the same as the cashier and shop pages.
+   Only the spacing is set here because this sidebar has no outer padding. */
 .sidebar.sb2 .brand {
     flex: none;
-    display: flex;
-    align-items: center;
-    gap: 12px;
     margin: 0;
-    padding: 16px 16px 14px;
-    border-bottom: 1px solid var(--border);
-}
-.sidebar.sb2 .mark {
-    width: 40px;
-    height: 40px;
-    border-radius: 11px;
-    font-size: 21px;
-    border: 0;
-    box-shadow: none;
-}
-.sidebar.sb2 .mark .cursive-e { font-size: 28px; margin-left: 0; transform: translateY(1px); }
-.sidebar.sb2 .brand-text { min-width: 0; }
-.sidebar.sb2 .brand-text .name {
-    font-size: 17px;
-    line-height: 1.1;
-    letter-spacing: .4px;
-    white-space: nowrap;
-}
-.sidebar.sb2 .brand-text .role {
-    display: block;
-    margin-top: 3px;
-    padding: 0;
-    border: 0;
-    background: none;
-    font-size: 11px;
-    letter-spacing: 1.2px;
-    color: var(--text-faint);
+    padding: 18px 18px 20px;
 }
 
 /* ---------- nav list ---------- */
@@ -65,89 +36,48 @@
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 10px 10px 12px;
+    padding: 16px 12px 12px;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
 }
-.sidebar.sb2 .nav-group { margin: 0; }
-.sidebar.sb2 .nav-group + .nav-group { margin-top: 2px; }
-.sidebar.sb2 .nav-top {
-    padding-bottom: 8px;
-    margin-bottom: 6px;
-    border-bottom: 1px solid var(--border);
-}
 
-/* ---------- section header (collapsible) ---------- */
-.sidebar.sb2 .nav-group-toggle {
-    width: 100%;
-    height: 34px;
+/* ---------- section labels (always visible, not collapsible) ---------- */
+.sidebar.sb2 .nav-section { margin: 0; padding: 0; }
+.sidebar.sb2 .nav-section + .nav-section { margin-top: 18px; }
+.sidebar.sb2 .nav-label-head {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 0 12px;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-dim);
-    font: 600 13px/1 "Inter", sans-serif;
-    letter-spacing: .2px;
-    text-align: left;
-    cursor: pointer;
-    transition: color .12s, background .12s;
+    gap: 10px;
+    padding: 0 12px 7px;
+    font: 700 11px/1 "Inter", sans-serif;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--text-faint, #6f8192);
+    user-select: none;
+    white-space: nowrap;
 }
-.sidebar.sb2 .nav-group-toggle:hover { color: var(--text); background: rgba(74, 144, 217, 0.08); }
-.sidebar.sb2 .nav-group.has-active > .nav-group-toggle { color: var(--text); }
-.sidebar.sb2 .ngt-label { flex: 1; min-width: 0; }
-.sidebar.sb2 .ngt-chev {
-    flex: none;
-    width: 14px;
-    height: 14px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2.2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    transition: transform .2s ease;
+.sidebar.sb2 .nav-label-head::after {      /* thin rule that fills the rest of the line */
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border), transparent);
 }
-.sidebar.sb2 .nav-group.open .ngt-chev { transform: rotate(90deg); }
+.sidebar.sb2 .nav-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-/* indicator on a collapsed header: red count = something needs attention, blue dot = you are in here */
-.sidebar.sb2 .ngt-ind[hidden],
-.sidebar.sb2 .nav-group.open .ngt-ind { display: none; }
+/* red count on the Sales item */
+.sidebar.sb2 .ngt-ind[hidden] { display: none; }
 .sidebar.sb2 .ngt-ind.attn {
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
     border-radius: 99px;
     background: var(--red);
     color: #fff;
     font-size: 11px;
     font-weight: 700;
-    line-height: 18px;
+    line-height: 20px;
     text-align: center;
 }
-.sidebar.sb2 .ngt-ind.here {
-    width: 7px;
-    height: 7px;
-    margin-right: 2px;
-    border-radius: 50%;
-    background: var(--blue-bright);
-}
-
-/* expand / collapse animation (grid-rows trick: animates to the real content height) */
-.sidebar.sb2 .nav-items {
-    display: grid;
-    grid-template-rows: 0fr;
-    transition: grid-template-rows .2s ease;
-}
-.sidebar.sb2 .nav-group.open .nav-items { grid-template-rows: 1fr; }
-.sidebar.sb2 .nav-items-inner {
-    min-height: 0;
-    overflow: hidden;
-    visibility: hidden;               /* collapsed links leave the tab order */
-    transition: visibility 0s linear .2s;
-}
-.sidebar.sb2 .nav-group.open .nav-items-inner { visibility: visible; transition-delay: 0s; }
 
 /* ---------- links ---------- */
 .sidebar.sb2 .nav-item {
@@ -156,12 +86,12 @@
     align-items: center;
     gap: 12px;
     width: 100%;
-    height: 40px;
-    min-height: 40px;
-    margin: 0 0 2px;
+    height: 42px;
+    min-height: 42px;
+    margin: 0 0 3px;
     padding: 0 12px;
     border: 0;
-    border-radius: 9px;
+    border-radius: 11px;
     box-shadow: none;
     background: transparent;
     color: color-mix(in srgb, var(--text) 80%, var(--sidebar));
@@ -174,9 +104,9 @@
 }
 .sidebar.sb2 .nav-item:hover { background: rgba(74, 144, 217, 0.1); color: var(--text); }
 .sidebar.sb2 .nav-item:focus-visible,
-.sidebar.sb2 .nav-group-toggle:focus-visible,
 .sidebar.sb2 .rail-toggle:focus-visible { outline: 2px solid var(--blue-bright); outline-offset: -2px; }
 
+.sidebar.sb2 .nav-item.active { font-weight: 600; }
 .sidebar.sb2 .nav-item.active {
     background: rgba(74, 144, 217, 0.16);
     color: var(--text);
@@ -187,43 +117,16 @@
     content: "";
     position: absolute;
     left: 0;
-    top: 9px;
-    bottom: 9px;
+    top: 10px;
+    bottom: 10px;
     width: 3px;
     border-radius: 0 3px 3px 0;
     background: var(--blue-bright);
 }
-/* the old "Sales & Transactions" parent used to tint itself; the header now carries that job */
-.sidebar.sb2 .sales-section-active:not(.active) { background: transparent; }
-.sidebar.sb2 .sales-parent { font-weight: 500; }
-.sidebar.sb2 .nav-item.active.sales-parent { font-weight: 600; }
-
-/* icons: three kinds exist (.dot mask, .nav-symbol mask, injected <svg class="ico">) */
-.sidebar.sb2 .nav-item .dot,
-.sidebar.sb2 .nav-item .nav-symbol {
-    flex: 0 0 19px;
-    width: 19px;
-    height: 19px;
-    min-width: 19px;
-    opacity: .85;
-}
-.sidebar.sb2 .nav-item .nav-symbol {
-    display: inline-block;
-    background: currentColor;
-    -webkit-mask: var(--side-icon) center / contain no-repeat;
-            mask: var(--side-icon) center / contain no-repeat;
-}
-.sidebar.sb2 .nav-item svg.ico {
-    flex: 0 0 19px;
-    width: 19px;
-    height: 19px;
-    stroke-width: 1.9;
-    opacity: .85;
-    vertical-align: 0;
-}
 .sidebar.sb2 .nav-item.active .dot,
 .sidebar.sb2 .nav-item.active .nav-symbol { background: var(--blue-bright); opacity: 1; }
 .sidebar.sb2 .nav-item.active svg.ico { color: var(--blue-bright); opacity: 1; }
+
 .sidebar.sb2 .nav-item:hover .dot,
 .sidebar.sb2 .nav-item:hover .nav-symbol,
 .sidebar.sb2 .nav-item:hover svg.ico { opacity: 1; }
@@ -237,9 +140,8 @@
 /* light theme */
 html[data-theme="light"] .sidebar.sb2 { background: var(--sidebar); }
 html[data-theme="light"] .sidebar.sb2 .nav-item.active { background: rgba(29, 99, 171, 0.11); color: var(--blue); }
+html[data-theme="light"] .sidebar.sb2 .nav-item.active .dot { background: var(--blue); }
 html[data-theme="light"] .sidebar.sb2 .nav-item:hover { background: rgba(29, 99, 171, 0.08); color: var(--text); }
-html[data-theme="light"] .sidebar.sb2 .nav-group-toggle:hover { background: rgba(29, 99, 171, 0.07); }
-html[data-theme="light"] .sidebar.sb2 .brand-text .role { color: var(--text-faint); }
 
 /* ---------- footer: collapse control ---------- */
 .sidebar.sb2 .sidebar-foot {
@@ -277,38 +179,36 @@ html[data-theme="light"] .sidebar.sb2 .brand-text .role { color: var(--text-fain
 
 /* ---------- icon rail (desktop only) ---------- */
 @media (min-width: 1025px) {
-    html.sb-rail .sidebar.sb2 { width: 72px; }
-    html.sb-rail .sidebar.sb2 .brand { justify-content: center; padding: 12px 0; }
-    html.sb-rail .sidebar.sb2 .mark { width: 36px; height: 36px; font-size: 19px; border-radius: 10px; }
-    html.sb-rail .sidebar.sb2 .mark .cursive-e { font-size: 25px; }
+    html.sb-rail .sidebar.sb2 { width: 76px; }
+    html.sb-rail .sidebar.sb2 .brand { justify-content: center; padding: 16px 0; }
+    html.sb-rail .sidebar.sb2 .mark { width: 44px; height: 44px; font-size: 23px; border-radius: 12px; }
+    html.sb-rail .sidebar.sb2 .mark .cursive-e { font-size: 30px; }
     html.sb-rail .sidebar.sb2 .brand-text { display: none; }
-    html.sb-rail .sidebar.sb2 nav { padding: 8px 14px 8px; }
-    html.sb-rail .sidebar.sb2 .nav-group-toggle { display: none; }
-    html.sb-rail .sidebar.sb2 .nav-items { grid-template-rows: 1fr; }
-    html.sb-rail .sidebar.sb2 .nav-items-inner { visibility: visible; }
-    html.sb-rail .sidebar.sb2 .nav-top { border-bottom: 0; margin-bottom: 0; }
-    html.sb-rail .sidebar.sb2 .nav-group[data-group] {
-        margin-top: 4px;
-        padding-top: 4px;
-        border-top: 1px solid var(--border);
-    }
+    html.sb-rail .sidebar.sb2 nav { padding: 10px 14px; }
+    /* labels turn into thin divider lines */
+    html.sb-rail .sidebar.sb2 .nav-label-head { padding: 0; height: 1px; margin: 0 6px 10px; font-size: 0; background: var(--border); }
+    html.sb-rail .sidebar.sb2 .nav-label-head::after { display: none; }
+    html.sb-rail .sidebar.sb2 .nav-section + .nav-section { margin-top: 12px; }
+    html.sb-rail .sidebar.sb2 .nav-section:first-child .nav-label-head { display: none; }
     /* font-size 0 hides the label text (including text nodes added later by other scripts) */
     html.sb-rail .sidebar.sb2 .nav-item {
         justify-content: center;
         gap: 0;
-        height: 36px;
-        min-height: 36px;
-        margin-bottom: 1px;
+        height: 44px;
+        min-height: 44px;
+        margin-bottom: 4px;
         padding: 0;
         font-size: 0;
     }
+    html.sb-rail .sidebar.sb2 .nav-item .nav-text { display: none; }
     html.sb-rail .sidebar.sb2 .nav-item .dot,
     html.sb-rail .sidebar.sb2 .nav-item .nav-symbol,
-    html.sb-rail .sidebar.sb2 .nav-item svg.ico { flex-basis: 20px; width: 20px; height: 20px; min-width: 20px; }
+    html.sb-rail .sidebar.sb2 .nav-item svg.ico { flex-basis: 21px; width: 21px; height: 21px; min-width: 21px; }
     html.sb-rail .sidebar.sb2 .nav-item .sa-nav-badge,
     html.sb-rail .sidebar.sb2 .nav-item .ra-badge,
     html.sb-rail .sidebar.sb2 .nav-item .sx-badge,
-    html.sb-rail .sidebar.sb2 .nav-item .nav-alert {
+    html.sb-rail .sidebar.sb2 .nav-item .nav-alert,
+    html.sb-rail .sidebar.sb2 .nav-item .ngt-ind.attn {
         position: absolute;
         top: 3px;
         right: 2px;
@@ -319,19 +219,18 @@ html[data-theme="light"] .sidebar.sb2 .brand-text .role { color: var(--text-fain
         font-size: 10px;
         line-height: 17px;
     }
-    html.sb-rail .sidebar.sb2 .sidebar-foot { padding: 8px 14px; }
-    html.sb-rail .sidebar.sb2 .rail-toggle { justify-content: center; gap: 0; padding: 0; font-size: 0; height: 36px; }
+    html.sb-rail .sidebar.sb2 .sidebar-foot { padding: 10px 14px; }
+    html.sb-rail .sidebar.sb2 .rail-toggle { justify-content: center; gap: 0; padding: 0; font-size: 0; height: 42px; }
     html.sb-rail .sidebar.sb2 .rail-toggle svg { transform: scaleX(-1); }
 }
 
 /* ---------- drawer (tablet / phone) ---------- */
 @media (max-width: 1024px) {
     .sidebar.sb2 { padding-top: 0; }
-    .sidebar.sb2 .brand { padding: 14px 60px 14px 16px; }
+    .sidebar.sb2 .brand { padding: 14px 60px 18px 18px; }
     .sidebar.sb2 .sidebar-foot { display: none; }
     .sidebar.sb2 .nav-item { height: 46px; min-height: 46px; }
-    .sidebar.sb2 .nav-group-toggle { height: 40px; }
-}
+    }
 
 /* ---------- rail tooltip (positioned by sidebar.js) ---------- */
 .sb-tip {
@@ -358,19 +257,4 @@ html.sb-noanim .sidebar.sb2,
 html.sb-noanim .sidebar.sb2 * { transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
     .sidebar.sb2, .sidebar.sb2 *, .sb-tip { transition: none !important; }
-}
-
-/* ---------- Sales group: small sub-headings (Monitor / Payments) ---------- */
-.sidebar.sb2 .nav-sub {
-    margin: 8px 12px 4px;
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    color: var(--text-faint, #7d8aa0);
-    user-select: none;
-}
-.sidebar.sb2 .nav-sub:first-child { margin-top: 2px; }
-@media (min-width: 1025px) {
-    html.sb-rail .sidebar.sb2 .nav-sub { display: none; }
 }

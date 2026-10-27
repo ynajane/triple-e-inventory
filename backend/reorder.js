@@ -9,6 +9,7 @@
      (0 for a brand-new product) and the form says so. "Set manually" on the product form switches this off for that product.
    • Recalculated when the server starts, every 6 hours, and when a product is saved.
 
+   Lead time: the main (primary) supplier's own lead time (Supplier Management > Lead time) when it has one, otherwise REORDER_LEAD_DAYS.
    .env (all optional):  REORDER_LEAD_DAYS=7  REORDER_SAFETY_DAYS=3  REORDER_LOOKBACK_DAYS=90  REORDER_MIN_HISTORY_DAYS=14
    The two new product columns are created automatically when the server starts (backend/db/014_reorder_auto.sql is the same thing for running by hand).
    Products that already exist keep reorder_auto = FALSE, so their current levels do not change until someone edits them and unticks "Set manually". */
@@ -26,6 +27,7 @@ module.exports = function makeReorder({ pool }) {
     try {
       await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS reorder_auto BOOLEAN NOT NULL DEFAULT FALSE');
       await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS reorder_basis TEXT');
+      await pool.query('ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS lead_time_days INT CHECK (lead_time_days BETWEEN 0 AND 365)');   // per-supplier lead time
     } catch (err) { console.warn('[db] could not prepare the reorder columns:', err.message); }
   })();
 
@@ -36,6 +38,8 @@ module.exports = function makeReorder({ pool }) {
     await ready;
     const { rows } = await db.query(
       `SELECT p.product_id, p.unit,
+              (SELECT s.lead_time_days FROM product_suppliers ps JOIN suppliers s USING (supplier_id)
+                WHERE ps.product_id = p.product_id AND ps.is_primary AND s.status = 'active' LIMIT 1) AS supplier_lead,
               (SELECT min(m.created_at) FROM stock_movements m WHERE m.product_id = p.product_id) AS first_mv,
               COALESCE((SELECT sum(m.quantity) FROM stock_movements m
                          WHERE m.product_id = p.product_id AND m.movement_type = 'out' AND m.reason = ANY($1)
@@ -51,10 +55,11 @@ module.exports = function makeReorder({ pool }) {
           [r.product_id, `Not enough usage history yet (needs ${MIN_HISTORY} days). The level stays as it is until then. Tick "Set manually" to enter one now.`]);
         continue;
       }
-      const used = Number(r.used), daily = used / days, cover = LEAD + SAFETY;
+      const lead = r.supplier_lead == null ? LEAD : Number(r.supplier_lead);
+      const used = Number(r.used), daily = used / days, cover = lead + SAFETY;
       const level = Math.ceil(daily * cover * 100) / 100;
       const basis = used > 0
-        ? `Average use ${fmt(daily)} ${r.unit}/day over the last ${Math.round(days)} days × ${cover} days (${LEAD} lead time + ${SAFETY} safety) = ${fmt(level)} ${r.unit}`
+        ? `Average use ${fmt(daily)} ${r.unit}/day over the last ${Math.round(days)} days × ${cover} days (${lead} lead time${r.supplier_lead == null ? '' : ' from the main supplier'} + ${SAFETY} safety) = ${fmt(level)} ${r.unit}`
         : `No use recorded in the last ${Math.round(days)} days, so the level is 0.`;
       await db.query('UPDATE products SET reorder_level = $2, reorder_basis = $3 WHERE product_id = $1 AND reorder_auto', [r.product_id, level, basis]);
     }

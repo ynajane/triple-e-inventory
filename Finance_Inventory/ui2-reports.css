@@ -1,0 +1,380 @@
+/* =========================================================
+   ui2-reports.css — Reports page only (#reports.ui2)
+   Load AFTER ui2-core.css, style.css, reports-sales.css and ui2-pager.css.
+   Looks only: the report scripts still build the same markup.
+   Every colour is a token, so light and dark both work.
+========================================================= */
+
+html #reports { --u-on-accent: #06121f; --rep-r: 14px; }
+html[data-theme="light"] #reports { --u-on-accent: #ffffff; }
+
+/* ---------- hero + actions ---------- */
+#reports > .ui2-hero { margin: 4px 0 20px; align-items: flex-end; }
+#reports .ui2-hero .rep-lede { margin-top: 8px; max-width: 62ch; font-size: 15.5px; color: var(--text-dim); }
+#reports .ui2-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#reports .ui2-actions .btn-primary,
+#reports .ui2-actions .btn-secondary {
+    display: inline-flex; align-items: center; gap: 8px;
+    min-height: 42px; padding: 9px 18px;
+    border-radius: 99px; font-weight: 600;
+}
+#reports .ui2-actions .btn-primary { margin: 0; }
+#reports .ui2-actions .ico { width: 16px; height: 16px; vertical-align: 0; }
+
+/* shared pill buttons everywhere on this page */
+#reports .btn-primary {
+    color: var(--u-on-accent);
+    border: 1px solid transparent;
+    border-radius: 99px;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 12px 24px -14px color-mix(in srgb, var(--blue-bright) 85%, transparent);
+    transition: transform .15s, box-shadow .15s, filter .15s;
+}
+#reports .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.06); }
+#reports .btn-secondary { border-radius: 99px; min-height: 40px; padding: 8px 18px; }
+
+/* ---------- report period ---------- */
+#reports #repSummaryTop .report-period-panel { padding: 20px 24px; border-radius: var(--rep-r); }
+#reports .report-period-toggle {
+    gap: 3px; padding: 4px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line-soft);
+    background: var(--u-surface-flat);
+}
+#reports .report-period-toggle .period-btn {
+    border: 1px solid transparent; border-radius: 99px;
+    padding: 8px 16px; font-size: 12.5px; letter-spacing: 1px;
+    background: transparent; color: var(--text-dim);
+    transition: background .15s, color .15s;
+}
+#reports .report-period-toggle .period-btn:hover { color: var(--text); background: var(--u-hover); }
+#reports .report-period-toggle .period-btn.active {
+    color: var(--u-on-accent);
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 10px 20px -12px color-mix(in srgb, var(--blue-bright) 90%, transparent);
+}
+#reports .date-nav-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 1px solid var(--u-line); background: var(--u-surface-flat); color: var(--text-dim);
+    transition: border-color .15s, background .15s, color .15s;
+}
+#reports .date-nav-btn:hover:not(:disabled) { border-color: var(--blue-bright); background: var(--u-hover); color: var(--text); }
+#reports .date-showing-pill {
+    padding: 7px 14px; border-radius: 99px;
+    background: var(--u-chip-bg); border: 1px solid var(--u-chip-line);
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px; letter-spacing: .5px; color: var(--text);
+}
+#reports .jump-latest-link { font-size: 13.5px; font-weight: 600; }
+#reports .custom-range-row .form-input { border-radius: 99px; min-height: 40px; }
+
+/* ---------- sticky section bar ---------- */
+#reports .rep-nav {
+    padding: 6px; margin: 16px 0 24px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    box-shadow: var(--u-shadow);
+}
+#reports .rep-tab {
+    border-radius: 99px; padding: 8px 18px; min-height: 38px;
+    font-size: 14px; font-weight: 600;
+}
+#reports .rep-tab:hover { background: var(--u-hover); }
+#reports .rep-tab.active {
+    color: var(--u-on-accent);
+    border-color: transparent;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 10px 20px -12px color-mix(in srgb, var(--blue-bright) 90%, transparent);
+}
+#reports .rep-nav-period {
+    border-radius: 99px;
+    background: var(--u-chip-bg); border: 1px solid var(--u-chip-line);
+    font-size: 12.5px; letter-spacing: .4px;
+}
+
+/* ---------- section headings ---------- */
+#reports .rep-sec-ico {
+    width: 46px; height: 46px; border-radius: 13px;
+    color: var(--blue-bright);
+    background: color-mix(in srgb, var(--blue-bright) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--blue-bright) 34%, transparent);
+}
+#reports .rep-sec-title { font-size: 26px; }
+#reports .rs-section-title::before { background: linear-gradient(180deg, var(--blue-bright), var(--blue)); }
+
+/* ---------- highlight groups + cards ---------- */
+#reports .rep-kgroup {
+    padding: 18px;
+    border-radius: var(--rep-r);
+    background: var(--u-surface);
+    border: 1px solid var(--u-line);
+    box-shadow: var(--u-shadow);
+}
+#reports .rep-kgroup-head { padding: 0 4px 14px; }
+#reports .rep-kgroup-head b { color: var(--blue-bright); letter-spacing: 2px; }
+#reports #repStatCards .stat-card.stat-link {
+    --accent: var(--blue-bright);
+    position: relative; overflow: hidden;
+    padding: 16px 18px 18px;
+    border-radius: 12px;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line-soft);
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+#reports #repStatCards .stat-card.stat-link::before {
+    content: ""; position: absolute; top: -40px; right: -40px; width: 120px; height: 120px; border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 22%, transparent), transparent 68%);
+    pointer-events: none;
+}
+#reports #repStatCards .stat-card.stat-link::after { display: none; }
+#reports #repStatCards .stat-card.stat-link:has(.stat-icon.green) { --accent: var(--green); }
+#reports #repStatCards .stat-card.stat-link:has(.stat-icon.red)   { --accent: var(--red); }
+#reports #repStatCards .stat-card.stat-link:has(.stat-icon.neutral) { --accent: var(--text-dim); }
+#reports #repStatCards .stat-card.stat-link:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--u-line));
+    background: var(--u-hover);
+    box-shadow: 0 18px 34px -22px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+#reports #repStatCards .stat-card.stat-link > * { position: relative; z-index: 1; }
+#reports #repStatCards .stat-icon { width: 34px; height: 34px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent); }
+#reports #repStatCards .stat-icon .ico { width: 18px; height: 18px; }
+
+/* insight rows */
+#reports .rep-hl, #reports .rep-facts {
+    border-radius: var(--rep-r);
+    background: var(--u-surface);
+    border-color: var(--u-line);
+    box-shadow: var(--u-shadow);
+}
+#reports .rep-hl.hero { background: linear-gradient(135deg, color-mix(in srgb, var(--blue-bright) 18%, transparent), transparent 62%), var(--card); border-color: var(--u-chip-line); }
+
+/* ---------- section banners (Sales / Inventory / Movement Log) ---------- */
+#reports .rep-banner {
+    padding: 22px 26px 20px;
+    border-radius: var(--rep-r);
+    border: 1px solid color-mix(in srgb, rgb(var(--acc-rgb)) 38%, var(--u-line));
+    background:
+        radial-gradient(ellipse 60% 120% at 0% 0%, rgba(var(--acc-rgb), .22), transparent 65%),
+        var(--u-surface);
+    box-shadow: var(--u-shadow);
+}
+#reports .rep-banner::before {                    /* accent line along the top instead of a thick left bar */
+    inset: 0 22px auto 22px; width: auto; height: 3px;
+    border-radius: 0 0 4px 4px;
+    background: linear-gradient(90deg, transparent, rgb(var(--acc-rgb)), transparent);
+    opacity: .85;
+}
+#reports .rep-banner-ico { width: 56px; height: 56px; border-radius: 16px; }
+#reports .rep-banner-title {
+    font-size: 30px;
+    background: linear-gradient(90deg, var(--text) 0%, var(--text) 40%, rgb(var(--acc-rgb)) 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+}
+#reports .rep-fig { border-radius: 12px; }
+#reports .rep-fig-l { color: var(--text-dim); }
+#reports .rep-banner-links { border-top-color: var(--u-line-soft); }
+#reports .rep-chip { border-radius: 99px; font-weight: 600; }
+
+/* ---------- report panels (Sales Overview, Top Sellers, Low Stock, ...) ---------- */
+#reports .panel { border-radius: var(--rep-r); }
+#reports .rs-panel { margin-bottom: 16px; }
+#reports .rs-head { align-items: flex-start; flex-wrap: wrap; }
+#reports .rs-head > div:first-child { flex: 1 1 380px; min-width: 0; }
+#reports .rs-actions { flex: none; margin-left: auto; }
+#reports .rs-follow {
+    border-radius: 99px;
+    background: var(--u-chip-bg);
+    border: 1px solid var(--u-chip-line);
+    font-size: 13.5px;
+}
+#reports .rs-follow span:last-child { font-size: 12.5px; letter-spacing: .4px; }
+
+/* filters: soft pills */
+#reports .rs-date select,
+#reports .rs-date input,
+#reports .rs-search,
+#reports .inv-select,
+#reports select.rs-select {
+    min-height: 40px;
+    padding: 6px 14px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background-color: var(--u-surface-flat);
+    color: var(--text);
+    font-size: 14px;
+    transition: border-color .15s, box-shadow .15s;
+}
+#reports .rs-date select:hover, #reports .rs-search:hover { border-color: var(--u-chip-line); }
+#reports .rs-date select:focus, #reports .rs-date input:focus, #reports .rs-search:focus {
+    border-color: var(--blue-bright); box-shadow: 0 0 0 3px var(--u-chip-bg); outline: none;
+}
+#reports .rs-search { min-width: 240px; padding-left: 16px; }
+#reports .rs-date { gap: 8px; font-size: 13.5px; }
+
+#reports .rs-chips, #reports .rs-tabs {
+    display: inline-flex; flex-wrap: wrap; gap: 3px; padding: 4px;
+    border-radius: 99px; border: 1px solid var(--u-line-soft); background: var(--u-surface-flat);
+}
+#reports .rs-chip, #reports .rs-tab {
+    min-height: 34px; padding: 0 14px;
+    border-radius: 99px; border: 1px solid transparent; box-shadow: none;
+    background: transparent; color: var(--text-dim);
+    font-size: 13.5px; font-weight: 600;
+    transition: background .15s, color .15s;
+}
+#reports .rs-chip:hover, #reports .rs-tab:hover { color: var(--text); background: var(--u-hover); border-color: transparent; }
+#reports .rs-chip.on, #reports .rs-tab.on {
+    color: var(--u-on-accent); border-color: transparent; box-shadow: none;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+}
+#reports .rs-tab b { border-radius: 99px; }
+#reports .rs-tab.on b { background: rgba(255,255,255,.28); color: inherit; }
+
+/* ---------- KPI cards inside the reports ---------- */
+#reports .rs-kpi {
+    position: relative; overflow: hidden;
+    padding: 18px 20px 16px;
+    border-radius: var(--rep-r);
+    background: var(--u-surface);
+    border: 1px solid var(--u-line);
+    box-shadow: var(--u-shadow);
+    transition: transform .18s ease, border-color .18s ease;
+}
+#reports .rs-kpi::before {
+    content: ""; position: absolute; top: -44px; right: -44px; width: 130px; height: 130px; border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--blue-bright) 20%, transparent), transparent 68%);
+    pointer-events: none;
+}
+#reports .rs-kpi::after {
+    content: ""; position: absolute; left: 18px; right: 18px; top: 0; height: 2px; border-radius: 0 0 4px 4px;
+    background: linear-gradient(90deg, transparent, var(--blue-bright), transparent); opacity: .6; pointer-events: none;
+}
+#reports .rs-kpi > * { position: relative; z-index: 1; }
+#reports .rs-kpi:hover { transform: translateY(-2px); }
+#reports .rs-kpi.rs-main { border-color: var(--u-chip-line); }
+#reports .rs-kpi.warn::before { background: radial-gradient(circle, color-mix(in srgb, var(--amber) 24%, transparent), transparent 68%); }
+#reports .rs-kpi.warn::after  { background: linear-gradient(90deg, transparent, var(--amber), transparent); }
+#reports .rs-kpi.bad::before  { background: radial-gradient(circle, color-mix(in srgb, var(--red) 24%, transparent), transparent 68%); }
+#reports .rs-kpi.bad::after   { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+#reports .rs-kpi-label { letter-spacing: 1.6px; }
+#reports .rs-dept { border-radius: 12px; background: var(--u-surface); border-color: var(--u-line); box-shadow: var(--u-shadow); }
+
+/* ---------- charts ---------- */
+#reports .rs-card { border-radius: var(--rep-r); }
+#reports .rs-grid-l { stroke: var(--u-line-soft); }
+#reports .rs-pos { fill: var(--blue-bright); background: var(--blue-bright); }
+#reports .rs-online { fill: #a67be0; background: #a67be0; }
+/* Stock in / out had no colours at all (bars drew black). In = green, Out = amber. */
+#reports .rs-in  { fill: var(--green); background: var(--green); }
+#reports .rs-out { fill: var(--amber); background: var(--amber); }
+#reports .rs-legend i.rs-in, #reports .rs-legend i.rs-out { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; }
+#reports .rs-legend { gap: 16px; }
+#reports .rs-track { height: 10px; background: var(--u-track); }
+#reports .rs-track + .rs-track { margin-top: 4px; }
+#reports .rs-htrack, #reports .rs-stack, #reports .rep-bar, #reports .rep-split { background: var(--u-track); }
+#reports .rs-bar:hover .rs-hit { fill: var(--u-hover); }
+#reports .rs-tip {
+    border-radius: 10px; border: 1px solid var(--u-line); background: var(--card); box-shadow: var(--u-shadow);
+}
+
+/* ---------- tables ---------- */
+#reports .rs-scroll,
+#reports .table-wrapper {
+    margin-top: 14px;
+    border: 1px solid var(--u-line-soft);
+    border-radius: 12px;
+    background: var(--u-surface-flat);
+    overflow-x: auto;
+}
+#reports .rs-table, #reports .table-wrapper table { width: 100%; border-collapse: separate; border-spacing: 0; }
+#reports .rs-table { min-width: 0; }
+#reports .rs-table th,
+#reports .table-wrapper thead th {
+    padding: 13px 12px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px; font-weight: 500; letter-spacing: 1.4px; text-transform: uppercase;
+    text-align: left; white-space: nowrap;
+    color: var(--text-dim);
+    background: var(--u-head-bg);
+    border-bottom: 1px solid var(--u-line-soft);
+}
+#reports .rs-table td,
+#reports .table-wrapper tbody td {
+    padding: 13px 12px;
+    font-size: 14.5px; vertical-align: middle;
+    border-bottom: 1px solid var(--u-line-soft);
+}
+#reports .rs-table tbody tr:last-child td,
+#reports .table-wrapper tbody tr:last-child td { border-bottom: 0; }
+#reports .rs-table tbody tr, #reports .table-wrapper tbody tr { transition: background .12s ease; }
+#reports .rs-table tbody tr:hover, #reports .table-wrapper tbody tr:hover { background: var(--u-hover); }
+#reports .rs-table tbody tr:hover td:first-child { box-shadow: inset 3px 0 0 var(--blue-bright); }
+/* numbers line up on the right, the header above them too */
+#reports .rs-table .rs-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#reports .rs-table th.rs-num { text-align: right; }
+#reports .rs-table th:first-child, #reports .rs-table td:first-child { padding-left: 16px; }
+#reports .rs-table th:last-child, #reports .rs-table td:last-child { padding-right: 16px; }
+/* small tables inside half-width cards: tighter so every column stays visible */
+#reports .rs-card .rs-table th { padding-left: 8px; padding-right: 8px; letter-spacing: 1px; font-size: 11px; }
+#reports .rs-card .rs-table td { padding-left: 8px; padding-right: 8px; font-size: 14px; }
+#reports .rs-card .rs-table th:first-child, #reports .rs-card .rs-table td:first-child { padding-left: 12px; }
+#reports .rs-card .rs-table th:last-child, #reports .rs-card .rs-table td:last-child { padding-right: 12px; }
+#reports .rs-table th.sortable:hover { color: var(--blue-bright); }
+#reports .rs-table th.sortable.on { color: var(--text); }
+#reports .rs-table tfoot td, #reports .report-foot-row td {
+    font-weight: 700; background: var(--u-head-bg); border-top: 1px solid var(--u-line); border-bottom: 0;
+}
+#reports .rs-sku { color: var(--blue-bright); }
+#reports .rs-none, #reports .report-note, #reports .no-results-row td {
+    padding: 40px 16px !important; text-align: center; color: var(--text-dim);
+}
+#reports .rs-none:hover, #reports .no-results-row:hover { background: transparent; }
+
+/* chips inside tables: channel tags, status, rank */
+#reports .rs-tag {
+    padding: 3px 11px; border-radius: 99px; font-size: 12px; font-weight: 600; letter-spacing: .3px;
+}
+#reports .rs-tag.rs-pos    { color: var(--blue-bright); background: var(--u-chip-bg); border-color: var(--u-chip-line); }
+#reports .rs-tag.rs-online { color: #a67be0; background: color-mix(in srgb, #a67be0 13%, transparent); border-color: color-mix(in srgb, #a67be0 38%, transparent); }
+html[data-theme="light"] #reports .rs-tag.rs-online { color: #6d3fc0; }
+#reports .rs-status { padding: 3px 12px; font-size: 12.5px; font-weight: 600; }
+#reports .rs-status.out   { color: var(--u-bad-fg);  background: var(--u-bad-bg);  border-color: var(--u-bad-line); }
+#reports .rs-status.low   { color: var(--u-warn-fg); background: var(--u-warn-bg); border-color: var(--u-warn-line); }
+#reports .rs-status.watch { color: var(--blue-bright); background: var(--u-chip-bg); border-color: var(--u-chip-line); }
+#reports .rs-status.ok    { color: var(--u-ok-fg);   background: var(--u-ok-bg);   border-color: var(--u-ok-line); }
+#reports .rs-rank { border-radius: 50%; }
+#reports .rs-cover, #reports .rs-split { background: var(--u-track); }
+
+/* notes + empty states */
+#reports .rs-note { border-radius: 12px; background: var(--u-surface-flat); border-color: var(--u-line-soft); }
+#reports .rs-empty { padding: 48px 16px; }
+
+/* ---------- pagination bars (look comes from ui2-pager.css) ---------- */
+#reports .table-wrapper + .pager,
+#reports .rs-scroll + .pager {
+    margin: 0;
+    padding: 12px 18px;
+    border: 1px solid var(--u-line-soft);
+    border-top: 0;
+    border-radius: 0 0 12px 12px;
+    background: var(--u-head-bg);
+}
+#reports .table-wrapper:has(+ .pager:not([hidden])) { border-radius: 12px 12px 0 0; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 960px) {
+    #reports .rep-nav { border-radius: 18px; }
+    #reports .rs-search { min-width: 0; width: 100%; }
+    #reports .report-period-toggle { width: 100%; justify-content: space-between; }
+    #reports .report-period-toggle .period-btn { flex: 1 1 auto; padding: 8px 10px; }
+}
+@media (max-width: 760px) {
+    #reports .ui2-actions { width: 100%; }
+    #reports .ui2-actions .btn-primary, #reports .ui2-actions .btn-secondary { flex: 1 1 auto; justify-content: center; }
+    #reports .rep-banner { padding: 18px 16px; }
+    #reports .rs-table th, #reports .rs-table td { padding-left: 12px; padding-right: 12px; }
+}
+@media print {
+    #reports .rep-banner-title { -webkit-text-fill-color: #000; color: #000; background: none; }
+}

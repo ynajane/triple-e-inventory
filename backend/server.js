@@ -16,6 +16,11 @@ process.on('unhandledRejection', (err) => console.error('[server] unhandled reje
 process.on('uncaughtException', (err) => console.error('[server] uncaught exception:', err && err.stack || err));
 
 const app = express();
+const security = require('./security');   // OWASP Top 10:2025 — headers, CSRF, rate limits, append-only audit, proxy (security.js)
+security.mount({ app, pool });
+// who/where for the audit log: the client address (real one behind the proxy, see security.js) and browser of the request that caused each entry
+const requestContext = new (require('async_hooks').AsyncLocalStorage)();
+app.use((req, res, next) => requestContext.run({ ip: req.ip, ua: req.get('user-agent') }, next));
 app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
 // Low-stock alerts (email + text). Registered this early so it also sees every change made by the routes below.
@@ -31,6 +36,9 @@ class ValidationError extends Error {
 }
 const DEPARTMENTS = ['Raw Materials', 'Finished Goods', 'Finishing Supplies'];
 const FINISHED_GOODS_CATEGORIES = ['Aluminum Die-Cast Products', 'Forged Brass Products'];
+// Triple E only works in aluminum and brass, so the only metal raw materials are these two (no steel, iron, stainless...)
+const RAW_MATERIAL_CATEGORIES = ['Aluminum Alloy', 'Brass / Copper Alloy'];
+const isRawMaterialCategory = (c) => RAW_MATERIAL_CATEGORIES.some((x) => x.toLowerCase() === String(c || '').trim().toLowerCase());
 const FINISHED_GOODS_UNIT = 'pcs';      // every Finished Good is sold by the piece (enforced in validateProduct and in the quote form)
 const NEEDS_SUPPLIER = ['Raw Materials', 'Finishing Supplies'];
 // Units offered in the product form (kg and pcs first, then units used for metals)
@@ -42,18 +50,15 @@ const REASONS = {
     supplier_receipt: 'Received from supplier',
     customer_return: 'Returned by customer',
     produced_batch: 'Produced \u2014 new batch',
-    count_correction_up: 'Stock count correction (+)',
     other: 'Other (explain in note)'
   },
   out: {
     rust_corrosion: 'Rust / corrosion',
     damaged: 'Damaged (bent, cracked, broken)',
     scrap_cutting_waste: 'Scrap / cutting waste',
-    production_use: 'Used in production',
     quality_rejection: 'Rejected — failed quality inspection',
     lost_missing: 'Lost / missing',
     returned_to_supplier: 'Returned to supplier',
-    count_correction_down: 'Stock count correction (−)',
     other: 'Other (explain in note)'
   }
 };
@@ -61,10 +66,14 @@ const REASONS = {
 // so the movement log, reports and the printed PDF never show a raw code such as "online_order"
 const LEGACY_REASON_LABELS = {
   production_output: 'Produced in-house',
+  production_use: 'Used in production',
+  count_correction_up: 'Stock count correction (+)',
+  count_correction_down: 'Stock count correction (−)',
   sale: 'Sold at the POS counter',
   online_order: 'Online shop order',
   return: 'Returned by customer',
-  refund: 'Order cancelled, restocked'
+  refund: 'Order cancelled, restocked',
+  opening_balance: 'Opening balance'
 };
 const ALL_DEPTS = DEPARTMENTS;
 // Which product departments each reason applies to (the product's department comes from the database).
@@ -77,18 +86,15 @@ const REASON_DEPTS = {
     supplier_receipt: ['Raw Materials', 'Finishing Supplies'], // finished goods are produced in-house, never bought in
     customer_return: ['Finished Goods'],
     produced_batch: ['Finished Goods'],
-    count_correction_up: ALL_DEPTS,
     other: ALL_DEPTS
   },
   out: {
     rust_corrosion: ['Raw Materials', 'Finished Goods'],
     damaged: ALL_DEPTS,
     scrap_cutting_waste: ['Raw Materials'],
-    production_use: ['Raw Materials', 'Finishing Supplies'],
     quality_rejection: ['Raw Materials', 'Finished Goods'],
     lost_missing: ALL_DEPTS,
     returned_to_supplier: ['Raw Materials', 'Finishing Supplies'],
-    count_correction_down: ALL_DEPTS,
     other: ALL_DEPTS
   }
 };
@@ -157,9 +163,10 @@ function supplierFields(r) {
   const person = r.contact_person != null ? r.contact_person : (segs.find((x) => !/[@\d]/.test(x)) || '');
   const address = r.address_line != null ? r.address_line : (r.location || '');
   const city = r.city || '', province = r.province || '', region = r.region || '', zip = r.zip_code || '', barangay = r.barangay || '';
+  const leadTimeDays = r.lead_time_days == null ? null : +r.lead_time_days;
   const area = [city, province].filter(Boolean).join(', ');
   const fullAddress = city ? [address, barangay && (/^(brgy|barangay)/i.test(barangay) ? barangay : 'Brgy. ' + barangay), city, province, [region, zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') : (r.location || address);
-  return { contactPerson: person, phone, email, address, city, province, barangay, region, zip,
+  return { contactPerson: person, phone, email, address, city, province, barangay, region, zip, leadTimeDays,
     contact: [person, phone, email].filter(Boolean).join(' · '), location: area || r.location || address, fullAddress };
 }
 
@@ -542,9 +549,14 @@ function text(errors, key, v, label, { min = 1, max = 120, required = true } = {
   return s;
 }
 function number(errors, key, v, label, { min = 0, max = 1e8, dp = 2, required = true, gt = false } = {}) {
-  if (v === undefined || v === null || v === '') {
+  if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) {
     if (required) errors[key] = `${label} is required`;
     return null;
+  }
+  // JSON booleans/arrays and JavaScript-only formats must never become business quantities.
+  if ((typeof v !== 'number' && typeof v !== 'string') ||
+      (typeof v === 'string' && !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(v.trim()))) {
+    errors[key] = `${label} must be a number`; return null;
   }
   const n = Number(v);
   if (!Number.isFinite(n)) { errors[key] = `${label} must be a number`; return null; }
@@ -571,10 +583,17 @@ function validateProduct(b, { creating }) {
   // Triple E only sells its two product lines; Raw Materials / Finishing Supplies keep free categories
   if (department === 'Finished Goods' && category && !FINISHED_GOODS_CATEGORIES.some((c) => c.toLowerCase() === category.toLowerCase()))
     e.category = 'Finished goods are ' + FINISHED_GOODS_CATEGORIES.join(' or ');
-  const unitCost = number(e, 'unitCost', b.unitCost, 'Unit cost', { max: 1e7 });
+  // new raw materials: aluminum or brass only (an edit of an old product is checked in the PUT route, where its saved category is known)
+  if (creating && department === 'Raw Materials' && category && !isRawMaterialCategory(category))
+    e.category = 'Raw materials are ' + RAW_MATERIAL_CATEGORIES.join(' or ') + ' (we only work in aluminum and brass)';
+  // a finished good's cost is worked out from its recipe (recipe-costing.js): the form does not have to send it
+  const unitCost = number(e, 'unitCost', b.unitCost, 'Unit cost', { max: 1e7, required: department !== 'Finished Goods' });
   // only Finished Goods are sold: they need a selling price; every other department has none (stored as 0)
+  // priceAuto (finished goods): the selling price is unit cost + the markup (pricing.js keeps it right in the database).
+  // true = automatic (default), false = Finance typed its own price, null = flag not sent: keep what is saved.
+  const priceAuto = department !== 'Finished Goods' ? null : b.priceAuto === undefined ? (creating ? true : null) : b.priceAuto === true;
   const listPrice = department === 'Finished Goods'
-    ? number(e, 'listPrice', b.listPrice, 'Selling price', { max: 1e7, gt: true })
+    ? (priceAuto === true ? null : number(e, 'listPrice', b.listPrice, 'Selling price', { max: 1e7, gt: true }))
     : 0;
   // Reorder level is worked out automatically from usage (reorder.js) unless Finance ticks "Set manually".
   // reorderAuto: true = automatic, false = manual, null = flag not sent (an older form): keep the saved flag and read the level as before.
@@ -582,9 +601,11 @@ function validateProduct(b, { creating }) {
   const reorderLevel = reorderAuto === true ? null : number(e, 'reorderLevel', b.reorderLevel, 'Reorder level', { max: 1e8 });
   const onHand = creating ? number(e, 'onHand', b.onHand, 'On hand', { max: 1e8 }) : null;
   const location = text(e, 'location', b.location, 'Storage location', { min: 2, max: 100 });
+  // weight of one piece, in kg: the delivery fee adds a weight charge from it (delivery-calc.js). Blank = not recorded; undefined = form did not send it, keep what is saved.
+  const weightKg = department !== 'Finished Goods' ? null : b.weightKg === undefined ? undefined : number(e, 'weightKg', b.weightKg, 'Weight per piece', { max: 100000, dp: 3, required: false });
 
   if (Object.keys(e).length) throw new ValidationError(e);
-  return { sku, name, department, category, unit, unitCost, listPrice, reorderLevel, reorderAuto, onHand, location: location || null };
+  return { sku, name, department, category, unit, unitCost, listPrice, priceAuto, reorderLevel, reorderAuto, onHand, location: location || null, weightKg };
 }
 function validateSupplier(b, stored, creating) {
   // `stored` = the supplier's current phone/email when editing; an old value left unchanged is not re-checked
@@ -629,10 +650,18 @@ function validateSupplier(b, stored, creating) {
   }
   if (productSkus && !productSkus.length) e.products = 'Tick at least one product this supplier provides';
   if (creating && b.productSkus === undefined) e.products = 'Tick at least one product this supplier provides';
+  // days from ordering to delivery; used by the automatic reorder level of the products this supplier is the main supplier of
+  const leadRaw = b.leadTimeDays;
+  let leadTimeDays = null;
+  if (leadRaw !== undefined && leadRaw !== null && leadRaw !== '') {
+    const n = Number(leadRaw);
+    if (!Number.isInteger(n) || n < 0 || n > 365) e.leadTimeDays = 'Lead time must be a whole number of days from 0 to 365';
+    else leadTimeDays = n;
+  }
   if (Object.keys(e).length) throw new ValidationError(e);
   const f = supplierFields({ contact_person: contactPerson || '', phone, email, address_line: address, city, province, region, zip_code: zip, barangay });
   return { name, contactPerson: contactPerson || null, phone: phone || null, email: email || null, address, city, province, barangay, region, zip,
-    contact: f.contact, location: f.location, status, productSkus };
+    contact: f.contact, location: f.location, status, productSkus, leadTimeDays };
 }
 function validateMovement(b) {
   const e = {};
@@ -654,7 +683,9 @@ function validateMovement(b) {
     invoiceNo = text(e, 'invoiceNo', b.invoiceNo, 'Invoice / delivery no.', { max: 40, required: false }) || null;
     // optional: what the supplier charged per unit on this delivery; it updates the product's average cost
     const raw = String(b.unitCost == null ? '' : b.unitCost).replace(/[,₱\s]/g, '');
-    if (raw !== '') {
+    if (b.unitCost != null && typeof b.unitCost !== 'number' && typeof b.unitCost !== 'string')
+      e.unitCost = 'Enter the cost per unit in pesos, e.g. 145.50';
+    else if (raw !== '') {
       if (!/^\d{1,8}(\.\d{1,2})?$/.test(raw)) e.unitCost = 'Enter the cost per unit in pesos, e.g. 145.50';
       else if (!(Number(raw) > 0)) e.unitCost = 'The cost per unit must be more than 0';
       else unitCost = Number(raw);
@@ -684,45 +715,73 @@ const tx = async (fn) => {
 };
 
 /* ---------- auth ---------- */
-// A session is only as good as the account behind it: a disabled account (or one whose role changed) loses access on its
-// next request, not when its 8-hour cookie runs out. The answer is cached for a few seconds so this is one small query per user.
-const accountCheck = new Map();                       // user_id -> { ok, at }
-const ACCOUNT_CHECK_MS = 10000;
-async function accountStillValid(user) {
-  const hit = accountCheck.get(user.id);
-  if (hit && Date.now() - hit.at < ACCOUNT_CHECK_MS) return hit.ok;
-  try {
-    const r = (await pool.query('SELECT u.status, r.role_key FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1', [user.id])).rows[0];
-    const ok = !!r && r.status === 'active' && r.role_key === user.role;
-    accountCheck.set(user.id, { ok, at: Date.now() });
-    if (accountCheck.size > 5000) accountCheck.clear();
-    return ok;
-  } catch (e) {
-    console.error('[auth] could not check the account, allowing the signed session:', e.message);
-    return true;                                      // a database hiccup must not sign everybody out
-  }
-}
-app.locals.forgetAccountCheck = (id) => accountCheck.delete(Number(id));
-function auth(...allowed) {
-  return (req, res, next) => {
-    try {
-      req.user = jwt.verify(req.cookies.session, process.env.JWT_SECRET);
-    } catch { return res.status(401).json({ error: 'Not signed in' }); }
-    if (allowed.length && !allowed.includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
-    accountStillValid(req.user).then((ok) => {
-      if (ok) return next();
-      res.clearCookie('session');
-      res.status(401).json({ code: 'ACCOUNT_DISABLED', error: 'This account is disabled or was changed. Please sign in again.' });
-    }, next);
-  };
-}
-async function audit(client, user, action, detail) {
-  await client.query(
-    `INSERT INTO audit_log (user_id, user_name, role_label, action, detail) VALUES ($1,$2,$3,$4,$5)`,
-    [user.id, user.name, user.roleLabel, action, detail]);
+// Session + role check lives in auth-middleware.js (401 not signed in, 403 wrong role BEFORE any database work, 401 disabled account).
+const { auth, forgetAccountCheck, revocation, sessions } = require('./auth-middleware')(pool);
+app.locals.forgetAccountCheck = forgetAccountCheck;
+app.locals.userSessions = sessions;                  // one row per signed-in device (db/026): device limits, logout, password change
+app.locals.sessionRevocation = revocation;           // password change / reset: sign the person out everywhere else (users.token_version)
+
+/* The ONLY place a session cookie is written. tv = users.token_version the session is issued for (see auth-middleware.js). */
+const SESSION_MS = 8 * 3600 * 1000;
+function startSession(res, user, tv, sid) {
+  res.cookie('session', jwt.sign({ id: user.id, name: user.name, role: user.role, roleLabel: user.roleLabel, tv: Number(tv) || 0, ...(sid ? { sid } : {}) }, process.env.JWT_SECRET, { expiresIn: '8h' }), {
+    httpOnly: true, sameSite: 'lax', secure: security.cookieSecure(), maxAge: SESSION_MS });
 }
 
+// Audit entries also record the client address and browser (db/025). The columns are added at start-up too; until that finishes, the old insert is used.
+let auditHasWho = false;
+pool.query('ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS ip_address TEXT')
+  .then(() => pool.query('ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS user_agent TEXT'))
+  .then(() => { auditHasWho = true; })
+  .catch((e) => console.warn('[audit] the audit log will not record IP address / browser (could not add the columns):', e.message));
+async function audit(client, user, action, detail) {
+  if (!auditHasWho) return client.query(
+    `INSERT INTO audit_log (user_id, user_name, role_label, action, detail) VALUES ($1,$2,$3,$4,$5)`,
+    [user.id, user.name, user.roleLabel, action, detail]);
+  const ctx = requestContext.getStore() || {};
+  return client.query(
+    `INSERT INTO audit_log (user_id, user_name, role_label, action, detail, ip_address, user_agent) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [user.id, user.name, user.roleLabel, action, detail, ctx.ip ? String(ctx.ip).slice(0, 64) : null, ctx.ua ? String(ctx.ua).slice(0, 300) : null]);
+}
+
+const userLifecycle = require('./user-lifecycle')({ pool, tx, audit, revocation, sessions, forgetAccountCheck, ValidationError });
+
+app.locals.alerts = require('./security-alerts')({ mailer: require('./mailer') });   // detective control: alerts on repeated failed sign-ins (OWASP A09)
 require('./login-lockout')({ app, pool, wrap, audit, str, EMAIL_RE });
+/* The ONLY place a sign-in session is started. Called after the password AND the one-time code (login-otp.js) were right,
+   or straight after the password when LOGIN_OTP=off. u needs user_id, full_name, role_key, label. */
+// DEVICE LIMIT per role (SESSION_LIMITS, default "finance=1,cashier=1,customer=3"): how many devices can be signed in to one account at the same time.
+// Signing in over the limit ends the OLDEST session, which is refused on its next request ("signed in on another device"). Logging out frees a place.
+// A role that is not listed has no limit; "SESSION_LIMITS=" (empty) turns limits off. (OWASP ASVS V3.3 concurrent session control, A07.)
+const parseLimits = (v) => { const out = {}; String(v).split(',').forEach((pair) => { const [role, n] = pair.split('=').map((x) => x.trim()); const k = Math.floor(Number(n)); if (role && Number.isFinite(k) && k > 0 && k <= 50) out[role] = k; }); return out; };
+const SESSION_LIMITS = parseLimits(process.env.SESSION_LIMITS === undefined ? 'finance=1,cashier=1,customer=3' : process.env.SESSION_LIMITS);
+app.locals.sessionLimits = SESSION_LIMITS;
+app.locals.completeLogin = async (res, u, how) => {
+  const user = { id: u.user_id, name: u.full_name, role: u.role_key, roleLabel: u.label };
+  const limit = SESSION_LIMITS[u.role_key] || 0, ctx = requestContext.getStore() || {};
+  let tv = u.token_version, ended = 0;
+  const sid = await sessions.create({ userId: u.user_id, ttlMs: SESSION_MS, ip: ctx.ip, ua: ctx.ua });   // this device
+  if (limit && sid) ended = await sessions.enforceLimit(u.user_id, limit);                                // older devices over the limit end
+  else if (limit === 1) { const next = await revocation.bump(pool, u.user_id); if (next) { tv = next; ended = -1; } }   // no device table: still keep ONE device by ending every older session
+  forgetAccountCheck(u.user_id);
+  await pool.query('UPDATE users SET last_login = now() WHERE user_id = $1', [u.user_id]);
+  await audit(pool, user, 'Login', 'Successful login' + (how ? ' (one-time code by ' + how + ')' : '')
+    + (ended ? '; ' + (ended > 0 ? ended + ' older device(s) signed out' : 'older sessions ended') + ' (limit of ' + limit + ' device' + (limit === 1 ? '' : 's') + ' for ' + user.roleLabel + ' accounts)' : ''));
+  startSession(res, user, tv, sid);
+  return user;
+};
+/* Strict: a browser that already holds a live session cannot sign in again (that would swap the account under its other tabs).
+   Sign out first. An expired / revoked session does not count, so this never locks anyone out. */
+app.post(['/api/auth/login', '/api/auth/login-otp/send', '/api/auth/login-otp/verify'], (req, res, next) => {
+  let live = false;
+  const stale = { clearCookie() {}, cookie() {}, status() { return { json() { if (!live) next(); } }; } };
+  auth()(req, stale, (err) => {
+    if (err) return next(err);
+    live = true;
+    res.status(409).json({ code: 'ALREADY_SIGNED_IN', error: 'This browser is already signed in as ' + req.user.name + '. Sign out first, then sign in again.', role: req.user.role });
+  });
+});
+require('./login-otp')({ app, pool, wrap, tx, audit, str });
 app.post('/api/auth/login', wrap(async (req, res) => {
   const email = str(req.body && req.body.email).toLowerCase();
   const password = req.body && req.body.password;
@@ -738,8 +797,10 @@ app.post('/api/auth/login', wrap(async (req, res) => {
     if (st) return res.status(423).json(st);
   }
   if (!u || u.status !== 'active' || !(await bcrypt.compare(password, u.password_hash))) {
+    app.locals.alerts.failedLogin({ ip: req.ip, email }).catch(() => {});
     if (u && u.status === 'active') {
       const f = await lock.fail(u, req);
+      if (f.locked) app.locals.alerts.lockout({ email: u.email, role: u.role_key }).catch(() => {});
       if (f.locked) return res.status(423).json({ code: 'LOCKED', secondsLeft: 0, emailSent: f.emailSent,
         error: 'Too many failed attempts. ' + (f.emailSent ? 'We emailed you an unlock link. Open it to unlock your account.' : 'We could not send the unlock email. Try "Resend unlock link" in a minute.') });
       return res.status(401).json({ error: 'Invalid email or password', attemptsLeft: f.attemptsLeft });
@@ -762,24 +823,27 @@ app.post('/api/auth/login', wrap(async (req, res) => {
     }
   }
   await lock.clear(u.user_id);                       // right password: the failed-attempt count starts again from 0
-  await pool.query('UPDATE users SET last_login = now() WHERE user_id = $1', [u.user_id]);
-  const user = { id: u.user_id, name: u.full_name, role: u.role_key, roleLabel: u.label };
-  await audit(pool, user, 'Login', 'Successful login');
-  res.cookie('session', jwt.sign(user, process.env.JWT_SECRET, { expiresIn: '8h' }), {
-    httpOnly: true, sameSite: 'lax', secure: process.env.COOKIE_SECURE === 'true', maxAge: 8 * 3600 * 1000 });
-  res.json(user);
+  // Second factor on EVERY sign-in: the password alone never starts a session. The person now chooses to get a one-time code by
+  // email or text message (login-otp.js). LOGIN_OTP=off skips this step (development / test harnesses only).
+  if (app.locals.loginOtp.enabled()) {
+    await audit(pool, { id: u.user_id, name: u.full_name, roleLabel: u.label }, 'Login', 'Password accepted; one-time code required');
+    return res.status(403).json(app.locals.loginOtp.challengeFor(u));
+  }
+  res.json(await app.locals.completeLogin(res, u));
 }));
 app.post('/api/auth/logout', wrap(async (req, res) => {
   // record the log out in the audit log (the cookie is read here because this route is open to expired sessions too)
   try {
     const u = jwt.verify(req.cookies.session, process.env.JWT_SECRET);
     await audit(pool, u, 'Logout', 'Logged out');
+    await sessions.revoke(u.sid, 'logout');                              // frees this device's place under the device limit
   } catch { /* no valid session - nothing to record */ }
   res.clearCookie('session'); res.json({ ok: true });
 }));
 app.get('/api/auth/me', auth(), wrap(async (req, res) => {
-  const { rows } = await pool.query('SELECT email FROM users WHERE user_id = $1', [req.user.id]);
-  res.json({ ...req.user, email: rows[0] ? rows[0].email : null });
+  const { rows } = await pool.query('SELECT full_name, email, phone FROM users WHERE user_id = $1', [req.user.id]);
+  const u = rows[0] || {};
+  res.json({ ...req.user, name: u.full_name || req.user.name, email: u.email || null, phone: u.phone || '' });
 }));
 /* ---------- my profile (any signed-in user edits only their own row) ---------- */
 const PROFILE_SQL = `SELECT u.user_id, u.full_name, u.username, u.email, u.phone, r.label AS role_label, r.role_key,
@@ -897,8 +961,7 @@ app.put('/api/auth/profile', auth(), wrap(async (req, res) => {
   const message = notes.join(' ');
   // the session cookie carries the display name, so refresh it
   const user = { id: req.user.id, name: result.full_name, role: req.user.role, roleLabel: req.user.roleLabel };
-  res.cookie('session', jwt.sign(user, process.env.JWT_SECRET, { expiresIn: '8h' }), {
-    httpOnly: true, sameSite: 'lax', secure: process.env.COOKIE_SECURE === 'true', maxAge: 8 * 3600 * 1000 });
+  startSession(res, user, req.user.tv, req.user.sid);   // same session: a profile edit must not log any device out
   res.json({ ...profileJson(result), message });
 }));
 // change password: any signed-in user.
@@ -927,11 +990,16 @@ app.put('/api/auth/password', auth(), wrap(async (req, res) => {
   if (needCode && !channels.length) throw new ValidationError({ code: 'No verified email or mobile number is on this account, so a code cannot be sent. Ask the Finance/Admin team for help.' });
   if (needCode && !channels.includes(channel)) throw new ValidationError({ code: 'Choose email or text message, then enter the code sent to it.' });
   const hash = await bcrypt.hash(next, 12);
-  await tx(async (client) => {
+  const newTv = await tx(async (client) => {
     if (needCode) await otp.consume(client, req.user.id, 'change-' + channel, b.code);   // the code is used up only when it is right
     await client.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [hash, req.user.id]);
+    const tv = await revocation.bump(client, req.user.id);                               // every OTHER device is signed out (OWASP A07 session management)
     await audit(client, req.user, 'Profile updated', needCode ? 'Changed password (confirmed with a one-time code sent to the email or the mobile number)' : 'Changed password');
+    return tv;
   });
+  await sessions.revokeOthers(pool, req.user.id, req.user.sid, 'password');   // the other devices' places are freed too
+  forgetAccountCheck(req.user.id);
+  startSession(res, req.user, newTv, req.user.sid);      // this device stays signed in with the new session number
   res.json({ ok: true });
 }));
 // profile photo: JPG / PNG up to 2 MB, kept in the users table (avatar BYTEA)
@@ -987,7 +1055,7 @@ const productSelect = `
        WHERE ps.product_id = v.product_id), '[]'::json) AS suppliers
     FROM v_inventory v WHERE NOT v.is_archived ORDER BY v.department, v.name`;
 // reorder_auto / reorder_basis live on products (the view does not have them), so the list adds them here
-const productSelectFull = productSelect.replace('SELECT v.*, COALESCE((', 'SELECT v.*, p.reorder_auto, p.reorder_basis, COALESCE((')
+const productSelectFull = productSelect.replace('SELECT v.*, COALESCE((', 'SELECT v.*, p.weight_kg, p.reorder_auto, p.reorder_basis, p.price_auto, p.cost_mode, p.cost_note, p.cost_override_reason, COALESCE((')
   .replace('FROM v_inventory v WHERE', 'FROM v_inventory v JOIN products p ON p.product_id = v.product_id WHERE');
 
 app.get('/api/inventory', auth('finance'), wrap(async (req, res) => {
@@ -999,13 +1067,19 @@ app.get('/api/inventory', auth('finance'), wrap(async (req, res) => {
 
 app.get('/api/products', auth('finance'), wrap(async (req, res) => {
   await reorder.ready;
+  await pool.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS weight_kg NUMERIC(10,3) CHECK (weight_kg IS NULL OR weight_kg >= 0)').catch(() => {});   // delivery-calc.js adds it too; this just makes the order of start-up irrelevant
+  if (app.locals.pricing) await app.locals.pricing.ready;   // price_auto column + trigger
+  if (app.locals.recipeCosting) await app.locals.recipeCosting.ready;   // cost_mode / cost_note columns
   const archivedOnly = String(req.query.archived || '') === '1';
   const { rows } = await pool.query(archivedOnly ? productSelectFull.replace('WHERE NOT v.is_archived', 'WHERE v.is_archived') : productSelectFull);
-  res.json(rows.map(r => ({ archived: !!r.is_archived, sku: r.sku, name: r.name, department: r.department, category: r.category || 'Uncategorized',
+  const why = {};
+  if (archivedOnly) { await softDeleteReady; (await pool.query('SELECT sku, delete_reason, deleted_at FROM products WHERE is_archived')).rows.forEach(w => { why[w.sku] = w; }); }
+  res.json(rows.map(r => ({ archived: !!r.is_archived, deleteReason: why[r.sku] ? why[r.sku].delete_reason || undefined : undefined, deletedAt: why[r.sku] && why[r.sku].deleted_at ? +new Date(why[r.sku].deleted_at) : undefined, sku: r.sku, name: r.name, department: r.department, category: r.category || 'Uncategorized',
     grade: r.grade || '', form: r.form || '', unit: r.unit, costUnit: r.unit, status: r.stock_status, available: +r.on_hand,
     reorderLevel: +r.reorder_level, reorderAuto: !!r.reorder_auto, reorderBasis: r.reorder_basis || '',
-    stdCost: +r.unit_cost, listPrice: +r.selling_price, location: r.location,
+    weightKg: r.weight_kg == null ? null : +r.weight_kg, stdCost: +r.unit_cost, listPrice: +r.selling_price, priceAuto: r.department === 'Finished Goods' ? r.price_auto !== false : undefined, location: r.location,
     margin: r.selling_price > 0 ? +(((r.selling_price - r.unit_cost) / r.selling_price) * 100).toFixed(1) : 0,
+    costMode: r.department === 'Finished Goods' ? (r.cost_mode || 'auto') : undefined, costNote: r.cost_note || undefined, costOverrideReason: r.cost_override_reason || undefined,
     primarySource: r.primary_source || (r.suppliers.length ? r.suppliers[0].name : null),
     suppliers: r.suppliers })));
 }));
@@ -1061,6 +1135,7 @@ async function assertProductNameFree(client, name, sku) {
 app.post('/api/products', auth('finance'), wrap(async (req, res) => {
   const p = validateProduct(req.body || {}, { creating: true });
   await reorder.ready;
+  if (app.locals.pricing) await app.locals.pricing.ready;   // price_auto column + trigger
   // Raw Materials and Finishing Supplies are bought, so a new one must name its supplier. Finished Goods are made in-house: no supplier.
   const supplierCode = str((req.body || {}).supplierCode);
   if (NEEDS_SUPPLIER.includes(p.department) && !supplierCode) throw new ValidationError({ supplier: 'Choose the supplier for this material' });
@@ -1072,14 +1147,15 @@ app.post('/api/products', auth('finance'), wrap(async (req, res) => {
       if (!supplier) throw new ValidationError({ supplier: 'That supplier is missing or archived. Choose another' });
     }
     const ins = await client.query(
-      `INSERT INTO products (sku,name,department,category_id,unit,unit_cost,selling_price,reorder_level,reorder_auto,location)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING product_id`,
-      [p.sku, p.name, p.department, await categoryId(client, p.category), p.unit, p.unitCost, p.listPrice || 0, p.reorderLevel == null ? 0 : p.reorderLevel, p.reorderAuto === true, p.location]);
+      `INSERT INTO products (sku,name,department,category_id,unit,unit_cost,selling_price,reorder_level,reorder_auto,location,price_auto,weight_kg)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING product_id`,
+      [p.sku, p.name, p.department, await categoryId(client, p.category), p.unit, p.unitCost == null ? 0 : p.unitCost, p.listPrice || 0, p.reorderLevel == null ? 0 : p.reorderLevel, p.reorderAuto === true, p.location, p.priceAuto !== false, p.weightKg == null ? null : p.weightKg]);
     const id = ins.rows[0].product_id;
     if (supplier) await client.query('INSERT INTO product_suppliers (product_id, supplier_id, is_primary) VALUES ($1,$2,TRUE)', [id, supplier.supplier_id]);
+    // the stock a new product starts with is its own ledger entry ("Opening balance"), valued at the cost it was entered with
     if (p.onHand > 0) await client.query(
-      `INSERT INTO stock_movements (product_id,movement_type,reason,quantity,handled_by,note)
-       VALUES ($1,'in','count_correction_up',$2,$3,'Opening balance')`, [id, p.onHand, req.user.id]);
+      `INSERT INTO stock_movements (product_id,movement_type,reason,quantity,handled_by,note,unit_cost)
+       VALUES ($1,'in','opening_balance',$2,$3,'Opening balance',$4)`, [id, p.onHand, req.user.id, p.unitCost == null ? 0 : p.unitCost]);
     await reorder.recalc(client, p.sku);   // no-op unless automatic; writes the "needs usage history" note for a new product
     await audit(client, req.user, 'Record added', `Product ${p.sku} — ${p.name}` + (supplier ? ` — supplier ${supplier.name}` : ''));
   });
@@ -1089,29 +1165,64 @@ app.post('/api/products', auth('finance'), wrap(async (req, res) => {
 app.put('/api/products/:sku', auth('finance'), wrap(async (req, res) => {
   const p = validateProduct({ ...req.body, sku: req.params.sku }, { creating: false });
   await reorder.ready;
+  if (app.locals.pricing) await app.locals.pricing.ready;   // price_auto column + trigger
   const found = await tx(async (client) => {
     await client.query(`SELECT set_config('app.user_id', $1, true)`, [String(req.user.id)]);
     await assertProductNameFree(client, p.name, p.sku);
+    const rc = app.locals.recipeCosting && (await app.locals.recipeCosting.ready) ? app.locals.recipeCosting : null;
+    const before = (await client.query('SELECT p.product_id, p.unit_cost, p.department, c.name AS category FROM products p LEFT JOIN categories c ON c.category_id = p.category_id WHERE p.sku = $1 AND NOT p.is_archived FOR UPDATE OF p', [p.sku])).rows[0];
+    // an old raw material that already sits in another category may keep it; any change must land on aluminum or brass
+    if (p.department === 'Raw Materials' && !isRawMaterialCategory(p.category) && !(before && before.department === 'Raw Materials' && String(before.category || '').toLowerCase() === p.category.toLowerCase()))
+      throw new ValidationError({ category: 'Raw materials are ' + RAW_MATERIAL_CATEGORIES.join(' or ') + ' (we only work in aluminum and brass)' });
+    // a finished good with a recipe does not take a typed cost (it is "auto"); Finance can override it, with a reason that is logged
+    let guard = null;
+    if (rc && before && p.department === 'Finished Goods' && before.department === 'Finished Goods') {
+      guard = await rc.guardProductCost(client, p, req.body || {}, req.user);
+      p.unitCost = guard.unitCost;
+    }
+    if (p.unitCost == null) p.unitCost = before ? +before.unit_cost : 0;
     const r = await client.query(
       `UPDATE products SET name=$2, department=$3, category_id=$4, unit=$5, unit_cost=$6,
               selling_price=COALESCE($7, selling_price), reorder_level=COALESCE($8, reorder_level), location=$9,
               reorder_auto=COALESCE($10::boolean, reorder_auto),
-              reorder_basis=CASE WHEN $10::boolean IS FALSE THEN NULL ELSE reorder_basis END
+              reorder_basis=CASE WHEN $10::boolean IS FALSE THEN NULL ELSE reorder_basis END,
+              price_auto=COALESCE($11::boolean, price_auto),
+              weight_kg=CASE WHEN $12::boolean THEN $13::numeric ELSE weight_kg END
         WHERE sku=$1 AND NOT is_archived RETURNING product_id`,
-      [p.sku, p.name, p.department, await categoryId(client, p.category), p.unit, p.unitCost, p.listPrice, p.reorderLevel, p.location, p.reorderAuto]);
+      [p.sku, p.name, p.department, await categoryId(client, p.category), p.unit, p.unitCost, p.listPrice, p.reorderLevel, p.location, p.reorderAuto, p.priceAuto, p.weightKg !== undefined, p.weightKg === undefined ? null : p.weightKg]);
     if (!r.rowCount) return false;
     await reorder.recalc(client, p.sku);   // if it is (now) automatic, work the level out straight away
     await audit(client, req.user, 'Record edited', `Product ${p.sku}`);
+    // cost ripple: a material whose cost was changed by hand moves every finished good that uses it
+    if (rc && before && ['Raw Materials', 'Finishing Supplies'].includes(p.department) && Math.abs(+before.unit_cost - p.unitCost) >= 0.005)
+      await rc.ripple(client, before.product_id, { user: req.user, name: p.name, oldCost: +before.unit_cost, newCost: p.unitCost });
+    if (guard && guard.recalc) await rc.recalcOne(client, before.product_id, { user: req.user, why: 'override removed' });
     return true;
   });
   if (!found) return res.status(404).json({ error: 'Product not found' });
   res.json({ ok: true });
 }));
 
+// Products and suppliers are never removed: "delete" hides them (soft delete) and keeps who/when/why for the Deleted tab.
+const softDeleteReady = (async () => {
+  for (const t of ['products', 'suppliers']) {
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS delete_reason TEXT`);
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+  }
+})().catch(e => console.error('[soft delete] schema setup failed:', e.message));
+function deleteReason(body) {
+  const reason = str(body && body.reason);
+  if (reason.length < 5) throw new ValidationError({ reason: 'Give a reason for deleting this (at least 5 characters).' });
+  if (reason.length > 300) throw new ValidationError({ reason: 'Keep the reason within 300 characters.' });
+  return reason;
+}
+
 app.delete('/api/products/:sku', auth('finance'), wrap(async (req, res) => {
-  const r = await pool.query('UPDATE products SET is_archived = TRUE WHERE sku = $1 AND NOT is_archived', [str(req.params.sku).toUpperCase()]);
+  await softDeleteReady;
+  const reason = deleteReason(req.body);
+  const r = await pool.query('UPDATE products SET is_archived = TRUE, delete_reason = $2, deleted_at = now() WHERE sku = $1 AND NOT is_archived', [str(req.params.sku).toUpperCase(), reason]);
   if (!r.rowCount) return res.status(404).json({ error: 'Product not found' });
-  await audit(pool, req.user, 'Record edited', `Archived product ${req.params.sku}`);
+  await audit(pool, req.user, 'Record edited', `Deleted product ${req.params.sku}: ${reason}`);
   res.json({ ok: true });
 }));
 
@@ -1122,7 +1233,8 @@ app.post('/api/products/:sku/restore', auth('finance'), wrap(async (req, res) =>
   // an active product may already use this name (names are unique among active products)
   const dup = await pool.query(`SELECT sku FROM products WHERE lower(btrim(name)) = lower(btrim($1)) AND NOT is_archived AND sku <> $2 LIMIT 1`, [p.rows[0].name, sku]);
   if (dup.rowCount) return res.status(409).json({ error: `Cannot restore: an active product named "${p.rows[0].name}" already exists (SKU ${dup.rows[0].sku}). Rename that one first.` });
-  await pool.query('UPDATE products SET is_archived = FALSE WHERE sku = $1', [sku]);
+  await softDeleteReady;
+  await pool.query('UPDATE products SET is_archived = FALSE, delete_reason = NULL, deleted_at = NULL WHERE sku = $1', [sku]);
   await audit(pool, req.user, 'Record edited', `Restored product ${sku}`);
   res.json({ ok: true });
 }));
@@ -1176,9 +1288,13 @@ app.get('/api/geo/check-zip', auth('finance', 'customer', 'cashier'), wrap(async
   res.json(await checkZipMatch({ zip, city, province, barangay }));
 }));
 
+/* ---------- form helpers (Task 9): next SKU, last delivery, ZIP -> address, known customers ---------- */
+require('./form-assist')({ app, pool, auth, wrap, str, loadZipRows, REGIONS, TZ });
+
 const initials = n => n.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
 
 app.get('/api/suppliers', auth('finance'), wrap(async (req, res) => {
+  await softDeleteReady;
   const { rows } = await pool.query(`
     SELECT s.*, COALESCE((
         SELECT json_agg(json_build_object('sku', p.sku, 'name', p.name, 'primary', ps.is_primary) ORDER BY p.name)
@@ -1186,6 +1302,7 @@ app.get('/api/suppliers', auth('finance'), wrap(async (req, res) => {
          WHERE ps.supplier_id = s.supplier_id AND NOT p.is_archived), '[]'::json) AS products
       FROM suppliers s ORDER BY s.name`);
   res.json(rows.map(s => ({ id: s.code, name: s.name, initials: initials(s.name), status: s.status,
+    deleteReason: s.status === 'archived' ? s.delete_reason || undefined : undefined, deletedAt: s.status === 'archived' && s.deleted_at ? +new Date(s.deleted_at) : undefined,
     ...supplierFields(s),
     supplies: s.products.length ? s.products.map(p => p.name).join(', ') : (s.supplies || ''),
     products: s.products })));
@@ -1247,9 +1364,10 @@ app.post('/api/suppliers', auth('finance'), wrap(async (req, res) => {
   const code = s.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   await tx(async (client) => {
     const ins = await client.query(
-      `INSERT INTO suppliers (code,name,location,contact,contact_person,phone,email,address_line,city,province,region,zip_code,barangay)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING supplier_id`,
-      [code, s.name, s.location, s.contact, s.contactPerson, s.phone, s.email, s.address, s.city, s.province, s.region, s.zip, s.barangay || null]);
+      `INSERT INTO suppliers (code,name,location,contact,contact_person,phone,email,address_line,city,province,region,zip_code,barangay,lead_time_days)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING supplier_id`,
+      [code, s.name, s.location, s.contact, s.contactPerson, s.phone, s.email, s.address, s.city, s.province, s.region, s.zip, s.barangay || null,
+       s.leadTimeDays == null ? reorder.settings.leadDays : s.leadTimeDays]);
     if (s.productSkus && s.productSkus.length) await setSupplierProducts(client, ins.rows[0].supplier_id, s.productSkus);
     await audit(client, req.user, 'Record added', `Supplier ${s.name}`);
   });
@@ -1268,10 +1386,16 @@ app.put('/api/suppliers/:code', auth('finance'), wrap(async (req, res) => {
   const found = await tx(async (client) => {
     const r = await client.query(
       `UPDATE suppliers SET name=$2, location=$3, contact=$4, contact_person=$6, phone=$7, email=$8, address_line=$9,
-              city=$10, province=$11, region=$12, zip_code=$13, barangay=$14, status=COALESCE($5, status)
+              city=$10, province=$11, region=$12, zip_code=$13, barangay=$14, status=COALESCE($5, status),
+              lead_time_days=COALESCE($15::int, lead_time_days)
         WHERE code=$1 RETURNING supplier_id`,
-      [req.params.code, s.name, s.location, s.contact, s.status || null, s.contactPerson, s.phone, s.email, s.address, s.city, s.province, s.region, s.zip, s.barangay || null]);
+      [req.params.code, s.name, s.location, s.contact, s.status || null, s.contactPerson, s.phone, s.email, s.address, s.city, s.province, s.region, s.zip, s.barangay || null, s.leadTimeDays]);
     if (!r.rowCount) return false;
+    // a new lead time changes the automatic reorder level of the products this supplier mainly supplies
+    if (s.leadTimeDays != null) {
+      const skus = await client.query(`SELECT p.sku FROM product_suppliers ps JOIN products p USING (product_id) WHERE ps.supplier_id = $1 AND ps.is_primary AND p.reorder_auto`, [r.rows[0].supplier_id]);
+      for (const row of skus.rows) await reorder.recalc(client, row.sku);
+    }
     if (s.productSkus) await setSupplierProducts(client, r.rows[0].supplier_id, s.productSkus);
     await audit(client, req.user, 'Record edited', `Supplier ${req.params.code}${s.status ? ' to ' + s.status : ''}`);
     return true;
@@ -1283,9 +1407,11 @@ app.put('/api/suppliers/:code', auth('finance'), wrap(async (req, res) => {
 app.patch('/api/suppliers/:code/status', auth('finance'), wrap(async (req, res) => {
   const status = str(req.body && req.body.status);
   if (!['active', 'archived'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
-  const r = await pool.query('UPDATE suppliers SET status = $2 WHERE code = $1', [req.params.code, status]);
+  await softDeleteReady;
+  const reason = status === 'archived' ? deleteReason(req.body) : null;
+  const r = await pool.query('UPDATE suppliers SET status = $2::text, delete_reason = $3::text, deleted_at = CASE WHEN $3::text IS NULL THEN NULL ELSE now() END WHERE code = $1', [req.params.code, status, reason]);
   if (!r.rowCount) return res.status(404).json({ error: 'Supplier not found' });
-  await audit(pool, req.user, 'Record edited', `Supplier ${req.params.code} to ${status}`);
+  await audit(pool, req.user, 'Record edited', status === 'archived' ? `Deleted supplier ${req.params.code}: ${reason}` : `Restored supplier ${req.params.code}`);
   res.json({ ok: true });
 }));
 
@@ -1295,7 +1421,7 @@ app.get('/api/movements', auth('finance'), wrap(async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 5000);
   const { rows } = await pool.query(
     `SELECT m.ref, m.reason, p.name AS product, m.movement_type, m.quantity, p.unit, p.department, m.source_type, m.source_id,
-            COALESCE(u.full_name, '—') AS handled_by, s.name AS supplier, m.invoice_no, m.note,
+            COALESCE(u.full_name, '—') AS handled_by, s.name AS supplier, m.invoice_no, m.note, COALESCE(m.unit_cost, p.unit_cost) AS unit_cost,
             to_char(m.created_at AT TIME ZONE $2, 'Mon DD, HH12:MI AM') AS dt,
             to_char(m.created_at AT TIME ZONE $2, 'YYYY-MM-DD') AS d
        FROM stock_movements m JOIN products p USING (product_id) LEFT JOIN users u ON u.user_id = m.handled_by
@@ -1309,7 +1435,7 @@ app.get('/api/movements', auth('finance'), wrap(async (req, res) => {
     const pr = r.source_type === 'production' ? prodInfo.get(String(r.source_id)) : null;
     return { ref: r.ref, product: r.product, type: r.movement_type, qty: +r.quantity,
       reason: REASONS.in[r.reason] || REASONS.out[r.reason] || LEGACY_REASON_LABELS[r.reason] || r.reason,
-      unit: r.unit, department: r.department, handledBy: r.handled_by, dateTime: r.dt, date: r.d,
+      unit: r.unit, department: r.department, handledBy: r.handled_by, dateTime: r.dt, date: r.d, unitCost: r.unit_cost != null ? +r.unit_cost : null,
       supplier: r.supplier || undefined, invoiceNo: r.invoice_no || undefined, note: r.note || undefined,
       productionRef: pr ? pr.ref : undefined, relatedProduct: pr ? pr.product : undefined };
   }));
@@ -1352,13 +1478,29 @@ app.post('/api/movements', auth('finance'), wrap(async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ref`,
       [prod.product_id, m.type, m.reason, m.quantity, req.user.id, m.note, supplierId, m.invoiceNo, m.unitCost != null ? m.unitCost : oldCost]);
     if (newCost !== oldCost) await client.query('UPDATE products SET unit_cost = $2 WHERE product_id = $1', [prod.product_id, newCost]);
+    // General replenishment must not approve a quote's purchase before its payment gate.
+    // Quote-linked suggestions are received through the Finance purchase-suggestion route.
+    if (m.type === 'in' && m.reason === 'supplier_receipt') {
+      await client.query(
+        `UPDATE purchase_suggestions
+            SET status = 'received',
+                note = COALESCE(NULLIF(note, ''), 'Received via delivery') || ' (Ref: ' || $2 || ')'
+          WHERE product_id = $1 AND quote_id IS NULL AND status IN ('open', 'ordered')`,
+        [prod.product_id, ins.rows[0].ref]
+      ).catch((e) => console.warn('[movements] suggestion update error:', e.message));
+    }
     await audit(client, req.user, 'Record added',
       `Stock ${m.type === 'in' ? 'In' : 'Out'} — ${ins.rows[0].ref}, ${prod.name}, ${m.type === 'in' ? '+' : '-'}${m.quantity} ${prod.unit} (${REASONS[m.type][m.reason]})` +
       (supplierName ? `, from ${supplierName}` : '') + (m.invoiceNo ? `, invoice ${m.invoiceNo}` : '') +
       (m.unitCost != null ? `, at ₱${m.unitCost.toFixed(2)} each — average cost ₱${oldCost.toFixed(2)} → ₱${newCost.toFixed(2)}` : ''));
-    return { ref: ins.rows[0].ref, unitCost: newCost, previousCost: oldCost };
+    // cost ripple: every finished good that uses this material is recalculated, repriced, and its open quotes flagged (same transaction)
+    let ripple = null;
+    const rc = app.locals.recipeCosting;
+    if (newCost !== oldCost && ['Raw Materials', 'Finishing Supplies'].includes(prod.department) && rc && (await rc.ready))
+      ripple = await rc.ripple(client, prod.product_id, { user: req.user, name: prod.name, oldCost, newCost });
+    return { ref: ins.rows[0].ref, unitCost: newCost, previousCost: oldCost, ripple };
   });
-  res.status(201).json({ ref: result.ref, unitCost: result.unitCost, previousCost: result.previousCost });
+  res.status(201).json({ ref: result.ref, unitCost: result.unitCost, previousCost: result.previousCost, ripple: result.ripple && result.ripple.affected ? result.ripple : undefined });
 }));
 
 /* ---------- stock count (physical inventory) ---------- */
@@ -1371,19 +1513,86 @@ reorder.start();   // recalculate automatic reorder levels now and every 6 hours
 
 /* ---------- production (material requirements, produced-internally Stock In, production history) ---------- */
 productionApi = require('./production')({ app, pool, auth, wrap, tx, audit, ValidationError, str, TZ });
+app.locals.production = productionApi;
+
+/* ---------- inventory automation: three-department tracking, delivery schedules, periodic production ---------- */
+const inventoryAutomation = require('./inventory-automation')({ pool, tx, audit, ValidationError, str, TZ });
+app.locals.inventoryAutomation = inventoryAutomation;
+
+// Department summary / automated tracking across Raw Materials, Finishing Supplies, Finished Goods
+app.get('/api/inventory/automation/tracking', auth('finance'), wrap(async (req, res) => {
+  res.json(await inventoryAutomation.getDepartmentSummary());
+}));
+
+// Delivery schedules for Raw Materials and Finishing Supplies
+app.get('/api/inventory/automation/delivery-schedules', auth('finance'), wrap(async (req, res) => {
+  res.json(await inventoryAutomation.listDeliverySchedules());
+}));
+
+// Receive an individual delivery schedule immediately
+app.post('/api/inventory/automation/delivery-schedules/:id/receive', auth('finance'), wrap(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  res.json(await inventoryAutomation.receiveDeliverySchedule(id, req.user));
+}));
+
+// Process due delivery schedules to automatically update stock levels for incoming Raw Materials & Finishing Supplies
+app.post('/api/inventory/automation/delivery-schedules/process-due', auth('finance'), wrap(async (req, res) => {
+  const asOf = req.body && req.body.asOfDate;
+  res.json(await inventoryAutomation.processDueDeliveries(asOf, req.user));
+}));
+
+// Everything on the schedule stocks in by itself on its date: deliveries first, then production (also run by the automation timer below)
+app.post('/api/inventory/automation/run-due', auth('finance'), wrap(async (req, res) => {
+  res.json(await inventoryAutomation.runDueAutomation());
+}));
+(app.locals.automationJobs = app.locals.automationJobs || []).push({ name: 'inventory-schedule', run: async () => {
+  const r = await inventoryAutomation.runDueAutomation();
+  return { received: r.deliveries.processedCount, produced: r.production.producedCount, waitingForMaterials: r.production.waiting.length };
+} });
+
+// Periodic production plans for Finished Goods
+app.get('/api/inventory/automation/production-plans', auth('finance'), wrap(async (req, res) => {
+  res.json(await inventoryAutomation.listProductionPlans());
+}));
+
+// Calculate material consumption and sufficiency for a finished good / production plan
+app.post('/api/inventory/automation/production-plans/calculate', auth('finance'), wrap(async (req, res) => {
+  const b = req.body || {};
+  let targetProduct = b.sku || b.productId;
+  if (b.planId) {
+    const pl = await pool.query('SELECT finished_product_id FROM periodic_production_plans WHERE plan_id = $1', [b.planId]);
+    if (pl.rowCount) targetProduct = pl.rows[0].finished_product_id;
+  }
+  if (!targetProduct) return res.status(400).json({ error: 'Must provide planId, sku, or productId' });
+  const vol = Number(b.volume);
+  if (!vol || vol <= 0) return res.status(400).json({ error: 'Volume must be greater than zero' });
+  res.json(await inventoryAutomation.calculatePlanMaterials(targetProduct, vol));
+}));
+
+// Execute periodic production run: simultaneously deducts Raw Materials & Finishing Supplies and adds Finished Goods
+app.post('/api/inventory/automation/production-plans/:id/execute', auth('finance'), wrap(async (req, res) => {
+  const planId = parseInt(req.params.id, 10);
+  res.json(await inventoryAutomation.executeProductionRun(planId, req.body, req.user));
+}));
+
+app.post('/api/inventory/automation/production-run', auth('finance'), wrap(async (req, res) => {
+  res.json(await inventoryAutomation.executeProductionRun(null, req.body, req.user));
+}));
 
 /* Customer directory belongs to the cashier, not Finance. Never expose other staff accounts. */
 app.get('/api/pos/customer-directory', auth('cashier'), wrap(async (req, res) => {
+  await userLifecycle.ready();
   // the directory also says when they joined and how much they have done in the shop, so the cashier can tell regulars apart
   const { rows } = await pool.query(`SELECT u.user_id AS id, u.full_name AS name, u.email, u.phone, u.status, u.username,
     to_char(u.last_login AT TIME ZONE $1, 'Mon DD, YYYY HH12:MI AM') AS "lastLogin",
     to_char(u.created_at AT TIME ZONE $1, 'Mon DD, YYYY') AS joined, (EXTRACT(EPOCH FROM u.created_at) * 1000)::bigint AS "joinedAt",
     (SELECT count(*)::int FROM orders o WHERE o.customer_id = u.user_id) AS orders,
     (SELECT count(*)::int FROM product_reviews pr WHERE pr.user_id = u.user_id) AS reviews
-    FROM users u JOIN roles r ON r.role_id=u.role_id WHERE r.role_key='customer' ORDER BY u.full_name`, [TZ]);
+    FROM users u JOIN roles r ON r.role_id=u.role_id WHERE r.role_key='customer' AND u.deleted_at IS NULL ORDER BY u.full_name`, [TZ]);
   res.json(rows);
 }));
 app.get('/api/pos/customers/:id/profile', auth('cashier'), wrap(async (req,res) => {
+  await userLifecycle.ready();
   if (!/^\d+$/.test(req.params.id)) return res.status(400).json({error:'Invalid customer ID'});
   // Same details Finance sees, minus the company TIN. Never any password hash, token or consent record.
   const {rows}=await pool.query(`SELECT u.user_id,u.full_name AS name,u.email,u.phone,u.status,u.username,
@@ -1391,7 +1600,7 @@ app.get('/api/pos/customers/:id/profile', auth('cashier'), wrap(async (req,res) 
     u.gender,u.company_name,u.company_position,(u.email_verified_at IS NOT NULL) AS email_verified,
     to_char(u.created_at AT TIME ZONE $2,'Mon DD, YYYY') AS joined,
     to_char(u.last_login AT TIME ZONE $2,'Mon DD, YYYY HH12:MI AM') AS last_login
-    FROM users u JOIN roles r ON r.role_id=u.role_id WHERE u.user_id=$1 AND r.role_key='customer'`,[req.params.id,TZ]);
+    FROM users u JOIN roles r ON r.role_id=u.role_id WHERE u.user_id=$1 AND r.role_key='customer' AND u.deleted_at IS NULL`,[req.params.id,TZ]);
   if(!rows.length)return res.status(404).json({error:'Customer not found'});
   const u=rows[0], guess=u.first_name==null?splitFullName(u.name):null;
   res.json({ id:u.user_id, name:u.name, username:u.username, email:u.email, phone:u.phone||'', status:u.status,
@@ -1402,15 +1611,18 @@ app.get('/api/pos/customers/:id/profile', auth('cashier'), wrap(async (req,res) 
 }));
 /* ---------- users & audit (finance only) ---------- */
 app.get('/api/users', auth('finance'), wrap(async (req, res) => {
+  await userLifecycle.ready();
+  const deleted = req.query.deleted === '1';
   const { rows } = await pool.query(
-    `SELECT u.user_id, u.full_name, u.username, u.email, r.label, r.role_key, u.status,
+    `SELECT u.user_id, u.full_name, u.username, u.email, r.label, r.role_key, u.status, u.deleted_at,
             to_char(u.last_login AT TIME ZONE $1, 'YYYY-MM-DD HH12:MI AM') AS last_login,
             EXTRACT(EPOCH FROM u.last_login)::bigint AS last_login_epoch,
             (u.avatar IS NOT NULL) AS has_avatar
        FROM users u JOIN roles r USING (role_id)
-      ORDER BY u.last_login DESC NULLS LAST, u.full_name`, [TZ]);   // most recent sign-in first; accounts that never signed in go last
+      WHERE (u.deleted_at IS NOT NULL) = $2
+      ORDER BY u.last_login DESC NULLS LAST, u.full_name`, [TZ, deleted]);   // most recent sign-in first; accounts that never signed in go last
   res.json(rows.map(u => ({ id: u.user_id, name: u.full_name, username: u.username, email: u.email, role: u.label,
-    roleKey: u.role_key, status: u.status, lastLogin: u.last_login || 'Never',
+    roleKey: u.role_key, status: u.status, deletedAt: u.deleted_at, lastLogin: u.last_login || 'Never',
     lastLoginAt: u.last_login_epoch == null ? null : Number(u.last_login_epoch), hasAvatar: !!u.has_avatar,
     isYou: u.user_id === req.user.id })));   // the page hides Disable on your own row
 }));
@@ -1418,6 +1630,7 @@ app.get('/api/users', auth('finance'), wrap(async (req, res) => {
 // Read-only registered customer details for Finance/Admin Customer Management.
 // Never expose password hashes, verification tokens, or private consent records.
 app.get('/api/customers/:id/profile', auth('finance'), wrap(async (req, res) => {
+  await userLifecycle.ready();
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id) || id < 1) return res.status(404).json({ error: 'Customer not found' });
   const { rows } = await pool.query(`SELECT u.user_id, u.full_name, u.username, u.email, u.phone, u.status,
@@ -1428,7 +1641,7 @@ app.get('/api/customers/:id/profile', auth('finance'), wrap(async (req, res) => 
       to_char(u.created_at AT TIME ZONE $2, 'Mon DD, YYYY') AS joined,
       to_char(u.last_login AT TIME ZONE $2, 'Mon DD, YYYY HH12:MI AM') AS last_login
     FROM users u JOIN roles r ON r.role_id = u.role_id
-    WHERE u.user_id = $1 AND r.role_key = 'customer'`, [id, TZ]);
+    WHERE u.user_id = $1 AND r.role_key = 'customer' AND u.deleted_at IS NULL`, [id, TZ]);
   if (!rows.length) return res.status(404).json({ error: 'Customer not found' });
   const u = rows[0]; const guess = u.first_name == null ? splitFullName(u.full_name) : null;
   res.json({ id: u.user_id, name: u.full_name, username: u.username, email: u.email,
@@ -1466,111 +1679,56 @@ app.get('/api/users/:id/avatar', auth('finance'), wrap(async (req, res) => {
   res.send(rows[0].avatar);          // Express adds an ETag, so the browser only re-downloads a photo that changed
 }));
 
-// Edit an account (Finance only): the SAME profile the person has in My Profile - first / middle / last name, suffix, email, mobile number,
-// birthdate, gender and (customers) company details - plus the role. Every rule is the one My Profile and sign-up use.
-// Customer accounts keep the Customer role (they cannot become Finance or Cashier, and staff cannot be turned into customers);
-// Finance can switch staff between Finance-Admin and Cashier, but not their own role.
+// Change an account's ROLE (Finance only). Finance does NOT edit anyone's personal information: name, email, mobile number,
+// birthdate, gender and company details belong to the account owner, who changes them in My Profile (with its own checks,
+// e.g. a new mobile number is confirmed by text). A request that tries to send any of those is refused, so nothing can slip through.
+// Rules: a customer stays a customer, staff can only be Finance-Admin or Cashier, nobody changes their own role, and at least one
+// active Finance-Admin must remain.
+const PROFILE_FIELDS = ['name', 'firstName', 'middleName', 'lastName', 'suffix', 'email', 'phone', 'birthdate', 'gender', 'companyName', 'companyPosition', 'companyTin'];
 app.patch('/api/users/:id', auth('finance'), wrap(async (req, res) => {
-  await app.locals.accountReady; await app.locals.phoneReady;
-  const H = app.locals.accountHelpers;
-  const id = Number(req.params.id), b = req.body || {}, e = {};
+  const id = Number(req.params.id), b = req.body || {};
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid request' });
-  const t = (await pool.query(`SELECT u.full_name, u.email, u.phone, to_char(u.birthdate, 'YYYY-MM-DD') AS birthdate_s, r.role_key, r.label
-                                 FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1`, [id])).rows[0];
-  if (!t) return res.status(404).json({ error: 'Account not found' });
-  const isCustomer = t.role_key === 'customer';
-  const structured = b.firstName !== undefined || b.lastName !== undefined || b.middleName !== undefined;
-  let name, parts = null;
-  if (structured) { parts = H.nameParts(e, b); name = parts.full; }
-  else name = text(e, 'name', b.name, 'Name', { min: 2, max: 80 });
-  const email = str(b.email).toLowerCase();
-  if (!email) e.email = 'Email is required';
-  else if (email.length > 254 || !EMAIL_FORMAT.test(email)) e.email = 'Enter a valid email address';
-  const phone = structured ? H.mobileField(e, b.phone) : (t.phone || '');       // an old page that sends only name + email leaves the number alone
-  let more = null;
-  if (structured) {
-    const birthChanged = str(b.birthdate) !== (t.birthdate_s || '');
-    more = { ...H.optionalDetails(e, b, { adult: birthChanged }) };
-    if (isCustomer) Object.assign(more, H.companyDetails(e, b));
-  }
-  const roleKey = str(b.roleKey) || t.role_key;
-  if (!['finance', 'cashier', 'customer'].includes(roleKey)) e.role = 'Choose a valid role';
-  else if (roleKey !== t.role_key) {
-    if (t.role_key === 'customer') e.role = 'A customer account cannot be changed to Finance-Admin or Cashier';
-    else if (roleKey === 'customer') e.role = 'A staff account cannot be changed to Customer';
-    else if (id === req.user.id) e.role = 'You cannot change your own role';
-  }
-  if (Object.keys(e).length) throw new ValidationError(e);
-  if (email !== t.email) await assertPersonalEmail(email);
-  const canon = (p) => { if (!p) return ''; const m = phMobile(p); return m.value || String(p).replace(/\s+/g, ''); };
-  const phoneChanged = structured && canon(t.phone) !== canon(phone);
-  try {
-    const sets = ['full_name = $2', 'email = $3', 'role_id = (SELECT role_id FROM roles WHERE role_key = $4)'], vals = [id, name, email, roleKey];
-    const add = (col, v) => { vals.push(v); sets.push(col + ' = $' + vals.length); };
-    if (parts) { add('first_name', parts.first); add('middle_name', parts.middle || null); add('last_name', parts.last); add('suffix', parts.suffix || null); }
-    else if (name !== t.full_name) {
-      // old-style edit: keep the split name in step with full_name, otherwise the person's own My Profile still shows the old name
-      const g = splitFullName(name);
-      add('first_name', g.first); sets.push('middle_name = NULL'); add('last_name', g.last || null); add('suffix', g.suffix || null);
+  const sent = PROFILE_FIELDS.filter((k) => b[k] !== undefined);
+  if (sent.length) throw new ValidationError({ role: 'Finance can only change the role. Personal details are changed by the account owner in My Profile' });
+  const out = await tx(async (client) => {
+    await userLifecycle.lock(client, req.user);
+    const t = (await client.query(`SELECT u.user_id, u.full_name, u.email, u.status, u.deleted_at, r.role_key, r.label FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1 FOR UPDATE`, [id])).rows[0];
+    if (!t) throw new ValidationError({ id: 'Account not found' });
+    if (t.deleted_at) throw new ValidationError({ id: 'Restore this deleted account before changing its role' });
+    const roleKey = str(b.roleKey);
+    if (!['finance', 'cashier', 'customer'].includes(roleKey)) throw new ValidationError({ role: 'Choose a valid role' });
+    if (roleKey === t.role_key) return { t, roleKey, changed: false };
+    if (t.role_key === 'customer') throw new ValidationError({ role: 'A customer account cannot be changed to Finance-Admin or Cashier' });
+    if (roleKey === 'customer') throw new ValidationError({ role: 'A staff account cannot be changed to Customer' });
+    if (id === req.user.id) throw new ValidationError({ role: 'You cannot change your own role. Ask another Finance-Admin' });
+    if (t.role_key === 'finance') {
+      const left = (await client.query(`SELECT count(*)::int AS n FROM users u JOIN roles r USING (role_id)
+                                         WHERE r.role_key = 'finance' AND u.status = 'active' AND u.user_id <> $1`, [id])).rows[0].n;
+      if (left < 1) throw new ValidationError({ role: 'At least one active Finance-Admin must remain' });
     }
-    if (structured) {
-      add('phone', phone || null);
-      if (PHONE_VERIFICATION_ON && phoneChanged) sets.push('phone_verified_at = NULL');   // a new number is confirmed with a text code at the next sign-in
-    }
-    if (more) {
-      add('birthdate', more.birthdate); add('gender', more.gender);
-      if (isCustomer) { add('company_name', more.companyName); add('company_position', more.companyPosition); add('company_tin', more.companyTin); }
-    }
-    await pool.query('UPDATE users SET ' + sets.join(', ') + ' WHERE user_id = $1', vals);
-  } catch (err) {
-    if (err.code === '23505') throw new ValidationError({ email: 'That email is already used by another account' });
-    throw err;
-  }
-  const changes = [];
-  if (name !== t.full_name) changes.push(`name ${t.full_name} to ${name}`);
-  if (email !== t.email) changes.push(`email ${t.email} to ${email}`);
-  if (phoneChanged) changes.push('mobile number');
-  if (more && (t.birthdate_s || '') !== (more.birthdate || '')) changes.push('birthdate');
-  if (roleKey !== t.role_key) changes.push(`role ${t.label} to ${roleKey === 'finance' ? 'Finance-Admin Officer' : 'Sales Staff / Cashier'}`);
-  if (changes.length) await audit(pool, req.user, 'Record edited', `Account updated — ${t.full_name}: ${changes.join(', ')}`);
-  res.json({ ok: true, name, email, phone: phone || '',
-    message: PHONE_VERIFICATION_ON && phoneChanged && phone ? 'The new mobile number will be confirmed with a text code the next time they sign in.' : '' });
+    await client.query(`UPDATE users SET role_id = (SELECT role_id FROM roles WHERE role_key = $2) WHERE user_id = $1`, [id, roleKey]);
+    await audit(client, req.user, 'Record edited', `Role changed — ${t.full_name}: ${t.label} to ${roleKey === 'finance' ? 'Finance-Admin Officer' : 'Sales Staff / Cashier'}`);
+    return { t, roleKey, changed: true };
+  });
+  res.json({ ok: true, name: out.t.full_name, email: out.t.email, roleKey: out.roleKey, changed: out.changed });
 }));
 
-// Delete a CUSTOMER account that has no history yet (no orders, quotations, reviews or payments) — e.g. one made by mistake.
-// A customer with history is disabled instead, so their orders and receipts keep pointing at a real account. Staff accounts are never deleted here.
+// Soft deletion preserves staff attribution, customer history and all related records.
 app.delete('/api/users/:id', auth('finance'), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid request' });
-  const out = await tx(async (client) => {
-    const u = (await client.query(`SELECT u.user_id, u.full_name, u.email, r.role_key FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1 FOR UPDATE`, [id])).rows[0];
-    if (!u) throw new ValidationError({ id: 'Account not found' });
-    if (u.role_key !== 'customer') throw new ValidationError({ id: 'Staff accounts are disabled, not deleted, so the audit log keeps who did what' });
-    const used = (await client.query(`SELECT
-        (SELECT count(*) FROM orders WHERE customer_id = $1) + (SELECT count(*) FROM quote_requests WHERE customer_id = $1) +
-        (SELECT count(*) FROM product_reviews WHERE user_id = $1) AS n`, [id])).rows[0];
-    if (+used.n > 0) throw new ValidationError({ id: `${u.full_name} has orders, quotations or reviews, so the account is kept for the records. Disable it instead` });
-    // things that belong only to the account itself go with it
-    for (const t of ['customer_addresses', 'notifications', 'cart_items']) {
-      const has = (await client.query(`SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = 'user_id'`, [t])).rowCount;
-      if (has) await client.query(`DELETE FROM ${t} WHERE user_id = $1`, [id]);
-    }
-    try { await client.query('SAVEPOINT del_user'); await client.query('DELETE FROM users WHERE user_id = $1', [id]); }
-    catch (err) {
-      if (err.code !== '23503') throw err;                    // still referenced somewhere: keep it, disable instead
-      await client.query('ROLLBACK TO SAVEPOINT del_user');
-      throw new ValidationError({ id: `${u.full_name} is still linked to other records, so the account is kept. Disable it instead` });
-    }
-    await audit(client, req.user, 'Record deleted', `Customer account deleted — ${u.full_name} (${u.email}); it had no orders, quotations or reviews`);
-    return u;
-  });
-  res.json({ ok: true, name: out.full_name });
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid request' });
+  res.json(await userLifecycle.change(id, req.user));
+}));
+app.post('/api/users/:id/restore', auth('finance'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid request' });
+  res.json(await userLifecycle.change(id, req.user, true));
 }));
 
 // Finance can disable / re-enable any account, including another Finance-Admin (e.g. one who left the company). Two rules:
 //   - never your own account (another Finance-Admin has to do it), so nobody locks themselves out by mistake;
 //   - at least one active Finance-Admin must remain, or nobody could manage the system any more.
-// Finance rows are locked while checking, so two admins disabling each other at the same moment cannot both succeed.
+// Finance lifecycle decisions share a transaction lock, so concurrent changes cannot remove every administrator.
 // The disabled person is signed out on their next request (see accountStillValid above).
 app.patch('/api/users/:id/status', auth('finance'), wrap(async (req, res) => {
   const id = Number(req.params.id);
@@ -1578,8 +1736,10 @@ app.patch('/api/users/:id/status', auth('finance'), wrap(async (req, res) => {
   if (!Number.isInteger(id) || !['active', 'disabled'].includes(status)) return res.status(400).json({ error: 'Invalid request' });
   if (id === req.user.id && status === 'disabled') return res.status(403).json({ error: 'You cannot disable your own account. Ask another Finance-Admin to do it.' });
   const out = await tx(async (c) => {
-    const t = (await c.query('SELECT u.full_name, u.status, r.role_key, r.label FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1 FOR UPDATE OF u', [id])).rows[0];
+    await userLifecycle.lock(c, req.user);
+    const t = (await c.query('SELECT u.full_name, u.status, u.deleted_at, r.role_key, r.label FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1 FOR UPDATE OF u', [id])).rows[0];
     if (!t) return { code: 404, error: 'Account not found' };
+    if (t.deleted_at) return { code: 409, error: 'Restore this deleted account before changing its status' };
     if (t.status === status) return { ok: true, t };
     if (t.role_key === 'finance' && status === 'disabled') {
       const left = (await c.query(`SELECT u.user_id FROM users u JOIN roles r USING (role_id) WHERE r.role_key = 'finance' AND u.status = 'active' FOR UPDATE OF u`)).rows
@@ -1617,6 +1777,14 @@ require('./shop-product-content')({ app, pool, auth, wrap });
 require('./shop-extras')({ app, pool, auth, wrap, tx, audit, ValidationError, str });
 // a custom quoted item is made with a job order: its raw materials and finishing supplies are issued (stock out) before it is ready
 require('./job-orders')({ app, pool, auth, wrap, tx, audit, ValidationError, str, TZ });
+// automatic prices: finished goods = unit cost + markup (20%), custom quotes from a formula (pricing.js)
+app.locals.pricing = require('./pricing')({ app, pool, auth, wrap, tx, audit, ValidationError, str });
+// recipe costing: a finished good's cost = its recipe x the materials' current cost; ripples to prices and open quotes (recipe-costing.js)
+app.locals.recipeCosting = require('./recipe-costing')({ app, pool, auth, wrap, tx, audit, ValidationError, str });
+// custom quotes: quick recipe, priced with the recipe formula; quote approval routing, decision log, reminders (quote-automation.js)
+require('./quote-automation')({ app, pool, auth, wrap, tx, audit, ValidationError, str });
+// guided quote form: suggested price / ready date / valid-until date, with the reasons (quote-form-guide.js)
+require('./quote-form-guide')({ app, pool, auth, wrap, ValidationError, str });
 require('./quote-desk')({ app, pool, auth, wrap, tx, audit, ValidationError, str, validateShipTo, formatShipTo });
 
 /* ---------- automation: follow-ups that run by themselves ----------
@@ -1641,7 +1809,7 @@ require('./quote-desk')({ app, pool, auth, wrap, tx, audit, ValidationError, str
   }
   const cron = async (req, res) => {
     const key = process.env.AUTOMATION_CRON_KEY || process.env.LOW_STOCK_CRON_KEY;
-    if (!key || req.get('x-cron-key') !== key) return res.status(404).json({ error: 'Not found' });
+    if (!key || !security.safeEqual(req.get('x-cron-key'), key)) return res.status(404).json({ error: 'Not found' });
     res.json(await runAutomation());
   };
   app.get('/api/automation/run', cron);
@@ -1652,16 +1820,72 @@ require('./quote-desk')({ app, pool, auth, wrap, tx, audit, ValidationError, str
   app.locals.runAutomation = runAutomation;
 }
 
+// Data minimisation (RA 10173): expired one-time codes and tokens are deleted every 6 hours by security_purge_expired() (db/025).
+// Until that migration is applied the function does not exist; that is not an error.
+{
+  const purge = () => pool.query('SELECT security_purge_expired() AS r')
+    .then((x) => { const n = Object.values((x.rows[0] && x.rows[0].r) || {}).reduce((a, b) => a + Number(b || 0), 0); if (n) console.log('[security] purged ' + n + ' expired code/token rows'); })
+    .catch((e) => { if (e.code !== '42883') console.warn('[security] purge failed:', e.message); });
+  setInterval(purge, 6 * 3600 * 1000).unref();
+  setTimeout(purge, 5 * 60 * 1000).unref();
+}
+
 require('./cash-shifts')({ app, pool, auth, wrap, tx, audit, TZ });
 // Finance Reports API: sales overview, top products, low stock, inventory (reports.js + reports-core.js)
 require('./reports')({ app, pool, auth, wrap, TZ });
 
 /* ---------- static front-end (dev convenience) ---------- */
 const dir = path.resolve(__dirname, process.env.FRONTEND_DIR || '../Finance_Inventory');
+/* ---------- page gate: private pages are only sent to a signed-in user ----------
+   The landing, login and help pages stay public. Everything else needs the session cookie, otherwise the visitor is
+   sent to the login page (the data routes under /api were already protected; this stops the page itself from opening). */
+const PRIVATE_PAGES = {
+  'shop_customer.html': ['customer'],            // online shop: customers only
+  'pos_cashier.html': null,                      // null = any signed-in role (the page itself still checks its own role)
+  'finance_inventory.html': null,
+  'finance_cash_shifts.html': null
+};
+const PAGE_HOME = { finance: '/Finance_Inventory.html', cashier: '/POS_Cashier.html', customer: '/Shop_Customer.html' };
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  let name;
+  try { name = decodeURIComponent(req.path).split('/').pop().toLowerCase(); } catch (e) { return res.redirect('/Login_Inventory.html'); }
+  if (!Object.prototype.hasOwnProperty.call(PRIVATE_PAGES, name)) return next();
+  res.set('Cache-Control', 'no-store');          // so the Back button after logging out cannot show the page again
+  let user;
+  try { user = jwt.verify(req.cookies.session, process.env.JWT_SECRET); } catch (e) { return res.redirect('/Login_Inventory.html'); }
+  const roles = PRIVATE_PAGES[name];
+  if (roles && !roles.includes(user.role)) return res.redirect(PAGE_HOME[user.role] || '/Login_Inventory.html');
+  next();
+});
+
+/* Stamp the per-request CSP nonce (set by security.js) onto every inline <script> tag so the browser will run it
+   under the nonce-based Content-Security-Policy, instead of serving the HTML file as-is via express.static.
+   External <script src="..."> tags are left untouched — the nonce only applies to inline script content. (OWASP
+   A05:2021 — Security Misconfiguration / XSS hardening: removes 'unsafe-inline' from script-src.) */
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  if (!req.path.toLowerCase().endsWith('.html')) return next();
+  let rel;
+  try { rel = decodeURIComponent(req.path).replace(/^\/+/, ''); } catch (e) { return next(); }
+  const file = path.join(dir, rel);
+  if (file !== dir && !file.startsWith(dir + path.sep)) return next();   // path traversal guard
+  fs.readFile(file, 'utf8', (err, html) => {
+    if (err) return next();                       // let express.static produce the normal 404
+    const nonce = res.locals.cspNonce;
+    const stamped = nonce ? html.replace(/<script(\s[^>]*)?>/gi, (full, attrs) => {
+      attrs = attrs || '';
+      if (/\bsrc\s*=/i.test(attrs)) return full;   // external script: no inline content, no nonce needed
+      return '<script nonce="' + nonce + '"' + attrs + '>';
+    }) : html;
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(stamped);
+  });
+});
 app.use(express.static(dir));
 
 app.get('/', (req, res) => {
-  res.redirect('/Login_Inventory.html');
+  res.redirect('/LandingPage_Inventory-1.html');
 });
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
@@ -1677,6 +1901,7 @@ async function ensureSupplierColumns() {
   try {
     for (const col of ['contact_person', 'phone', 'email', 'address_line', 'barangay', 'city', 'province', 'region', 'zip_code'])
       await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS ${col} TEXT`);
+    await pool.query('ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS lead_time_days INT CHECK (lead_time_days BETWEEN 0 AND 365)');
   } catch (err) { console.warn('[db] could not check the suppliers columns:', err.message); }
 }
 ensureSupplierColumns();

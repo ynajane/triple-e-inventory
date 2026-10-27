@@ -30,7 +30,7 @@
     }
   }
 
-  const state = { preset: '30d', from: '', to: '', channel: 'all', sort: 'revenue', limit: 20, search: '', data: null, loading: false, error: '', seq: 0, built: false, loadedOnce: false };
+  const state = { preset: '30d', from: '', to: '', channel: 'all', sort: 'revenue', limit: 10, search: '', data: null, loading: false, error: '', seq: 0, built: false, loadedOnce: false };
 
   const qs = () => 'from=' + encodeURIComponent(state.from) + '&to=' + encodeURIComponent(state.to) + '&channel=' + state.channel + '&sort=' + state.sort + '&limit=' + state.limit;
   async function getJson(path) {

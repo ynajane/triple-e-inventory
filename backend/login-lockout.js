@@ -63,6 +63,9 @@ module.exports = function ({ app, pool, wrap, audit, str, EMAIL_RE }) {
       `INSERT INTO login_lockouts (user_id, failed_attempts) VALUES ($1, 1)
        ON CONFLICT (user_id) DO UPDATE SET failed_attempts = login_lockouts.failed_attempts + 1, updated_at = now()
        RETURNING failed_attempts`, [u.user_id])).rows[0];
+    // every wrong password is recorded in the audit log (OWASP A09), not only the lock-out event
+    await audit(pool, { id: u.user_id, name: u.full_name, roleLabel: u.label }, 'Login failed',
+      'Wrong password (attempt ' + r.failed_attempts + ' of ' + MAX_ATTEMPTS + ')').catch(() => {});
     if (r.failed_attempts < MAX_ATTEMPTS) return { locked: false, attemptsLeft: MAX_ATTEMPTS - r.failed_attempts };
     const sent = await lockAndEmail(u, req);
     await audit(pool, { id: u.user_id, name: u.full_name, roleLabel: u.label }, 'Login',

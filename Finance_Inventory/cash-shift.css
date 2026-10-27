@@ -78,9 +78,10 @@ html[data-theme="light"] .cs-modal{background:rgba(20,35,50,.45)}
 .cs-tabs button{padding:7px 14px;border-radius:99px;border:1px solid var(--border);background:var(--field);color:var(--text-dim);cursor:pointer;font-weight:600;font-size:13.5px}
 .cs-tabs button.on{background:linear-gradient(180deg,var(--blue-bright),var(--blue));border-color:transparent;color:var(--btn-ink)}
 .cs-count{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
-.cs-den{display:grid;grid-template-columns:62px 1fr 88px;gap:8px;align-items:center}
+.cs-den{display:grid;grid-template-columns:62px minmax(0,1fr) minmax(88px,max-content);gap:8px;align-items:center}
 .cs-den .d{font-family:"IBM Plex Mono",monospace;font-weight:600}
-.cs-den input{min-height:38px;padding:6px 10px;text-align:center;border-radius:6px}
+.cs-den input{min-width:0;width:100%;min-height:38px;padding:6px 10px;text-align:center;border-radius:6px}
+.cs-den input.is-bad{border-color:var(--red)}
 .cs-den .s{text-align:right;font-size:13px;color:var(--text-dim);font-family:"IBM Plex Mono",monospace}
 .cs-recon{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--inset)}
 .cs-recon div{text-align:center}
@@ -106,3 +107,32 @@ html[data-theme="light"] .cs-modal{background:rgba(20,35,50,.45)}
   .cs-actions button{flex:1}
   .cs-recon b{font-size:17px}
 }
+
+/* sidebar / burger: the cash shift card with the time left until closing (cash-shift-ui.js) */
+.cs-side{display:flex;flex-direction:column;gap:4px;margin:10px 12px 6px;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);text-align:left;font:inherit;cursor:pointer;width:calc(100% - 24px)}
+.cs-side:hover{border-color:var(--blue-bright)}.cs-side-t{font-weight:700;font-size:13px}.cs-side-s{font-size:12px;color:var(--text-dim);line-height:1.35}
+.cs-side.off{border-style:dashed}.cs-side.off .cs-side-t{color:var(--amber)}.cs-side.on .cs-side-t{color:var(--green)}
+.cs-side.soon{border-color:var(--amber)}.cs-side.soon .cs-side-s{color:var(--amber)}.cs-side.late{border-color:var(--red);background:rgba(227,91,91,.08)}.cs-side.late .cs-side-t,.cs-side.late .cs-side-s{color:var(--red)}
+.cs-side-bar{display:block;height:4px;border-radius:4px;background:var(--border);overflow:hidden}.cs-side-bar i{display:block;height:100%;background:var(--green)}.cs-side.soon .cs-side-bar i{background:var(--amber)}.cs-side.late .cs-side-bar i{background:var(--red)}
+.cs-hours{margin:-4px 0 12px;font-size:13px;color:var(--text-dim)}
+
+
+/* the full-screen cash shift gate (cash-shift-ui.js): above the sidebar and top bar, below the count / result dialogs (.cs-modal, 1200) */
+.sg{position:fixed;inset:0;z-index:1100;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,rgba(46,125,209,.18),transparent 60%),var(--bg,#0b1219)}
+.sg[hidden]{display:none}
+body.sg-on{overflow:hidden}
+.sg-card{width:min(520px,100%);margin:auto;padding:28px 26px 18px;border-radius:16px;border:1px solid var(--border);background:var(--card);box-shadow:var(--shadow)}
+.sg-mark{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:Oswald,sans-serif;font-weight:700;font-size:22px;color:var(--btn-ink,#fff);background:linear-gradient(180deg,var(--blue-bright),var(--blue));margin-bottom:14px}
+.sg-mark span{font-family:"Dancing Script",cursive;font-size:26px;margin-left:1px}
+.sg-card h1{font-family:Oswald,sans-serif;font-weight:600;font-size:28px;line-height:1.15;margin:0 0 8px}
+.sg-lead{color:var(--text);font-size:15px;line-height:1.5;margin:0 0 14px}
+.sg-lead.dim{color:var(--text-dim)}
+.sg-carry{display:grid;gap:2px;padding:12px 14px;margin:0 0 16px;border-radius:10px;border:1px solid var(--border);background:var(--inset)}
+.sg-carry span{font-size:13px;color:var(--text-dim)}
+.sg-carry b{font-family:Oswald,sans-serif;font-size:30px;font-weight:600;line-height:1.15}
+.sg-carry small{font-size:12.5px;color:var(--text-faint)}
+.sg-diff{font-size:13px;min-height:0}.sg-diff:empty{display:none}.sg-diff.good{color:var(--green)}.sg-diff.warn{color:var(--amber)}
+.sg-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:18px;padding-top:12px;border-top:1px solid var(--row-line,var(--border));font-size:13px;color:var(--text-faint)}
+.cs-limit{font-size:13px;color:var(--text-dim);margin:-4px 0 10px}
+.cs-hint{font-size:13px;color:var(--text-dim)}.cs-hint:empty{display:none}
+@media(max-width:600px){.sg{padding:0;align-items:stretch}.sg-card{border-radius:0;border:0;min-height:100%;width:100%;padding:24px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:none}}

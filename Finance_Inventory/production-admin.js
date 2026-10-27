@@ -133,7 +133,7 @@
       if (!inp || !cell) return;
       const raw = inp.value, n = Number(raw);
       let msg = '', cls = 'prod-ok';
-      if (m.archived) { msg = 'Archived material'; cls = 'prod-bad'; bad = true; }
+      if (m.archived) { msg = 'Deleted material'; cls = 'prod-bad'; bad = true; }
       else if (m.unitChanged) { msg = 'Unit changed — save the product\'s materials again'; cls = 'prod-bad'; bad = true; }
       else if (raw === '' || !Number.isFinite(n) || n < 0) { msg = 'Enter 0 or more'; cls = 'prod-bad'; bad = true; }
       else if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) { msg = 'Max 2 decimals'; cls = 'prod-bad'; bad = true; }
@@ -225,6 +225,93 @@
   const summary = (list) => !list.length ? '<span class="dim">—</span>' :
     esc(list.slice(0, 2).map((m) => m.name + ' ' + fmt(m.actual) + ' ' + m.unit).join(', ')) + (list.length > 2 ? ' <span class="dim">+' + (list.length - 2) + ' more</span>' : '');
 
+  let prodDetailOverlay = null;
+  function ensureProdDetailModal() {
+    if (prodDetailOverlay) return prodDetailOverlay;
+    prodDetailOverlay = document.createElement('div');
+    prodDetailOverlay.className = 'modal-overlay';
+    prodDetailOverlay.id = 'prodDetailOverlay';
+    prodDetailOverlay.innerHTML =
+      '<div class="account-modal supplier-modal product-modal pd-modal" role="dialog" aria-modal="true" aria-labelledby="prdTitle" style="max-width:680px">' +
+        '<button type="button" class="modal-close" id="prdClose" aria-label="Close">×</button>' +
+        '<div id="prdBody"></div>' +
+      '</div>';
+    document.body.appendChild(prodDetailOverlay);
+    const close = () => {
+      prodDetailOverlay.classList.remove('open');
+      if (!document.querySelector('.modal-overlay.open')) {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+      }
+    };
+    prodDetailOverlay.addEventListener('click', (e) => { if (e.target === prodDetailOverlay) close(); });
+    prodDetailOverlay.querySelector('#prdClose').addEventListener('click', close);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && prodDetailOverlay.classList.contains('open')) close();
+    });
+    return prodDetailOverlay;
+  }
+
+  function openProductionDetails(ref) {
+    const h = (history || []).find((x) => x.ref === ref);
+    if (!h) return;
+    const overlay = ensureProdDetailModal();
+    const all = h.rawMaterials.concat(h.finishingSupplies);
+    const row = (dt, dd) => '<div class="pd-row"><dt>' + dt + '</dt><dd>' + dd + '</dd></div>';
+
+    overlay.querySelector('#prdBody').innerHTML =
+      '<div class="supplier-modal-head">' +
+        '<div class="supplier-modal-icon">' +
+          '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>' +
+        '</div>' +
+        '<div>' +
+          '<div class="modal-eyebrow">Production Batch Record · Finished Goods</div>' +
+          '<h2 class="modal-title" id="prdTitle" style="margin-bottom:0;">' + esc(h.product) + '</h2>' +
+          '<div class="pd-sub"><span class="mono">' + esc(h.ref) + '</span> ' +
+            '<span class="status-pill in">+' + esc(fmt(h.quantity)) + ' ' + esc(h.unit) + ' Confirmed</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<dl class="pd-grid" style="margin-bottom:16px">' +
+        row('Finished Good Stock-In', '<span class="mono">' + esc(h.stockInRef || '—') + '</span>') +
+        row('Recorded By', esc(h.recordedBy)) +
+        row('Production Date', esc(h.dateTime)) +
+        row('Total Output', '<b>+' + esc(fmt(h.quantity)) + ' ' + esc(h.unit) + '</b>') +
+      '</dl>' +
+      '<div style="font-weight:600;font-size:13.5px;color:var(--text);margin:14px 0 8px">Materials &amp; Supplies Deducted</div>' +
+      '<div class="table-wrapper" style="border:1px solid var(--border);border-radius:8px;max-height:280px;overflow-y:auto">' +
+        '<table style="margin:0;font-size:13px">' +
+          '<thead><tr><th>Material</th><th>Category</th><th>Per unit</th><th>Calculated</th><th>Actual used</th><th>Stock-Out ref</th></tr></thead>' +
+          '<tbody>' +
+            (all.length ? all.map((m) => '<tr>' +
+              '<td style="font-weight:500">' + esc(m.name) + '</td>' +
+              '<td class="dim">' + esc(m.department) + '</td>' +
+              '<td class="dim">' + esc(fmt(m.perUnit)) + ' ' + esc(m.unit) + '</td>' +
+              '<td class="dim">' + esc(fmt(m.calculated)) + ' ' + esc(m.unit) + '</td>' +
+              '<td><b>' + esc(fmt(m.actual)) + ' ' + esc(m.unit) + '</b></td>' +
+              '<td class="mono dim">' + esc(m.movementRef || '—') + '</td>' +
+            '</tr>').join('') : '<tr><td colspan="6" class="dim" style="text-align:center;padding:16px">No materials were recorded.</td></tr>') +
+          '</tbody>' +
+        '</table>' +
+      '</div>' +
+      (h.note ? '<div class="pd-note" style="margin-top:12px"><b>Production note:</b> ' + esc(h.note) + '</div>' : '') +
+      '<div class="modal-footer" style="margin-top:18px;display:flex;justify-content:flex-end">' +
+        '<button type="button" class="btn-secondary" id="prdCloseBtn">Close</button>' +
+      '</div>';
+
+    overlay.querySelector('#prdCloseBtn').addEventListener('click', () => {
+      overlay.classList.remove('open');
+      if (!document.querySelector('.modal-overlay.open')) {
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+      }
+    });
+
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+  }
+
   function renderHistory() {
     const body = $('prodHistBody'); if (!body) return;
     const term = (($('prodHistSearch') || {}).value || '').trim().toLowerCase();
@@ -232,21 +319,17 @@
     const sub = $('prodHistSub'); if (sub) sub.textContent = 'Showing ' + rows.length + ' of ' + history.length + ' confirmed production records';
     if (!rows.length) { body.innerHTML = '<tr><td colspan="9" class="dim" style="text-align:center;padding:24px">' + (history.length ? 'No records match your search.' : 'No production recorded yet.') + '</td></tr>'; return; }
     body.innerHTML = rows.map((h) => {
-      const all = h.rawMaterials.concat(h.finishingSupplies);
-      const isOpen = open.has(h.ref);
-      return '<tr><td class="mono">' + esc(h.ref) + '</td><td>' + esc(h.product) + '</td>' +
+      return '<tr class="prod-row" data-prod-ref="' + esc(h.ref) + '" style="cursor:pointer">' +
+        '<td class="mono">' + esc(h.ref) + '</td><td>' + esc(h.product) + '</td>' +
         '<td class="dim">+' + esc(fmt(h.quantity)) + ' ' + esc(h.unit) + '</td>' +
         '<td class="dim">' + summary(h.rawMaterials) + '</td><td class="dim">' + summary(h.finishingSupplies) + '</td>' +
         '<td class="dim">' + esc(h.dateTime) + '</td><td class="dim">' + esc(h.recordedBy) + '</td>' +
         '<td><span class="status-pill in">Confirmed</span></td>' +
-        '<td><button type="button" class="prod-link" data-view="' + esc(h.ref) + '">' + (isOpen ? 'Hide' : 'View') + '</button></td></tr>' +
-        (isOpen ? '<tr class="prod-detail"><td colspan="9"><div class="prod-scroll"><table class="prod-table"><thead><tr><th>Material</th><th>Category</th><th>Per unit</th><th>Calculated</th><th>Actual used</th><th>Stock-Out ref</th></tr></thead><tbody>' +
-          (all.length ? all.map((m) => '<tr><td>' + esc(m.name) + '</td><td class="dim">' + esc(m.department) + '</td><td class="dim">' + esc(fmt(m.perUnit)) + ' ' + esc(m.unit) + '</td>' +
-            '<td class="dim">' + esc(fmt(m.calculated)) + ' ' + esc(m.unit) + '</td><td>' + esc(fmt(m.actual)) + ' ' + esc(m.unit) + '</td><td class="mono dim">' + esc(m.movementRef || '—') + '</td></tr>').join('') : '<tr><td colspan="6" class="dim">No materials were recorded.</td></tr>') +
-          '</tbody></table></div><p class="prod-note">Finished goods Stock-In ref: <span class="mono">' + esc(h.stockInRef || '—') + '</span>' + (h.note ? ' · Note: ' + esc(h.note) : '') + '</p></td></tr>' : '');
+        '<td><button type="button" class="btn-secondary btn-sm" data-prod-ref="' + esc(h.ref) + '">Details</button></td></tr>';
     }).join('');
-    body.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => {
-      const r = b.dataset.view; if (open.has(r)) open.delete(r); else open.add(r); renderHistory();
+
+    body.querySelectorAll('tr.prod-row').forEach((row) => row.addEventListener('click', (e) => {
+      openProductionDetails(row.dataset.prodRef);
     }));
   }
 

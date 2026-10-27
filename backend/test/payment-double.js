@@ -269,7 +269,7 @@ module.exports = function paymentDouble(DB, opts = {}) {
 
     /* the cashier's own open drawer. The counter route looks it up instead of taking a shift id from the page, so
        cash can only land in a till that is actually open and online payments can never be attached to one. */
-    if (/^SELECT shift_id(?:, opened_at)? FROM pos_cash_shifts WHERE cashier_id = \$1 AND closed_at IS NULL FOR UPDATE/i.test(s)) {
+    if (/^SELECT shift_id FROM pos_cash_shifts WHERE cashier_id = \$1 AND closed_at IS NULL FOR UPDATE/i.test(s)) {
       return rowsOf(DB.cashShiftId == null ? [] : [{ shift_id: DB.cashShiftId }]);
     }
 

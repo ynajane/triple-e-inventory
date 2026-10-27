@@ -19,7 +19,7 @@ function ok(label, cond, detail) {
 async function start(p, env) {
   port = p;
   const child = spawn(process.execPath, [path.join(__dirname, 'desk-browser-harness.js'), String(p)],
-    { cwd: path.join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, env) });
+    { cwd: path.join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { XENDIT_SECRET_KEY: '' }, env) });
   const err = [];
   child.stderr.on('data', (b) => err.push(String(b)));
   const deadline = Date.now() + 15000;
@@ -40,7 +40,9 @@ async function call(role, method, p, body) {
 const state = () => call('cashier', 'GET', '/__harness/state').then((r) => r.body);
 const walkIn = () => ({ contactName: 'Walk-in Buyer', phone: '0917 123 4567', sku: 'ANG-0203', quantity: 4, quantityUnit: 'pcs',
   fulfillment: 'Pickup', flexibleDate: true,
-  specs: { material: 'Not sure (advise me)', size: '2"', thickness: '3.0 mm', finish: 'Not sure (advise me)', service: 'None (as is)' }, });
+  specs: { material: 'Aluminum ADC12', size: '2"', thickness: '3.0 mm', finish: 'Raw / Unfinished', service: 'None (as is)' }, });
+// the harness system price of 4 x ANG-0203 is 4 x 710 = 2,840 (cost 80% = 2,272): the counter prices at it unless a test says otherwise
+const SYSTEM = '2840.00';
 
 async function main() {
   const child = await start(PORT);
@@ -55,16 +57,14 @@ async function main() {
     ok('no order or POS sale appeared', before.orders.length === 0 && before.sales.length === 0, before);
 
     const price = (amount, extra) => Object.assign({ amount, leadTime: '1 to 3 working days', validDays: 7, note: 'Counter price' }, extra);
-    const tooThin = await call('cashier', 'POST', '/api/pos/quotes/' + no + '/price', price('5000.00', { customManufacturing: true, reason: 'why' }));
-    ok('a cashier who ticks "needs Finance approval" must say why', tooThin.status === 400 && tooThin.body.fields.reason, tooThin);
     const opts = await call('cashier', 'GET', '/api/pos/quote-options');
-    ok('the cashier screen is told the pricing limit (0 = none set)', opts.status === 200 && opts.body.cashierQuoteLimit === 0, opts.body && opts.body.cashierQuoteLimit);
-    const asked = await call('cashier', 'POST', '/api/pos/quotes/' + no + '/price', price('5000.00'));
-    ok('with a CASHIER_QUOTE_LIMIT_PHP of 0 the price goes to Finance without the cashier writing a reason', asked.status === 200 && asked.body.status === 'pending_approval', asked);
-    ok('…and the system writes the reason itself', /no cashier pricing limit/i.test(asked.body.quote.approvalReason || ''), asked.body.quote);
+    ok('the cashier screen is told Finance\'s approval rules (band, minimum margin, value limit)', opts.status === 200 && opts.body.approvalRules && opts.body.approvalRules.tolerancePct === 5 && opts.body.approvalRules.valueLimit === 0, opts.body && opts.body.approvalRules);
+    const asked = await call('cashier', 'POST', '/api/pos/quotes/' + no + '/price', price(SYSTEM));
+    ok('with no value limit the price goes to Finance, and the cashier is never asked for a reason', asked.status === 200 && asked.body.status === 'pending_approval', asked);
+    ok('…and the system writes the reason itself', /no cashier order-value limit/i.test(asked.body.quote.approvalReason || '') && asked.body.decision.rules.join() === 'over_limit', asked.body.quote);
 
     const approved = await call('finance', 'POST', '/api/finance/quotes/' + no + '/approve-price', {});
-    ok('Finance approval turns it into a quotation', approved.status === 200 && approved.body.quote.status === 'quoted' && +approved.body.quote.quotedAmount === 5000, approved.body);
+    ok('Finance approval turns it into a quotation', approved.status === 200 && approved.body.quote.status === 'quoted' && +approved.body.quote.quotedAmount === 2840, approved.body);
     const reApprove = await call('finance', 'POST', '/api/finance/quotes/' + no + '/approve-price', {});
     ok('the same proposal cannot be approved twice', reApprove.status === 400, reApprove);
     const notOwner = await call('customer', 'POST', '/api/shop/quotes/' + no + '/respond', { action: 'accept', payMethod: 'cod' });
@@ -94,11 +94,13 @@ async function main() {
     ok('the estimated ready date is after today and never a weekend', quoted.estimatedReady > new Date().toISOString().slice(0, 10) && dow(quoted.estimatedReady) !== 0 && dow(quoted.estimatedReady) !== 6, quoted.estimatedReady);
     const noMethod = await call('customer', 'POST', '/api/shop/quotes/' + quoted.id + '/respond', { action: 'accept' });
     ok('accepting without choosing how to pay is refused', noMethod.status === 400 && noMethod.body.fields.payMethod, noMethod);
-    const yes = await call('customer', 'POST', '/api/shop/quotes/' + quoted.id + '/respond', { action: 'accept', payMethod: 'cod' });
+    const cod = await call('customer', 'POST', '/api/shop/quotes/' + quoted.id + '/respond', { action: 'accept', payMethod: 'cod' });
+    ok('a required initial payment cannot be deferred to COD', cod.status === 400 && cod.body.fields.payMethod, cod);
+    const yes = await call('customer', 'POST', '/api/shop/quotes/' + quoted.id + '/respond', { action: 'accept', payMethod: 'online' });
     ok('the owner accepted it', yes.status === 200 && yes.body.status === 'accepted', yes.body);
     const back = await call('customer', 'GET', '/api/shop/quotes');
     const card = back.body.find((q) => q.id === quoted.id);
-    ok('the payment label is resolved, not raw SQL text', /^Pay on /.test(card.payMethod || ''), card);
+    ok('the chosen online payment method is recorded', card.payMethod === 'Xendit', card);
     ok('acceptance never marks the quote paid', +card.paidAmount === 0, card);
     ok('after acceptance the date is counted from the acceptance day', isoOk(card.estimatedReady) && card.readyFromAcceptance === true, card);
     ok('acceptance never creates an order', card.orderNo == null && (await state()).orders.length === 0, card);
@@ -126,13 +128,13 @@ async function main() {
   try {
     const a = await call('cashier', 'POST', '/api/pos/quotes', walkIn());
     const routine = await call('cashier', 'POST', '/api/pos/quotes/' + a.body.id + '/price',
-      { amount: '5000.00', leadTime: '1 to 3 working days', validDays: 7, note: 'Routine counter price' });
-    ok('under the configured ceiling the cashier can issue the quotation directly', routine.status === 200 && routine.body.status === 'quoted', routine);
+      { amount: '2750.00', leadTime: '1 to 3 working days', validDays: 7, note: 'Routine counter price' });
+    ok('inside the band, above cost, under the ceiling and in stock: quoted straight away', routine.status === 200 && routine.body.status === 'quoted' && !routine.body.decision.rules.length, routine);
     const b = await call('cashier', 'POST', '/api/pos/quotes', walkIn());
     const over = await call('cashier', 'POST', '/api/pos/quotes/' + b.body.id + '/price',
       { amount: '60000.00', leadTime: '1 to 3 working days', validDays: 7, note: 'Big order' });
     ok('above the same ceiling it goes to Finance instead, with no reason asked of the cashier', over.status === 200 && over.body.status === 'pending_approval', over);
-    ok('…and the automatic reason names the ceiling', /50,000/.test(over.body.quote.approvalReason || ''), over.body.quote);
+    ok('…and the automatic reason names the ceiling', /50,000/.test(over.body.quote.approvalReason || '') && over.body.decision.rules.includes('over_limit'), over.body.quote);
     const fq = await call('finance', 'GET', '/api/finance/quotes');
     const mine = (fq.body || []).find((x) => x.id === b.body.id);
     ok('Finance sees who sent the price, the lead time and the validity', mine && mine.proposedBy && mine.proposedLeadTime && mine.proposedValidDays === 7 && fq.body[0].status === 'pending_approval', mine);
@@ -146,8 +148,19 @@ async function main() {
     ok('a price that is not waiting cannot be sent back twice', again.status === 400, again.body);
     const c = await call('cashier', 'POST', '/api/pos/quotes', walkIn());
     const flagged = await call('cashier', 'POST', '/api/pos/quotes/' + c.body.id + '/price',
-      { amount: '5000.00', leadTime: '1 to 3 working days', validDays: 7, note: 'Custom', customManufacturing: true, reason: 'Custom die, costing needs Finance' });
-    ok('under the ceiling, a ticked custom-manufacturing price still goes to Finance with the cashier\'s reason', flagged.status === 200 && flagged.body.status === 'pending_approval' && /custom die/i.test(flagged.body.quote.approvalReason || ''), flagged.body);
+      { amount: SYSTEM, leadTime: '1 to 3 working days', validDays: 7, note: 'Custom', customManufacturing: true, reason: 'Custom die, costing needs Finance' });
+    ok('the cashier cannot choose the route: an old "needs Finance" tick is ignored, the rules decide', flagged.status === 200 && flagged.body.status === 'quoted', flagged.body);
+    const d = await call('cashier', 'POST', '/api/pos/quotes', walkIn());
+    const loss = await call('cashier', 'POST', '/api/pos/quotes/' + d.body.id + '/price', { amount: '2000.00', leadTime: '1 to 3 working days', validDays: 7, note: 'Discount' });
+    ok('below cost always goes to Finance, with the loss in plain words', loss.status === 200 && loss.body.status === 'pending_approval' && /below the cost of .2,272\.00/.test(loss.body.quote.approvalReason || ''), loss.body.quote);
+    const log = (await call('finance', 'GET', '/__harness/decisions')).body;
+    ok('every decision is logged with its rule', log.some((x) => x.quote === a.body.id && x.action === 'auto_quoted') && log.some((x) => x.quote === d.body.id && x.action === 'sent_to_finance' && x.rules.includes('below_cost'))
+      && log.some((x) => x.quote === b.body.id && x.action === 'returned'), log);
+    const e = await call('customer', 'POST', '/api/shop/quotes', Object.assign(walkIn(), { contactName: 'Ana Cruz', flexibleDate: false, neededBy: new Date(Date.now() + 9 * 864e5).toISOString().slice(0, 10) }));
+    await call('cashier', 'POST', '/api/pos/quotes/' + e.body.id + '/price', { amount: SYSTEM, leadTime: '1 to 3 working days', validDays: 7, note: 'Online' });
+    const mineList = (await call('customer', 'GET', '/api/shop/quotes')).body || [];
+    const card = mineList.find((x) => x.id === e.body.id);
+    ok('the customer sees the price but never the cost, the system price or the routing check', card && card.quotedAmount === 2840 && card.suggestedCost === undefined && card.approvalCheck === undefined && card.suggestedAmount === undefined, card || e.body);
   } finally {
     second.kill();
   }

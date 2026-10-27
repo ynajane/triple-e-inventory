@@ -1,5 +1,6 @@
 // Cash shifts: cashier drawer reconciliation + Finance monitoring.
 // Mount from server.js AFTER auth(), wrap(), tx() are defined.
+const rules = require('./cash-shift-rules');
 module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn}) {
  const TZ = tzIn || 'Asia/Manila';
  const VARIANCE_ALERT = Number(process.env.CASH_VARIANCE_ALERT || 100);   // |difference| at or above this needs Finance review
@@ -14,30 +15,42 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
  // Cash shift events go into the audit log (Finance > Audit Log, action "Cash shift"). Never let a logging problem block the till.
  const log = (client,user,detail) => audit ? audit(client,user,'Cash shift',detail) : Promise.resolve();
 
- /* ---------- shift hours: open from 8:00 AM, close before 5:00 PM (store time) ---------- */
- const OPEN_HOUR = Number(process.env.CASH_SHIFT_OPEN_HOUR || 8), CLOSE_HOUR = Number(process.env.CASH_SHIFT_CLOSE_HOUR || 17);
- const clockFmt = new Intl.DateTimeFormat('en-US',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
- const local = d => { const p={}; clockFmt.formatToParts(new Date(d)).forEach(x=>p[x.type]=x.value); return {day:`${p.year}-${p.month}-${p.day}`, min:Number(p.hour)%24*60+Number(p.minute)}; };
- const hourLabel = h => (h%12||12)+':00 '+(h<12?'AM':'PM');
- const hours = {
-  open:hourLabel(OPEN_HOUR), close:hourLabel(CLOSE_HOUR),
-  // why a shift cannot be opened right now, or null
-  openError(now=new Date()){
-   const m=local(now).min;
-   if(m<OPEN_HOUR*60) return `Cash shifts open at ${hourLabel(OPEN_HOUR)}. Please wait until then.`;
-   if(m>=CLOSE_HOUR*60) return `Cash shifts close at ${hourLabel(CLOSE_HOUR)}. You can open a new shift tomorrow from ${hourLabel(OPEN_HOUR)}.`;
-   return null;
-  },
-  // a shift is past closing at 5:00 PM on the day it was opened (or any later day)
-  pastClosing(openedAt,now=new Date()){ const o=local(openedAt), n=local(now); return n.day!==o.day || n.min>=CLOSE_HOUR*60; },
-  // used by every route that puts cash into or takes cash out of a drawer
-  lateError(openedAt,now=new Date()){
-   if(openedAt==null) return null;
-   return hours.pastClosing(openedAt,now) ? `It is past the ${hourLabel(CLOSE_HOUR)} closing time for this cash shift. Count and close your Cash Shift first.` : null;
-  },
-  minutesToClose(now=new Date()){ return Math.max(0, CLOSE_HOUR*60-local(now).min); }
+ /* ---------- store hours: 8:00 AM to 5:00 PM (BUSINESS_OPEN / BUSINESS_CLOSE, HH:MM, Philippine time) ----------
+    A shift can be opened from SHIFT_EARLY_MINUTES before opening (to count the drawer) until closing time.
+    The automation reminds the cashier SHIFT_REMIND_MINUTES before closing, and tells Finance when a shift is still open
+    SHIFT_OVERDUE_MINUTES after closing. Sales are not blocked by the clock itself; what blocks them is an open shift that MUST be closed
+    (end-of-day window, see SHIFT_FORCE_CLOSE_MINUTES below, or left open from an earlier day). */
+ const hm = (v, d) => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(v || '')); return m && +m[1] < 24 && +m[2] < 60 ? +m[1] * 60 + +m[2] : d; };
+ const OPEN_MIN = hm(process.env.BUSINESS_OPEN, 8 * 60), CLOSE_MIN = hm(process.env.BUSINESS_CLOSE, 17 * 60);
+ const EARLY = Math.max(0, Number(process.env.SHIFT_EARLY_MINUTES) || 30), REMIND = Math.max(5, Number(process.env.SHIFT_REMIND_MINUTES) || 30);
+ const OVERDUE = Math.max(0, Number(process.env.SHIFT_OVERDUE_MINUTES) || 30);
+ /* From SHIFT_FORCE_CLOSE_MINUTES (default 15) before closing, an open shift MUST be counted and closed: the cashier's screen opens the
+    count-and-close window with no way to dismiss it, and the server refuses sales, cash collection and cash movements on that shift until it
+    is closed (so hiding the window in the browser does not help). 0 turns it off. Shifts cannot be opened inside that window when
+    ENFORCE_STORE_HOURS=true. Example: close 5:00 PM, 15 minutes -> forced from 4:45 PM. */
+ const FORCE = process.env.SHIFT_FORCE_CLOSE_MINUTES === undefined || process.env.SHIFT_FORCE_CLOSE_MINUTES === '' ? 15 : Math.min(Math.max(Number(process.env.SHIFT_FORCE_CLOSE_MINUTES) || 0, 0), 180);
+ const label = (m) => { const h = Math.floor(m / 60), mi = m % 60; return ((h + 11) % 12 + 1) + ':' + String(mi).padStart(2, '0') + ' ' + (h < 12 ? 'AM' : 'PM'); };
+ function clock() {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    .formatToParts(new Date()).map((x) => [x.type, x.value]));
+  const minutes = (+parts.hour % 24) * 60 + +parts.minute, date = parts.year + '-' + parts.month + '-' + parts.day;
+  return { minutes, date, state: minutes < OPEN_MIN ? 'before' : minutes < CLOSE_MIN ? 'open' : 'after' };
+ }
+ const minutesOfDay = (ts) => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour12: false, hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(ts)).map((x) => [x.type, x.value])); return (+p.hour % 24) * 60 + +p.minute; };
+ const hours = () => {
+  const c = clock();
+  // Allow opening cash shift anytime during testing/development (enforce strict hours only if ENFORCE_STORE_HOURS is set to true).
+  // When enforced, no shift can be opened inside the final FORCE minutes either: it would have to be closed straight away.
+  const lastOpen = FORCE > 0 ? CLOSE_MIN - FORCE : CLOSE_MIN;
+  const canOpen = process.env.ENFORCE_STORE_HOURS === 'true' ? (c.minutes >= OPEN_MIN - EARLY && c.minutes < lastOpen) : true;
+  return { open: label(OPEN_MIN), close: label(CLOSE_MIN), openMinutes: OPEN_MIN, closeMinutes: CLOSE_MIN, earlyMinutes: EARLY, remindMinutes: REMIND,
+   forceCloseMinutes: FORCE, forceCloseFrom: label(CLOSE_MIN - FORCE),
+   firstOpen: label(Math.max(0, OPEN_MIN - EARLY)), nowMinutes: c.minutes, date: c.date, state: c.state,
+   canOpenShift: canOpen, minutesToClose: CLOSE_MIN - c.minutes };
  };
- app.locals.cashShiftHours = hours;
+ // true when this open shift must be counted and closed now (end-of-day window, or left open from an earlier day)
+ const mustClose = (openedAt) => rules.mustCloseShift({ clock: clock(), shift: { openedDay: dayOf(openedAt), openedMinutes: minutesOfDay(openedAt) }, closeMinutes: CLOSE_MIN, forceMinutes: FORCE });
+ app.get('/api/pos/business-hours', auth('cashier', 'finance'), wrap(async (req, res) => res.json(hours())));
 
  /* ---------- schema (self-healing: the movements table was never in a migration) ---------- */
  const ready = (async()=>{
@@ -60,6 +73,13 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
     amount NUMERIC(12,2) NOT NULL CHECK (amount > 0), reason TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
    await pool.query('CREATE INDEX IF NOT EXISTS pos_cash_movements_shift_idx ON pos_cash_movements(shift_id, created_at)');
    await pool.query('ALTER TABLE pos_cash_shifts ADD COLUMN IF NOT EXISTS closing_breakdown JSONB');
+   // cash taken out of the drawer for the bank / safe right after counting; the next shift starts with closing cash minus this
+   await pool.query('ALTER TABLE pos_cash_shifts ADD COLUMN IF NOT EXISTS closing_deposit NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (closing_deposit >= 0)');
+   // one row: a closing difference ABOVE reason_threshold needs a written reason (Finance edits it on the Cash Shifts screen)
+   await pool.query(`CREATE TABLE IF NOT EXISTS cash_shift_rules (id INT PRIMARY KEY CHECK (id = 1),
+    reason_threshold NUMERIC(12,2) NOT NULL DEFAULT ${rules.DEFAULT_REASON_THRESHOLD} CHECK (reason_threshold >= 0 AND reason_threshold <= 10000),
+    updated_by INT REFERENCES users(user_id), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+   await pool.query('INSERT INTO cash_shift_rules (id) VALUES (1) ON CONFLICT DO NOTHING');
    console.log('[cash] cash shift schema ready');
   } catch(err){ console.warn('[cash] could not prepare the cash shift schema:', err.message); }
  })();
@@ -71,7 +91,7 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
  const summarySql = `SELECT s.shift_id AS id, s.cashier_id AS "cashierId", s.cashier_name AS "cashierName",
    s.opened_at AS "openedAt", s.closed_at AS "closedAt",
    s.opening_cash::float8 AS "openingCash", s.closing_cash::float8 AS "closingCash", s.closing_note AS "closingNote",
-   s.closing_breakdown AS "closingBreakdown",
+   s.closing_breakdown AS "closingBreakdown", s.closing_deposit::float8 AS "closingDeposit",
    (cs.cash_sales + oc.order_cash)::float8 AS "cashSales", (cs.cash_tx + oc.order_cash_tx)::int AS "cashTransactions",
    cs.card_sales::float8 AS "cardSales", cs.card_tx AS "cardTransactions", cs.pending_voids AS "pendingVoids",
    mv.cash_in::float8 AS "cashIn", mv.cash_out::float8 AS "cashOut",
@@ -98,9 +118,7 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
  const flagged = s => {            // review flags used by the Finance monitor
   const flags = [];
   if (s.difference != null && Math.abs(s.difference) >= VARIANCE_ALERT) flags.push(s.difference < 0 ? 'Large shortage' : 'Large overage');
-  if (!s.closedAt && hours.pastClosing(s.openedAt)) flags.push('Not closed by '+hours.close);
-  else if (!s.closedAt && Date.now() - new Date(s.openedAt).getTime() > STALE_HOURS*3600000) flags.push('Open too long');
-  if (s.closedAt && hours.pastClosing(s.openedAt, s.closedAt)) flags.push('Closed after '+hours.close);
+  if (!s.closedAt && Date.now() - new Date(s.openedAt).getTime() > STALE_HOURS*3600000) flags.push('Open too long');
   if (s.pendingVoids) flags.push(s.pendingVoids + ' void pending');
   if (s.pendingReturns) flags.push(s.pendingReturns + ' return pending');
   return flags;
@@ -112,39 +130,66 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
   const m = new Map(); r.rows.forEach(x => { (m.get(String(x.shiftId)) || m.set(String(x.shiftId), []).get(String(x.shiftId))).push(x); }); return m;
  };
 
+ const getThreshold = async (db) => Number((await (db||pool).query('SELECT reason_threshold::float8 AS t FROM cash_shift_rules WHERE id=1')).rows[0]?.t ?? rules.DEFAULT_REASON_THRESHOLD);
+ const dayOf = ts => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(ts));
+ // an open shift that began on an earlier (Philippine) day: counted and closed before anything else happens
+ app.locals.shiftIsStale = (openedAt) => dayOf(openedAt) < clock().date;
+ // sales, cash collection and cash movements are refused on a shift that must be closed (pos-shop.js and below)
+ app.locals.shiftMustClose = (openedAt) => mustClose(openedAt);
+ const MUST_CLOSE_MSG = 'It is time to close your cash shift. Count the drawer and close it first; no more sales or cash entries can be made on this shift.';
+
  /* ---------- cashier ---------- */
+ // One call tells the POS which screen to show after sign-in: open form (pre-filled), store closed, or close yesterday's shift first.
+ app.get('/api/pos/cash-shifts/gate',auth('cashier'),wrap(async(req,res)=>{
+  const r=await pool.query(`SELECT * FROM (${summarySql}) x WHERE "cashierId"=$1 AND "closedAt" IS NULL LIMIT 1`,[req.user.id]);
+  const cur=r.rows[0]||null, h=hours();
+  const must=!!cur&&mustClose(cur.openedAt);
+  const state=rules.gateState({clock:{state:h.state,date:h.date},canOpenShift:h.canOpenShift,mustClose:must,current:cur&&{id:cur.id,openedDay:dayOf(cur.openedAt)}});
+  const out={state,hours:h,reasonThreshold:await getThreshold(),shift:null,suggested:null};
+  if(cur){cur.movements=(await movementsFor([cur.id])).get(String(cur.id))||[];cur.hours=h;out.shift=cur;}
+  else{
+   const p=await pool.query(`SELECT * FROM (${summarySql}) x WHERE "closedAt" IS NOT NULL ORDER BY "closedAt" DESC LIMIT 1`);   // the drawer carries over whoever closed last
+   out.suggested=rules.suggestOpening(p.rows[0]);
+  }
+  res.json(out);
+ }));
+
  app.get('/api/pos/cash-shifts/current',auth('cashier'),wrap(async(req,res)=>{
   const r=await pool.query(`SELECT * FROM (${summarySql}) x WHERE "cashierId"=$1 AND "closedAt" IS NULL LIMIT 1`,[req.user.id]);
   const s=r.rows[0]; if(!s) return res.json(null);
   s.movements=(await movementsFor([s.id])).get(String(s.id))||[];
-  s.pastClosing=hours.pastClosing(s.openedAt);
+  s.hours=hours();
   res.json(s);
  }));
-
- // the till page uses this to show the hours and to enable/disable "Open cash shift"
- app.get('/api/pos/cash-shifts/hours',auth('cashier','finance'),(req,res)=>{
-  res.json({open:hours.open,close:hours.close,openError:hours.openError(),minutesToClose:hours.minutesToClose()});
- });
 
  app.post('/api/pos/cash-shifts/open',auth('cashier'),wrap(async(req,res)=>{
   const amount=req.body?.openingCash;
   if(!money(amount))return fail(res,400,'Enter a valid opening cash amount (0 or more, up to 2 decimals).','openingCash');
-  const closedHours=hours.openError();
-  if(closedHours)return fail(res,409,closedHours);
+  const h=hours();
+  if(!h.canOpenShift)return fail(res,409,h.state==='after'
+    ?'The store is closed for today (open '+h.open+' to '+h.close+'). Shifts can be opened again tomorrow from '+h.firstOpen+'.'
+    :h.state==='open'
+    ?'It is too close to closing time ('+h.close+') to start a new shift: shifts are closed from '+h.forceCloseFrom+'. You can open your shift again tomorrow from '+h.firstOpen+'.'
+    :'Too early: the store opens at '+h.open+'. You can open your shift from '+h.firstOpen+'.');
   const result=await tx(async client=>{
    await client.query('SELECT pg_advisory_xact_lock($1,$2)',[73001,req.user.id]);
    const old=await client.query('SELECT shift_id FROM pos_cash_shifts WHERE cashier_id=$1 AND closed_at IS NULL',[req.user.id]);
    if(old.rowCount)return {error:'You already have an open cash shift.'};
+   const prev=(await client.query(`SELECT * FROM (${summarySql}) x WHERE "closedAt" IS NOT NULL ORDER BY "closedAt" DESC LIMIT 1`)).rows[0];
+   const sug=rules.suggestOpening(prev);
    const r=await client.query('INSERT INTO pos_cash_shifts(cashier_id,cashier_name,opening_cash) VALUES ($1,$2,$3) RETURNING shift_id',[req.user.id,req.user.name,amount]);
-   await log(client,req.user,`Shift #${r.rows[0].shift_id} opened — starting cash ${peso(amount)}`);
+   await log(client,req.user,`Shift #${r.rows[0].shift_id} opened — starting cash ${peso(amount)}`
+     +(sug?(Math.abs(amount-sug.amount)<0.005?` (confirmed as carried over from shift #${sug.fromShiftId})`:` — carried over from shift #${sug.fromShiftId} was ${peso(sug.amount)}, cashier entered ${peso(amount)} (${amount<sug.amount?'short ':'over '}${peso(Math.abs(amount-sug.amount))})`):' (no earlier shift to carry over)'));
    return {id:r.rows[0].shift_id};
   });if(result.error)return fail(res,409,result.error);res.status(201).json(result);
  }));
 
  app.post('/api/pos/cash-shifts/close',auth('cashier'),wrap(async(req,res)=>{
-  const amount=req.body?.closingCash, note=req.body?.note ?? '', breakdown=req.body?.breakdown;
+  const amount=req.body?.closingCash, note=req.body?.note ?? '', breakdown=req.body?.breakdown, deposit=req.body?.deposit===undefined||req.body?.deposit===null||req.body?.deposit===''?0:req.body.deposit;
   if(!money(amount))return fail(res,400,'Enter the actual cash counted (0 or more, up to 2 decimals).','closingCash');
   if(typeof note!=='string'||note.length>500)return fail(res,400,'Closing note must be at most 500 characters.','note');
+  if(!money(deposit))return fail(res,400,'Enter the deposit as 0 or more, up to 2 decimals.','deposit');
+  const dp=rules.depositProblem(deposit,amount); if(dp)return fail(res,400,dp,'deposit');
   let bd=null;
   if(breakdown!==undefined&&breakdown!==null){
    if(typeof breakdown!=='object'||Array.isArray(breakdown))return fail(res,400,'Invalid cash count.','breakdown');
@@ -161,14 +206,15 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
    if(!r.rowCount)return {error:'No open shift found.'};
    const id=r.rows[0].shift_id;
    const cur=(await client.query(`SELECT * FROM (${summarySql}) x WHERE id=$1`,[id])).rows[0];
-   const diff=r2(amount-cur.expectedCash);
-   if(diff!==0&&note.trim().length<5)return {error:'The count is '+(diff<0?'short':'over')+' by ₱'+Math.abs(diff).toFixed(2)+'. Please write a short explanation (at least 5 characters).',field:'note',status:400};
-   await client.query('UPDATE pos_cash_shifts SET closed_at=now(),closing_cash=$2,closing_note=$3,closing_breakdown=$4 WHERE shift_id=$1',[id,amount,note.trim(),bd?JSON.stringify(bd):null]);
+   const diff=r2(amount-cur.expectedCash), limit=await getThreshold(client);
+   if(rules.reasonRequired(diff,limit)&&note.trim().length<5)return {error:'The count is '+(diff<0?'short':'over')+' by ₱'+Math.abs(diff).toFixed(2)+', more than the ₱'+limit.toFixed(2)+' allowed without a reason. Please write a short explanation (at least 5 characters).',field:'note',status:400};
+   await client.query('UPDATE pos_cash_shifts SET closed_at=now(),closing_cash=$2,closing_note=$3,closing_breakdown=$4,closing_deposit=$5 WHERE shift_id=$1',[id,amount,note.trim(),bd?JSON.stringify(bd):null,deposit]);
    const report=await client.query(`SELECT * FROM (${summarySql}) x WHERE id=$1`,[id]);
    const c=report.rows[0];
    await log(client,req.user,`Shift #${id} closed — expected ${peso(c.expectedCash)}, counted ${peso(amount)}, `
      +(diff===0?'balanced':(diff<0?'SHORT ':'OVER ')+peso(Math.abs(diff))+(Math.abs(diff)>=VARIANCE_ALERT?' (flagged for Finance review)':''))
-     +(c.cashReturns?` · cash returns ${peso(c.cashReturns)}`:'')+(note.trim()?` · Note: ${note.trim()}`:''));
+     +(c.cashReturns?` · cash returns ${peso(c.cashReturns)}`:'')+(deposit>0?` · deposit ${peso(deposit)} taken out, ${peso(r2(amount-deposit))} stays for the next shift`:'')+(note.trim()?` · Note: ${note.trim()}`:''));
+   c.nextOpening=r2(amount-deposit);
    return c;
   });if(result.error)return fail(res,result.status||409,result.error,result.field);res.json(result);
  }));
@@ -180,10 +226,9 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
   if(typeof reason!=='string'||reason.trim().length<5||reason.trim().length>300)return fail(res,400,'Write a reason (5–300 characters).','reason');
   const result=await tx(async client=>{
     await client.query('SELECT pg_advisory_xact_lock($1,$2)',[73001,req.user.id]);
-    const shift=await client.query('SELECT shift_id,opened_at FROM pos_cash_shifts WHERE cashier_id=$1 AND closed_at IS NULL FOR UPDATE',[req.user.id]);
+    const shift=await client.query('SELECT shift_id, opened_at FROM pos_cash_shifts WHERE cashier_id=$1 AND closed_at IS NULL FOR UPDATE',[req.user.id]);
     if(!shift.rowCount)return {error:'Open a cash shift first.'};
-    const late=hours.lateError(shift.rows[0].opened_at);
-    if(late)return {error:late};
+    if(mustClose(shift.rows[0].opened_at))return {error:MUST_CLOSE_MSG,status:409};
     const id=shift.rows[0].shift_id;
     if(kind==='cash_out'){   // the drawer cannot go below zero
      const cur=(await client.query(`SELECT "expectedCash" FROM (${summarySql}) x WHERE id=$1`,[id])).rows[0];
@@ -208,6 +253,23 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
   const finance=req.user.role==='finance';
   const q=finance?`SELECT * FROM (${summarySql}) x ORDER BY "openedAt" DESC LIMIT 200`:`SELECT * FROM (${summarySql}) x WHERE "cashierId"=$1 ORDER BY "openedAt" DESC LIMIT 50`;
   const r=await pool.query(q,finance?[]:[req.user.id]);res.json(r.rows);
+ }));
+
+ /* ---------- Finance: the difference above which a closing reason is required ---------- */
+ app.get('/api/finance/cash-shifts/rules',auth('finance'),wrap(async(req,res)=>{
+  const r=(await pool.query('SELECT reason_threshold::float8 AS "reasonThreshold", updated_at AS "updatedAt", u.full_name AS "updatedBy" FROM cash_shift_rules c LEFT JOIN users u ON u.user_id=c.updated_by WHERE c.id=1')).rows[0];
+  res.json(r);
+ }));
+ app.put('/api/finance/cash-shifts/rules',auth('finance'),wrap(async(req,res)=>{
+  const v=req.body?.reasonThreshold;
+  if(!money(v)||v>10000)return fail(res,400,'Enter an amount from 0 to 10,000 pesos (up to 2 decimals).','reasonThreshold');
+  const out=await tx(async client=>{
+   const old=await getThreshold(client);
+   await client.query('UPDATE cash_shift_rules SET reason_threshold=$1,updated_by=$2,updated_at=now() WHERE id=1',[v,req.user.id]);
+   await log(client,req.user,`Cash shift rule changed: a closing reason is required above ${peso(v)} (was ${peso(old)})`);
+   return {reasonThreshold:v};
+  });
+  res.json(out);
  }));
 
  /* ---------- Finance monitor: shifts + payment summary (POS and online) for a date range ---------- */
@@ -249,6 +311,33 @@ module.exports = function mountCashShifts({app,pool,auth,wrap,tx,audit,TZ:tzIn})
                  WHERE r.status='approved' AND o2.payment_method=o.payment_method
                    AND (o2.created_at AT TIME ZONE $1)::date BETWEEN $2::date AND $3::date),0)::float8 AS refunded
     FROM orders o WHERE (o.created_at AT TIME ZONE $1)::date BETWEEN $2::date AND $3::date GROUP BY o.payment_method ORDER BY o.payment_method`,[TZ,f,t])).rows;
-  res.json({from:f,to:t,varianceAlert:VARIANCE_ALERT,totals,shifts,payments:{pos,online}});
+  res.json({from:f,to:t,varianceAlert:VARIANCE_ALERT,reasonThreshold:await getThreshold(),totals,shifts,payments:{pos,online}});
  }));
+ /* ---------- automation: close-of-day reminders (runs with the other automation jobs every 15 minutes) ---------- */
+ async function shiftHours() {
+  const nc = app.locals.notifications; if (!nc) return { skipped: 'no notification center' };
+  const c = clock(), out = { reminded: 0, overdue: 0 };
+  const open = (await pool.query('SELECT shift_id, cashier_id, cashier_name, opened_at FROM pos_cash_shifts WHERE closed_at IS NULL')).rows;
+  for (const sh of open) {
+   const openedDay = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(sh.opened_at));
+   const pastDay = openedDay < c.date;                                    // left open since an earlier day
+   if (!pastDay && c.minutes >= CLOSE_MIN - REMIND && c.minutes < CLOSE_MIN) {
+    out.reminded += await nc.notifyUser(sh.cashier_id, { category: 'orders', severity: 'info', title: 'Close your cash shift by ' + label(CLOSE_MIN),
+      body: 'The store closes at ' + label(CLOSE_MIN) + '. Count your drawer and close shift #' + sh.shift_id + ' before you leave.',
+      link: 'POS_Cashier.html#shift', entityType: 'cash_shift', entityId: String(sh.shift_id), dedupeKey: 'shift-remind:' + sh.shift_id + ':' + c.date }, 'cashier') ? 1 : 0;
+   }
+   if (pastDay || c.minutes >= CLOSE_MIN + OVERDUE) {
+    const key = 'shift-overdue:' + sh.shift_id + ':' + c.date;
+    const n = await nc.notifyRole('finance', { category: 'orders', severity: 'warn', title: 'Cash shift still open after closing time',
+      body: (sh.cashier_name || 'A cashier') + "'s shift #" + sh.shift_id + ' is still open' + (pastDay ? ' since ' + openedDay : ' after ' + label(CLOSE_MIN)) + '. Ask them to count and close the drawer.',
+      link: 'Finance_Inventory.html#reports', entityType: 'cash_shift', entityId: String(sh.shift_id), dedupeKey: key });
+    await nc.notifyUser(sh.cashier_id, { category: 'orders', severity: 'warn', title: 'Your cash shift is past closing time',
+      body: 'Shift #' + sh.shift_id + ' is still open. Count your drawer and close it now.', link: 'POS_Cashier.html#shift',
+      entityType: 'cash_shift', entityId: String(sh.shift_id), dedupeKey: key + ':cashier' }, 'cashier');
+    if (n) out.overdue++;
+   }
+  }
+  return out;
+ }
+ (app.locals.automationJobs = app.locals.automationJobs || []).push({ name: 'shift-hours', run: shiftHours });
 };

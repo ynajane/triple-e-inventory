@@ -1,0 +1,120 @@
+/* table-pagination.css — Universal responsive pagination styling for all system tables */
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-top: 8px;
+  background: var(--card, #0d1a26);
+  border: 1px solid var(--border, #1c3244);
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--text-dim, #8fa1b0);
+  user-select: none;
+  box-sizing: border-box;
+}
+
+html[data-theme="light"] .table-pagination {
+  background: #ffffff;
+  border-color: #d3dde7;
+  color: #455767;
+}
+
+.table-pagination-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.table-pagination-info strong {
+  color: var(--text, #e7edf3);
+  font-weight: 600;
+}
+
+html[data-theme="light"] .table-pagination-info strong {
+  color: #14212c;
+}
+
+.table-pagination-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.table-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #1c3244);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text, #e7edf3);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  box-sizing: border-box;
+}
+
+html[data-theme="light"] .table-page-btn {
+  background: rgba(15, 40, 60, 0.04);
+  border-color: #d3dde7;
+  color: #14212c;
+}
+
+.table-page-btn:hover:not(:disabled) {
+  background: var(--hover, rgba(255, 255, 255, 0.09));
+  border-color: var(--blue-bright, #4a90d9);
+  color: var(--blue-bright, #4a90d9);
+}
+
+.table-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.table-page-btn.is-active {
+  background: var(--blue-bright, #4a90d9);
+  border-color: var(--blue-bright, #4a90d9);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.table-page-btn.nav-btn {
+  font-weight: 600;
+  padding: 0 10px;
+}
+
+.table-page-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 32px;
+  color: var(--text-dim, #8fa1b0);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+@media (max-width: 680px) {
+  .table-pagination {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+  .table-pagination-controls {
+    margin-left: 0;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}
+

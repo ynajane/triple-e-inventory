@@ -12,21 +12,22 @@
 <style>
 body{display:block}
 .info-top{position:sticky;top:0;z-index:5;background:var(--sidebar);border-bottom:1px solid var(--border)}
-.info-top-in{max-width:980px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.info-top-in{width:100%;max-width:1840px;margin:0 auto;padding:12px clamp(16px,2.4vw,40px);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .info-brand{font-family:Oswald,sans-serif;font-weight:600;font-size:18px;letter-spacing:.02em}
 .info-back{margin-left:auto;color:var(--blue-bright);text-decoration:none;font-weight:600;font-size:14px}
-.info-wrap{max-width:980px;margin:0 auto;padding:24px 16px 60px;display:grid;grid-template-columns:210px minmax(0,1fr);gap:28px}
+.info-wrap{width:100%;max-width:1840px;margin:0 auto;padding:22px clamp(16px,2.4vw,40px) 40px;display:grid;grid-template-columns:220px minmax(0,1fr) 300px;gap:clamp(18px,2vw,28px);align-items:start}
+.info-side{position:sticky;top:76px;display:grid;gap:14px}
 .info-body{min-width:0}.info-body section{overflow-wrap:anywhere}
-.rate-table{width:100%;max-width:480px;min-width:0;margin-top:8px;border-collapse:collapse}
-.rate-table th{text-align:left;padding:10px 0 4px;font-size:12.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-faint);font-weight:600}
-.rate-table td{padding:6px 0;border-bottom:1px solid var(--row-line)}
-.rate-table td:first-child{padding-right:14px;color:var(--text-dim)}
-.rate-table td:last-child{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--text)}
+.rate-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr));gap:0 28px;margin-top:8px;min-width:0}
+.rate-grid h4{grid-column:1/-1;padding:12px 0 4px;font-size:12.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--text-faint);font-weight:600}
+.rate{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--row-line)}
+.rate span:first-child{color:var(--text-dim)}.rate span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--text)}
 .info-nav{position:sticky;top:76px;align-self:start;display:flex;flex-direction:column;gap:2px}
-.info-nav a{padding:9px 12px;border-radius:6px;color:var(--text-dim);text-decoration:none;font-size:14.5px}
+.info-nav a{padding:10px 14px;border-radius:6px;color:var(--text-dim);text-decoration:none;font-size:14.5px}
 .info-nav a:hover,.info-nav a.on{background:var(--hover);color:var(--text)}
 .info-nav a.on{font-weight:600;color:var(--blue-bright)}
-.info-body section{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:22px 24px;margin-bottom:18px;scroll-margin-top:76px}
+.info-body{column-gap:clamp(14px,1.6vw,22px)}
+.info-body section{break-inside:avoid;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:22px 24px;margin-bottom:18px;scroll-margin-top:76px}
 .info-body h1{font-family:Oswald,sans-serif;font-size:28px;margin-bottom:6px}
 .info-body h2{font-family:Oswald,sans-serif;font-size:21px;margin-bottom:10px}
 .info-body h3{font-size:15px;margin:16px 0 4px}
@@ -39,7 +40,16 @@ body{display:block}
 .steps{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
 .steps span{background:var(--inset);border:1px solid var(--border);border-radius:99px;padding:4px 12px;font-size:13px;color:var(--text)}
 .contact-card a{color:var(--blue-bright)}
+.info-side section{margin-bottom:0}
+#delivery .kv>dt:first-child,#vFee{grid-column:1/-1}
+#delivery .kv>dt:first-child{margin-bottom:-2px}
+.info-side .kv{grid-template-columns:78px 1fr}
+.side-cta p{margin:6px 0 14px}
+.side-cta a.go{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:8px;background:var(--blue-bright);color:#06121e;font-weight:700;font-size:14px;text-decoration:none}
+@media(min-width:1180px){.info-body:not(.info-side){column-count:2}.info-body #delivery{column-span:all}.info-body:not(.info-side) section{margin-bottom:clamp(14px,1.6vw,22px)}}
+@media(max-width:1179px){.info-wrap{grid-template-columns:200px minmax(0,1fr)}.info-side{grid-column:2;position:static;grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.info-wrap{grid-template-columns:minmax(0,1fr);gap:16px;padding-top:16px}
+  .info-side{grid-column:1;grid-template-columns:1fr}
   .info-nav{position:static;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:6px;padding-bottom:4px}
   .info-nav::-webkit-scrollbar{display:none}.info-nav a{white-space:nowrap;flex:none;border:1px solid var(--border)}
   .info-body section{padding:18px 16px}.info-body h1{font-size:24px}.info-brand{font-size:16px}
@@ -129,19 +139,27 @@ body{display:block}
       <h3>What we collect</h3>
       <p>Your name, email, mobile number, delivery addresses, your orders, and the payment status of each order. Online card or e-wallet details are entered on our payment partner’s page, not ours.</p>
       <h3>Why we use it</h3>
-      <ul><li>To process, deliver and support your orders.</li><li>To send you emails about your orders and account.</li><li>To keep records our business needs, such as receipts and stock history.</li></ul>
+      <ul><li>To process, deliver and support your orders.</li><li>To send you emails about your orders and account.</li><li>To keep records our business needs, such as invoices and stock history.</li></ul>
       <h3>Who sees it</h3>
       <p>Only our authorized staff and the services we use to run the shop (such as payment and email providers). We do not sell your information.</p>
       <h3>Your rights</h3>
       <p>You can ask to see, correct or delete your information, or object to how we use it. You can edit your profile and addresses in the shop. For anything else, contact us below.</p>
     </section>
 
+  </div>
+
+  <aside class="info-side info-body" aria-label="Contact and shop">
     <section id="contact" class="contact-card">
       <h2>Contact us</h2>
       <dl class="kv" id="contactList"><dt></dt><dd>Loading…</dd></dl>
       <p>Please include your order number (for example <strong>ORD-…</strong>) so we can help faster.</p>
     </section>
-  </div>
+    <section class="side-cta">
+      <h2>Ready to order?</h2>
+      <p>Browse the shop, add what you need and check out for delivery or pickup.</p>
+      <a class="go" href="Shop_Customer.html">Back to shop <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+    </section>
+  </aside>
 </div>
 
 <script>
@@ -160,13 +178,13 @@ fetch('/api/shop/info').then(r => r.ok ? r.json() : Promise.reject()).then(d => 
   if (R && (R.regions.length || R.provinces.length)) {
     const esc = (v) => String(v).replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';');
     const fee = (n) => n > 0 ? peso(n) : 'Free';
-    const line = (r) => '<tr><td>' + esc(r.name) + '</td><td>' + (r.available === false ? 'Not available' : fee(r.fee)) + '</td></tr>';
+    const line = (r) => '<div class="rate"><span>' + esc(r.name) + '</span><span>' + (r.available === false ? 'Not available' : fee(r.fee)) + '</span></div>';
     $('vFee').innerHTML = 'Per order. The fee depends on where we deliver (your province first, then your region).'
-      + '<table class="rate-table">'
-      + (R.provinces.length ? '<tr><th colspan="2">By province</th></tr>' + R.provinces.map(line).join('') : '')
-      + '<tr><th colspan="2">By region</th></tr>' + R.regions.map(line).join('')
-      + '<tr><th colspan="2">Anywhere else</th></tr>' + line(R.defaultRate)
-      + '</table>';
+      + '<div class="rate-grid">'
+      + (R.provinces.length ? '<h4>By province</h4>' + R.provinces.map(line).join('') : '')
+      + '<h4>By region</h4>' + R.regions.map(line).join('')
+      + '<h4>Anywhere else</h4>' + line(R.defaultRate)
+      + '</div>';
   } else $('vFee').textContent = d.deliveryFee > 0 ? peso(d.deliveryFee) + ' per order' : 'Free';
   if (i.deliveryAreas) $('vAreas').textContent = i.deliveryAreas;
   if (i.deliveryLeadTime) $('vLead').textContent = i.deliveryLeadTime;

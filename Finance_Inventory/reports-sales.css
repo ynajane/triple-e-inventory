@@ -211,7 +211,7 @@
 #reports { --rep-sticky: 64px; --rep-offset: 132px; }
 .content.rep-content { overflow: visible; }   /* set by reports-tabs.js while Reports is open, so the section bar can stick to the window */
 html.rep-scroll, html.rep-scroll body { height: auto; }   /* the page grows with the report, so the sticky sidebar stays in view */
-.rep-header { align-items: flex-end; margin-bottom: 18px; }
+.rep-header { align-items: center; margin-bottom: 18px; }
 .rep-lede { margin: 6px 0 0; max-width: 64ch; color: var(--text-dim); font-size: 15.5px; line-height: 1.5; }
 
 /* ---- Report Period: one compact toolbar ---- */

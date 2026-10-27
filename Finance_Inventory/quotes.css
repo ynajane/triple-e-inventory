@@ -450,3 +450,33 @@
 #page-quotes .qd-modal-grid .qd-cl.gap{border-color:rgba(217,164,65,.5)}
 #page-quotes .qd-modal-grid .qd-cl,#page-quotes .qd-modal-grid .qd-cl *{text-transform:none;letter-spacing:0;font-family:Inter,sans-serif}
 #page-quotes .qd-modal-grid .qd-cl b{font-size:13.5px;font-weight:650;color:var(--text)}
+
+/* system price card in the price form (pricing.js) */
+#page-quotes .qd-sys{grid-column:1/-1;padding:11px 13px;border:1px solid var(--blue-bright);border-radius:10px;background:var(--inset);font-size:13px;display:flex;flex-direction:column;gap:5px}
+#page-quotes .qd-sys-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-weight:650;color:var(--text)}
+#page-quotes .qd-sys-head strong{font-size:18px;color:var(--blue-bright)}
+#page-quotes .qd-sys details summary{cursor:pointer;color:var(--blue-bright);font-weight:600}
+#page-quotes .qd-sys ul{list-style:none;margin:6px 0 0;padding:0}
+#page-quotes .qd-sys li{display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px dashed var(--border)}
+#page-quotes .qd-sys li b{white-space:nowrap;color:var(--text)}
+#page-quotes .qd-sys .btn-sm{align-self:flex-start}
+
+/* Task 4: quick recipe editor and the materials / stock table under the suggested price (quote-desk-ui.js) */
+#page-quotes .qd-sys-tablewrap{overflow-x:auto;margin:4px 0}
+#page-quotes .qd-sys-table{width:100%;border-collapse:collapse;font-size:12.5px}
+#page-quotes .qd-sys-table th,#page-quotes .qd-sys-table td{padding:5px 6px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
+#page-quotes .qd-sys-table td:first-child{white-space:normal;min-width:140px}
+#page-quotes .qd-sys-table .qd-num{text-align:right}
+#page-quotes .qd-recipe{margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);display:flex;flex-direction:column;gap:6px}
+#page-quotes .qd-recipe-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}
+#page-quotes .qd-rline{display:grid;grid-template-columns:minmax(0,1fr) 96px 72px auto;gap:6px;align-items:center}
+#page-quotes .qd-rline select,#page-quotes .qd-rline input{min-height:36px;min-width:0;width:100%}
+#page-quotes .qd-jline{grid-template-columns:minmax(0,1fr) 110px 48px;margin:6px 0}
+#page-quotes .qd-recipe-actions{display:flex;gap:8px;flex-wrap:wrap}
+@media(max-width:560px){#page-quotes .qd-rline{grid-template-columns:minmax(0,1fr) 80px 64px auto}}
+
+/* ---- Collect payment (cashier records the money; see quote-desk-ui.js collectHtml) ---- */
+#page-quotes #qdCollectForm{display:grid;gap:10px;max-width:420px}
+#page-quotes #qdCollectForm label{display:grid;gap:4px;font-size:13px;font-weight:600}
+#page-quotes #qdCollectForm input,#page-quotes #qdCollectForm select{min-height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font:inherit}
+#page-quotes .qd-err{min-height:1.2em;font-size:13px;color:var(--red)}

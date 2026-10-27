@@ -1,0 +1,438 @@
+/* =========================================================
+   ui2-auditlog.css — Audit Log page only (#auditlog.ui2)
+   Load AFTER ui2-core.css, style.css and ui2-pager.css.
+   Looks only. Every colour is a token, so light and dark both work.
+
+   Layout: summary strip -> panel (search, role switch, action chips)
+           -> activity feed (time | rail | event | person)
+   The feed is still the same <table>/<tr> the page script fills and the
+   pager counts; the rows are just drawn as a timeline.
+========================================================= */
+
+html #auditlog { --u-on-accent: #06121f; }
+html[data-theme="light"] #auditlog { --u-on-accent: #ffffff; }
+
+#auditlog > .ui2-hero { margin: 4px 0 22px; align-items: flex-end; }
+
+/* ---------- summary strip: one bar, four readings ---------- */
+#auditlog .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1px;                                   /* the gap shows the divider colour */
+    margin: 0 0 24px;
+    background: var(--u-line-soft);
+    border: 1px solid var(--u-line);
+    border-radius: var(--u-r);
+    box-shadow: var(--u-shadow);
+    overflow: hidden;
+}
+#auditlog .stat-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "ico label" "ico value" "foot foot";
+    column-gap: 14px;
+    align-items: center;
+    min-height: 0;
+    padding: 20px 24px 18px;
+    border: 0; border-radius: 0; box-shadow: none;
+    background: var(--u-surface);
+    transform: none;
+    transition: background .15s ease;
+}
+#auditlog .stat-card::before,
+#auditlog .stat-card::after { display: none; }
+#auditlog .stat-card:hover { transform: none; box-shadow: none; background: var(--u-surface); }
+#auditlog .stat-card .ui2-ico {
+    grid-area: ico; align-self: start;
+    width: 38px; height: 38px; margin: 0;
+    border-radius: 11px;
+}
+#auditlog .stat-label {
+    grid-area: label; align-self: end;
+    font-family: "Inter", sans-serif;
+    font-size: 13px; font-weight: 500; letter-spacing: .1px;
+    color: var(--text-dim);
+    text-transform: lowercase;                  /* "TOTAL ENTRIES" -> "Total entries" */
+}
+#auditlog .stat-label::first-letter { text-transform: uppercase; }
+#auditlog .stat-value {
+    grid-area: value; align-self: start;
+    margin: 4px 0 0;
+    font-family: "Oswald", sans-serif; font-weight: 600;
+    font-size: clamp(30px, 2.6vw, 38px); line-height: 1.05; letter-spacing: .3px;
+    font-variant-numeric: tabular-nums;
+}
+#auditlog .stat-foot {
+    grid-area: foot;
+    margin: 14px 0 0; padding: 0; border: 0;
+    font-size: 13px; line-height: 1.4;
+    color: var(--text-dim);
+}
+
+/* ---------- panel ---------- */
+#auditlog .panel {
+    padding: 0; margin-top: 0; overflow: hidden;
+    container: au / inline-size;                /* the feed re-flows with the panel, not the screen */
+}
+#auditlog .panel-head {
+    align-items: center; justify-content: space-between;
+    gap: 14px 18px; flex-wrap: wrap;
+    margin: 0; padding: 22px 24px 16px;
+}
+#auditlog #auditCount {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px; letter-spacing: .5px; color: var(--text-dim);
+}
+
+/* ---------- search + native filters ---------- */
+#auditlog .inv-filters { gap: 10px; flex-wrap: wrap; align-items: center; }
+#auditlog .inv-select {
+    min-height: 42px; padding: 8px 14px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background-color: var(--u-surface-flat);
+    color: var(--text); font-size: 14px;
+    transition: border-color .15s, box-shadow .15s;
+}
+#auditlog .inv-select:hover { border-color: var(--u-chip-line); }
+#auditlog .inv-select:focus,
+#auditlog .au-search:focus-within {
+    border-color: var(--blue-bright);
+    box-shadow: 0 0 0 3px var(--u-chip-bg);
+    outline: none;
+}
+/* once the script has built the role switch and action chips, the two selects only keep the data in step */
+#auditlog.au-js .inv-select {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+    overflow: hidden; clip-path: inset(50%); opacity: 0; pointer-events: none;
+}
+#auditlog .au-search {
+    display: inline-flex; align-items: center; gap: 9px;
+    min-height: 42px; min-width: 300px;
+    padding: 0 16px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background: var(--u-surface-flat);
+    color: var(--text-dim);
+    transition: border-color .15s, box-shadow .15s;
+}
+#auditlog .au-search:hover { border-color: var(--u-chip-line); }
+#auditlog .au-search .ico { width: 16px; height: 16px; flex: none; vertical-align: 0; }
+#auditlog .au-search input {
+    flex: 1; min-width: 0;
+    width: auto; height: auto; min-height: 0;
+    padding: 0; margin: 0;
+    border: 0; background: transparent; box-shadow: none; outline: none;
+    color: var(--text); font-size: 14px;
+}
+#auditlog .au-search input::placeholder { color: var(--text-dim); opacity: .85; }
+#auditlog :focus-visible { outline-offset: 2px; }
+#auditlog .au-search input:focus-visible { outline: none; }
+
+/* ---------- toolbar: role switch + action chips (built by ui2-auditlog.js) ---------- */
+#auditlog .au-tools {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 12px 18px;
+    padding: 2px 24px 18px;
+}
+#auditlog .au-seg {
+    display: inline-flex; gap: 2px; padding: 3px;
+    border-radius: 99px;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line);
+}
+#auditlog .au-seg-btn {
+    appearance: none; cursor: pointer;
+    padding: 7px 15px;
+    border: 0; border-radius: 99px;
+    background: transparent;
+    font: 500 13px/1.2 "Inter", sans-serif; letter-spacing: .1px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    transition: color .15s, background .15s, box-shadow .15s;
+}
+#auditlog .au-seg-btn:hover { color: var(--text); }
+#auditlog .au-seg-btn[aria-pressed="true"] {
+    color: var(--u-on-accent); font-weight: 600;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 8px 18px -10px color-mix(in srgb, var(--blue-bright) 90%, transparent);
+}
+#auditlog .au-chips { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 280px; min-width: 0; }
+#auditlog .au-tools:not(:has(.au-chips)) { display: none; }
+#auditlog .au-chip {
+    --c: var(--text-dim);
+    appearance: none; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 8px 6px 11px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background: transparent;
+    font: 500 13px/1.2 "Inter", sans-serif;
+    color: var(--text-dim);
+    white-space: nowrap;
+    transition: border-color .15s, background .15s, color .15s;
+}
+#auditlog .au-chip::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--c);
+}
+#auditlog .au-chip.is-all::before { display: none; }
+#auditlog .au-chip.is-all { padding-left: 13px; }
+#auditlog .au-chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--c) 55%, var(--u-line)); }
+#auditlog .au-chip[aria-pressed="true"] {
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--c) 60%, transparent);
+    background: color-mix(in srgb, var(--c) 14%, transparent);
+}
+#auditlog .au-chip.is-all[aria-pressed="true"] {
+    --c: var(--blue-bright);
+}
+#auditlog .au-n {
+    min-width: 22px; padding: 2px 7px;
+    border-radius: 99px;
+    background: var(--u-track);
+    font: 500 11.5px/1.3 "IBM Plex Mono", monospace; letter-spacing: .2px; text-align: center;
+    color: var(--text-dim);
+}
+#auditlog .au-chip[aria-pressed="true"] .au-n {
+    background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--text);
+}
+#auditlog .au-reset {
+    appearance: none; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-left: auto; padding: 6px 12px;
+    border: 0; border-radius: 99px; background: transparent;
+    font: 500 13px/1.2 "Inter", sans-serif; color: var(--blue-bright);
+    transition: background .15s;
+}
+#auditlog .au-reset:hover { background: var(--u-chip-bg); }
+#auditlog .au-reset[hidden] { display: none; }
+#auditlog .au-reset .ico { width: 14px; height: 14px; vertical-align: 0; }
+
+/* ---------- action colours: one definition, used by the chip, the feed node and the tag ---------- */
+#auditlog :is(.action-tag.login,      .au-chip.login,      tr:has(.action-tag.login))      { --c: var(--blue-bright); }
+#auditlog :is(.action-tag.logout,     .au-chip.logout,     tr:has(.action-tag.logout))     { --c: var(--text-dim); }
+#auditlog :is(.action-tag.added,      .au-chip.added,      tr:has(.action-tag.added))      { --c: var(--u-ok-fg); }
+#auditlog :is(.action-tag.edited,     .au-chip.edited,     tr:has(.action-tag.edited))     { --c: var(--u-warn-fg); }
+#auditlog :is(.action-tag.deleted,    .au-chip.deleted,    tr:has(.action-tag.deleted))    { --c: var(--u-bad-fg); }
+#auditlog :is(.action-tag.account,    .au-chip.account,    tr:has(.action-tag.account))    { --c: #e35b9e; }
+#auditlog :is(.action-tag.cashshift,  .au-chip.cashshift,  tr:has(.action-tag.cashshift))  { --c: var(--u-cyan); }
+#auditlog :is(.action-tag.return,     .au-chip.return,     tr:has(.action-tag.return))     { --c: #a078e6; }
+#auditlog :is(.action-tag.profile,    .au-chip.profile,    tr:has(.action-tag.profile))    { --c: var(--u-cyan); }
+#auditlog :is(.action-tag.production, .au-chip.production, tr:has(.action-tag.production)) { --c: #6c8cff; }
+#auditlog :is(.action-tag.approval,   .au-chip.approval,   tr:has(.action-tag.approval))   { --c: var(--u-ok-fg); }
+#auditlog :is(.action-tag.cost,       .au-chip.cost,       tr:has(.action-tag.cost))       { --c: var(--u-warn-fg); }
+html[data-theme="light"] #auditlog :is(.action-tag.account,    .au-chip.account,    tr:has(.action-tag.account))    { --c: #b52f78; }
+html[data-theme="light"] #auditlog :is(.action-tag.return,     .au-chip.return,     tr:has(.action-tag.return))     { --c: #5b3a9e; }
+html[data-theme="light"] #auditlog :is(.action-tag.production, .au-chip.production, tr:has(.action-tag.production)) { --c: #3a56c4; }
+
+/* =========================================================
+   FEED  (table drawn as a timeline)
+========================================================= */
+#auditlog .table-wrapper {
+    border: 0;
+    border-top: 1px solid var(--u-line-soft);
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
+    margin-left: 0; margin-right: 0;             /* style.css pulls table wrappers 4px out on phones */
+}
+#auditlog .au-table,
+#auditlog .au-table tbody,
+#auditlog .au-table tr,
+#auditlog .au-table td { display: block; }
+#auditlog .au-table { width: 100%; min-width: 0; }
+/* column titles are not needed in a feed; they stay in the page for screen readers */
+#auditlog .au-table thead {
+    display: block; position: absolute; width: 1px; height: 1px; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+
+#auditlog .au-table tbody { position: relative; padding: 8px 0 14px; }
+#auditlog .au-table tbody::before {              /* the rail */
+    content: "";
+    position: absolute; top: 34px; bottom: 0; left: 158px;
+    width: 2px; border-radius: 2px;
+    background: var(--u-line);
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 80px), transparent);
+            mask-image: linear-gradient(#000 calc(100% - 80px), transparent);
+    pointer-events: none;
+}
+#auditlog .au-table tbody:has(.no-results-row)::before { display: none; }
+
+#auditlog .au-table tbody tr {
+    --c: var(--text-dim);
+    --au-ring: var(--card);
+    display: grid;
+    grid-template-columns: 120px 30px minmax(0, 1fr) minmax(170px, 230px);
+    grid-template-areas:
+        "when node action who"
+        "when node detail role";
+    column-gap: 0; row-gap: 4px;
+    align-items: start;
+    position: relative;
+    margin: 0 12px; padding: 12px 12px;
+    border: 0; border-radius: 12px;
+    transition: background-color .12s ease;
+}
+#auditlog .au-table tbody tr.pg-hide { display: none; }
+#auditlog .au-table tbody tr:hover { background: var(--u-hover); --au-ring: color-mix(in srgb, var(--blue-bright) 9%, var(--card)); }
+#auditlog .au-table tbody tr.au-newday:not(:first-child) { margin-top: 6px; }
+#auditlog .au-table tbody tr td,
+#auditlog .au-table tbody tr:hover td:first-child {
+    padding: 0; border: 0; box-shadow: none;
+    font-size: 14.5px; vertical-align: baseline;
+    white-space: normal;                         /* style.css forces nowrap on table cells on phones */
+}
+
+/* node on the rail */
+#auditlog .au-table tbody tr::before {
+    content: "";
+    grid-area: node; justify-self: center; align-self: start;
+    width: 12px; height: 12px; margin-top: 8px;
+    border-radius: 50%;
+    background: var(--c);
+    box-shadow: 0 0 0 3px var(--au-ring), 0 0 0 4px color-mix(in srgb, var(--c) 45%, transparent);
+    transition: box-shadow .15s ease;
+}
+#auditlog .au-table tbody tr:hover::before {
+    box-shadow: 0 0 0 3px var(--au-ring), 0 0 0 5px color-mix(in srgb, var(--c) 65%, transparent);
+}
+
+/* when */
+#auditlog .au-table td.au-when { grid-area: when; display: flex; flex-direction: column; white-space: nowrap; padding-top: 3px; }
+#auditlog .au-time {
+    order: -1; display: block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13.5px; font-weight: 500; letter-spacing: .2px;
+    color: var(--text);
+}
+#auditlog .au-date { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--text-dim); }
+#auditlog .au-date.is-today { color: var(--blue-bright); }
+#auditlog tr.au-same-day .au-date { display: none; }
+
+/* event */
+#auditlog .au-table td:nth-child(4) { grid-area: action; justify-self: start; }
+#auditlog .action-tag {
+    --c: var(--text-dim);
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 4px 12px 4px 10px;
+    border-radius: 99px;
+    font-family: "Inter", sans-serif;
+    font-size: 12.5px; font-weight: 500; letter-spacing: .2px;
+    color: var(--c);
+    background: color-mix(in srgb, var(--c) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c) 34%, transparent);
+}
+#auditlog .action-tag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--c); }
+#auditlog .audit-detail {
+    grid-area: detail; min-width: 0; max-width: 78ch;
+    color: var(--text-dim);
+    font-size: 14.5px; line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+#auditlog .audit-detail strong { color: var(--text); font-weight: 600; }
+
+/* person */
+#auditlog .au-table td:nth-child(2) { grid-area: who; min-width: 0; }
+#auditlog .au-person { display: flex; align-items: center; gap: 12px; min-width: 0; }
+#auditlog .au-avatar {
+    flex: none;
+    width: 30px; height: 30px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 600; letter-spacing: .4px;
+    color: var(--blue-bright);
+    background: linear-gradient(145deg, color-mix(in srgb, var(--blue-bright) 22%, transparent), color-mix(in srgb, var(--blue-bright) 6%, transparent));
+    border: 1px solid var(--u-chip-line);
+}
+#auditlog .au-name { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* role: quiet text under the name, colour keeps the meaning */
+#auditlog .au-table td:nth-child(3) { grid-area: role; padding-left: 42px; min-width: 0; }
+#auditlog .role-tag {
+    display: inline; padding: 0; border: 0; background: none; border-radius: 0;
+    font-family: "Inter", sans-serif; font-size: 12.5px; font-weight: 500; letter-spacing: .1px; text-transform: none;
+    color: var(--blue-bright);
+}
+#auditlog .role-tag.cashier  { color: var(--u-cyan);    background: none; border: 0; }
+#auditlog .role-tag.customer { color: var(--u-warn-fg); background: none; border: 0; }
+
+/* empty row */
+#auditlog .au-table tbody tr.no-results-row {
+    display: block; margin: 0; padding: 52px 24px 56px; border-radius: 0; text-align: center;
+}
+#auditlog .au-table tbody tr.no-results-row::before { display: none; }
+#auditlog .no-results-row:hover { background: transparent; }
+#auditlog .no-results-row td {
+    position: relative;
+    padding: 0 !important; text-align: center; font-size: 14.5px; color: var(--text-dim);
+}
+#auditlog .no-results-row td::before {           /* tinted tile ... */
+    content: ""; display: block; width: 44px; height: 44px; margin: 0 auto 14px;
+    background: var(--u-chip-bg); border: 1px solid var(--u-chip-line); border-radius: 14px;
+}
+#auditlog .no-results-row td::after {            /* ... with a magnifier on it */
+    content: ""; position: absolute; left: 50%; top: 12px; width: 20px; height: 20px; margin-left: -10px;
+    background: var(--blue-bright);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* ---------- pagination bar ---------- */
+#auditlog .pager {
+    margin: 0;
+    padding: 12px 24px;
+    border-top: 1px solid var(--u-line-soft);
+    background: var(--u-head-bg);
+}
+
+/* ---------- narrow panel: the feed stacks, nothing scrolls sideways ---------- */
+@container au (max-width: 760px) {
+    #auditlog .au-table tbody::before { left: 98px; }     /* 6 margin + 8 padding + 70 time + 15 half node - 1 */
+    #auditlog .au-table tbody tr {
+        grid-template-columns: 70px 30px auto minmax(0, 1fr);
+        grid-template-areas:
+            "when node action action"
+            "when node detail detail"
+            "when node who    role";
+        margin: 0 6px; padding: 14px 8px;
+        row-gap: 8px;
+    }
+    #auditlog .au-table td:nth-child(3) { padding-left: 14px; align-self: center; }
+    #auditlog .au-time { font-size: 13px; letter-spacing: 0; }
+    #auditlog .au-table td.au-when .au-date { white-space: normal; }
+}
+@container au (max-width: 520px) {
+    #auditlog .au-avatar { display: none; }
+    #auditlog .au-table td:nth-child(3) { padding-left: 10px; }
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 1080px) {
+    #auditlog .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+    #auditlog .panel-head { padding: 18px 16px 12px; }
+    #auditlog .inv-filters { width: 100%; }
+    #auditlog .au-search { flex: 1 1 100%; min-width: 0; }
+    #auditlog .inv-select { flex: 1 1 0; min-width: 0; }
+    #auditlog .au-tools { padding: 0 16px 16px; gap: 12px; }
+    #auditlog .au-seg { width: 100%; overflow-x: auto; scrollbar-width: none; }
+    #auditlog .au-seg::-webkit-scrollbar { display: none; }
+    #auditlog .au-seg-btn { flex: 1 0 auto; }
+    #auditlog .au-chips { flex-wrap: nowrap; overflow-x: auto; flex: 1 1 100%; padding-bottom: 4px; scrollbar-width: none; }
+    #auditlog .au-chips::-webkit-scrollbar { display: none; }
+    #auditlog .au-reset { margin-left: 0; }
+    #auditlog .pager { padding: 12px 16px; }
+}
+@media (max-width: 520px) {
+    #auditlog .stat-card {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "ico" "label" "value" "foot";
+        row-gap: 0; padding: 16px 16px 14px; align-items: start;
+    }
+    #auditlog .stat-card .ui2-ico { width: 32px; height: 32px; border-radius: 10px; margin-bottom: 12px; }
+    #auditlog .stat-card .ui2-ico .ico { width: 17px; height: 17px; }
+    #auditlog .stat-label { font-size: 12.5px; }
+    #auditlog .stat-value { font-size: 30px; margin-top: 2px; }
+    #auditlog .stat-foot { margin-top: 8px; font-size: 12.5px; }
+}

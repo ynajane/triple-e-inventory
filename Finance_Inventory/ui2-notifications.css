@@ -1,0 +1,155 @@
+/* =========================================================
+   ui2-notifications.css — Notifications page only (#notifications.ui2)
+   Load AFTER ui2-core.css and notifications.css.
+   The bell and its dropdown are NOT touched: every rule starts with #notifications.
+   Every colour is a token, so light and dark both work.
+========================================================= */
+
+html #notifications { --u-on-accent: #06121f; }
+html[data-theme="light"] #notifications { --u-on-accent: #ffffff; }
+
+#notifications > .ui2-hero { margin: 4px 0 22px; align-items: flex-end; }
+#notifications .ui2-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#notifications .ui2-actions .btn-secondary {
+    display: inline-flex; align-items: center; gap: 8px;
+    min-height: 42px; padding: 9px 18px; border-radius: 99px; font-weight: 600;
+}
+#notifications .ui2-actions .btn-secondary .ico { width: 16px; height: 16px; vertical-align: 0; }
+#notifications .ui2-chip { min-height: 42px; }
+
+/* ---------- panel ---------- */
+#notifications .panel { padding: 0; overflow: hidden; }
+
+/* ---------- filter bar ---------- */
+#notifications .nc-page-tools {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 12px 16px; margin: 0; padding: 18px 24px;
+    border-bottom: 1px solid var(--u-line-soft);
+}
+#notifications .nc-chips {
+    flex: 0 1 auto; display: inline-flex; flex-wrap: wrap; gap: 3px; padding: 4px;
+    border-radius: 99px; border: 1px solid var(--u-line-soft); background: var(--u-surface-flat);
+}
+#notifications .nc-chip {
+    min-height: 36px; padding: 0 16px;
+    border-radius: 99px; border: 1px solid transparent;
+    background: transparent; color: var(--text-dim);
+    font-size: 13.5px; font-weight: 600;
+    transition: background .15s, color .15s, border-color .15s;
+}
+#notifications .nc-chip:hover { color: var(--text); background: var(--u-hover); }
+#notifications .nc-chips .nc-chip.on {
+    color: var(--u-on-accent); border-color: transparent;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 10px 20px -12px color-mix(in srgb, var(--blue-bright) 90%, transparent);
+}
+/* the status toggle: its own pill, lit when "Unread only" is on */
+#notifications .nc-toggle {
+    min-height: 42px; padding: 0 18px 0 14px;
+    display: inline-flex; align-items: center; gap: 9px;
+    border: 1px solid var(--u-line); background: var(--u-surface-flat);
+}
+#notifications .nc-toggle::before {
+    content: ""; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--text-dim); opacity: .6;
+}
+#notifications .nc-toggle.on {
+    color: var(--text); border-color: var(--u-chip-line); background: var(--u-chip-bg);
+}
+#notifications .nc-toggle.on::before { background: var(--blue-bright); opacity: 1; box-shadow: 0 0 0 4px var(--u-chip-bg); }
+
+/* ---------- list ---------- */
+#notifications .nc-page-list { display: flex; flex-direction: column; padding: 8px 12px 12px; gap: 0; }
+#notifications .nc-page-list .nc-item {
+    --c: var(--blue-bright);
+    position: relative;
+    grid-template-columns: 14px minmax(0, 1fr); gap: 14px;
+    margin: 0; padding: 16px 18px;
+    border: 0; border-bottom: 1px solid var(--u-line-soft);
+    border-radius: 12px;
+    background: transparent;
+    transition: background .12s ease;
+}
+#notifications .nc-page-list .nc-item:last-child { border-bottom: 0; }
+#notifications .nc-page-list .nc-item:hover { background: var(--u-hover); }
+#notifications .nc-page-list .nc-item:focus-visible { outline: 2px solid var(--blue-bright); outline-offset: -2px; }
+
+/* unread rows: soft tint and a coloured edge */
+#notifications .nc-page-list .nc-item.unread {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--c) 10%, transparent), transparent 70%);
+    border-bottom-color: transparent;
+}
+#notifications .nc-page-list .nc-item.unread::before {
+    content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 3px;
+    background: var(--c);
+}
+#notifications .nc-page-list .nc-item.unread:hover { background: linear-gradient(90deg, color-mix(in srgb, var(--c) 16%, transparent), var(--u-hover) 70%); }
+#notifications .nc-page-list .nc-item.unread + .nc-item { border-top: 0; }
+#notifications .nc-page-list .nc-item.warn     { --c: var(--amber); }
+#notifications .nc-page-list .nc-item.critical { --c: var(--red); }
+
+/* the dot: ring when read, glowing when unread */
+#notifications .nc-dot {
+    width: 10px; height: 10px; margin-top: 7px;
+    border-radius: 50%; background: transparent;
+    border: 1.5px solid var(--u-line);
+}
+#notifications .nc-item.unread .nc-dot { background: var(--c); border-color: transparent; box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 22%, transparent); }
+#notifications .nc-item.warn .nc-dot, #notifications .nc-item.critical .nc-dot { border-color: var(--c); }
+#notifications .nc-item.warn:not(.unread) .nc-dot, #notifications .nc-item.critical:not(.unread) .nc-dot { background: color-mix(in srgb, var(--c) 35%, transparent); }
+
+/* meta line: category chip + resolved tag on the left, time on the right */
+#notifications .nc-meta { gap: 8px; margin-bottom: 6px; }
+#notifications .nc-cat {
+    --k: var(--blue-bright);
+    display: inline-flex; align-items: center;
+    padding: 3px 11px; border-radius: 99px;
+    font-size: 11px; letter-spacing: 1px;
+    color: var(--k);
+    background: color-mix(in srgb, var(--k) 13%, transparent);
+    border: 1px solid color-mix(in srgb, var(--k) 34%, transparent);
+}
+#notifications .nc-item[data-cat="inventory"]  .nc-cat { --k: var(--amber); }
+#notifications .nc-item[data-cat="production"] .nc-cat { --k: #6c8cff; }
+#notifications .nc-item[data-cat="orders"]     .nc-cat { --k: var(--blue-bright); }
+#notifications .nc-item[data-cat="payment"]    .nc-cat { --k: var(--green); }
+#notifications .nc-item[data-cat="delivery"]   .nc-cat { --k: var(--u-cyan); }
+#notifications .nc-item[data-cat="pos"]        .nc-cat { --k: #a67be0; }
+#notifications .nc-item[data-cat="system"]     .nc-cat { --k: var(--text-dim); }
+html[data-theme="light"] #notifications .nc-item[data-cat="inventory"]  .nc-cat { --k: #8a5a00; }
+html[data-theme="light"] #notifications .nc-item[data-cat="production"] .nc-cat { --k: #3a56c4; }
+html[data-theme="light"] #notifications .nc-item[data-cat="payment"]    .nc-cat { --k: #17794a; }
+html[data-theme="light"] #notifications .nc-item[data-cat="pos"]        .nc-cat { --k: #6d3fc0; }
+#notifications .nc-tag {
+    padding: 2px 9px; border-radius: 99px;
+    color: var(--u-ok-fg); background: var(--u-ok-bg); border-color: var(--u-ok-line);
+}
+#notifications .nc-when {
+    margin-left: auto;
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .3px; color: var(--text-dim);
+}
+
+#notifications .nc-title { font-size: 15.5px; font-weight: 600; line-height: 1.35; color: var(--text); }
+#notifications .nc-item:not(.unread) .nc-title { font-weight: 500; }
+#notifications .nc-body { margin-top: 4px; font-size: 14px; line-height: 1.5; max-width: 90ch; }
+
+/* ---------- empty / loading ---------- */
+#notifications .nc-empty { padding: 56px 20px; font-size: 14.5px; }
+
+/* ---------- load more ---------- */
+#notifications .nc-more {
+    display: block; margin: 4px auto 22px;
+    min-height: 40px; padding: 8px 24px; border-radius: 99px;
+}
+#notifications .nc-more[hidden] { display: none; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 760px) {
+    #notifications .ui2-actions { width: 100%; }
+    #notifications .ui2-actions .btn-secondary { flex: 1 1 auto; justify-content: center; }
+    #notifications .nc-page-tools { padding: 14px 16px; }
+    #notifications .nc-chips { border-radius: 18px; }
+    #notifications .nc-page-list { padding: 6px 6px 10px; }
+    #notifications .nc-page-list .nc-item { padding: 14px 12px; gap: 10px; }
+    #notifications .nc-when { margin-left: 0; flex-basis: 100%; }
+}

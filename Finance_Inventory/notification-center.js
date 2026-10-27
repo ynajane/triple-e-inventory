@@ -58,7 +58,7 @@
   function itemHtml(n, compact) {
     var cls = 'nc-item' + (n.isRead ? '' : ' unread') + (n.severity === 'critical' ? ' critical' : n.severity === 'warn' ? ' warn' : '');
     var resolved = n.isResolved ? '<span class="nc-tag">Resolved</span>' : '';
-    return '<button type="button" class="' + cls + '" data-nc-id="' + n.id + '" data-nc-link="' + esc(n.link || '') + '">' +
+    return '<button type="button" class="' + cls + '" data-cat="' + esc(n.category || '') + '" data-nc-id="' + n.id + '" data-nc-link="' + esc(n.link || '') + '">' +
       '<span class="nc-dot"></span><span>' +
       '<span class="nc-meta"><span class="nc-cat">' + esc(LABELS[n.category] || n.category) + '</span>' + resolved +
       '<span class="nc-when">' + esc(n.when || '') + '</span></span>' +

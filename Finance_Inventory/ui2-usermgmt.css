@@ -1,0 +1,211 @@
+/* =========================================================
+   ui2-usermgmt.css — User Management page only (#usermgmt.ui2)
+   Load AFTER ui2-core.css and style.css / table-pagination.css.
+   Looks only. Every colour is a token, so light and dark both work.
+========================================================= */
+
+html #usermgmt { --u-on-accent: #06121f; }
+html[data-theme="light"] #usermgmt { --u-on-accent: #ffffff; }
+
+/* ---------- hero + actions ---------- */
+#usermgmt > .ui2-hero { margin: 4px 0 22px; align-items: flex-end; }
+#usermgmt .ui2-actions {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+#usermgmt .ui2-actions .btn-primary,
+#usermgmt .ui2-actions .btn-secondary {
+    display: inline-flex; align-items: center; gap: 8px;
+    min-height: 42px; padding: 9px 18px;
+    border-radius: 99px; font-weight: 600;
+}
+#usermgmt .ui2-actions .btn-primary {
+    color: var(--u-on-accent);
+    border: 1px solid transparent;
+    background: linear-gradient(180deg, var(--blue-bright), var(--blue));
+    box-shadow: 0 12px 24px -14px color-mix(in srgb, var(--blue-bright) 85%, transparent);
+    transition: transform .15s, box-shadow .15s, filter .15s;
+}
+#usermgmt .ui2-actions .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.06); }
+#usermgmt .ui2-actions .btn-primary .ico { width: 16px; height: 16px; vertical-align: 0; }
+#usermgmt .ui2-actions .btn-secondary { border-radius: 99px; }
+
+/* ---------- summary cards ---------- */
+#usermgmt .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 16px;
+    margin: 0 0 24px;
+}
+#usermgmt .stat-card { min-height: 0; }
+#usermgmt .stat-card .ui2-ico { margin-bottom: 14px; }
+#usermgmt .stat-value { font-family: "Oswald", sans-serif; font-weight: 600; }
+
+/* ---------- panels ---------- */
+#usermgmt .panel { padding: 0; overflow: hidden; margin-top: 0; }
+#usermgmt .panel + .panel { margin-top: 24px; }
+#usermgmt .panel-head {
+    align-items: center; justify-content: space-between;
+    gap: 12px 18px; flex-wrap: wrap;
+    margin: 0; padding: 22px 24px 18px;
+}
+#usermgmt #accountCount {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px; letter-spacing: .6px; color: var(--text-dim);
+}
+#usermgmt .um-hint {
+    display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 10px; padding: 5px 12px;
+    border-radius: 99px;
+    background: var(--u-chip-bg); border: 1px solid var(--u-chip-line);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px; letter-spacing: .3px; color: var(--text-dim);
+}
+#usermgmt .um-hint::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--blue-bright); flex: none;
+}
+
+/* ---------- filters ---------- */
+#usermgmt .inv-filters { gap: 10px; }
+#usermgmt .inv-select {
+    min-height: 42px;
+    padding: 8px 14px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background-color: var(--u-surface-flat);
+    color: var(--text);
+    font-size: 14px;
+    transition: border-color .15s, box-shadow .15s;
+}
+#usermgmt .inv-select:hover { border-color: var(--u-chip-line); }
+#usermgmt .inv-select:focus {
+    border-color: var(--blue-bright);
+    box-shadow: 0 0 0 3px var(--u-chip-bg);
+    outline: none;
+}
+
+/* ---------- tables (flush inside the panel) ---------- */
+#usermgmt .table-wrapper {
+    border: 0;
+    border-top: 1px solid var(--u-line-soft);
+    border-radius: 0;
+    background: transparent;
+    overflow-x: auto;
+}
+#usermgmt table { width: 100%; min-width: 680px; border-collapse: separate; border-spacing: 0; }
+#usermgmt thead th {
+    position: sticky; top: 0; z-index: 1;
+    padding: 14px 20px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px; font-weight: 500; letter-spacing: 1.4px;
+    text-align: left; white-space: nowrap;
+    color: var(--text-dim);
+    background: var(--u-head-bg);
+    border-bottom: 1px solid var(--u-line-soft);
+}
+#usermgmt tbody td {
+    padding: 14px 20px;
+    font-size: 14.5px;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--u-line-soft);
+}
+#usermgmt tbody tr:last-child td { border-bottom: 0; }
+#usermgmt tbody tr { transition: background .12s ease; }
+#usermgmt tbody tr:hover { background: var(--u-hover); }
+#usermgmt tbody td.dim { color: var(--text-dim); }
+
+/* column widths for the Accounts table */
+#usermgmt .um-accounts th:nth-child(1) { width: 30%; }
+#usermgmt .um-accounts th:nth-child(2) { width: 28%; }
+#usermgmt .um-accounts th:nth-child(3) { width: 17%; }
+#usermgmt .um-accounts th:nth-child(4) { width: 11%; }
+#usermgmt .um-accounts td:nth-child(2) { word-break: break-word; }
+#usermgmt .um-accounts td:nth-child(5) {
+    font-family: "IBM Plex Mono", monospace; font-size: 13px; letter-spacing: .2px; white-space: nowrap;
+}
+
+/* clickable account rows */
+#usermgmt tr.user-row { cursor: pointer; }
+#usermgmt tr.user-row td:first-child { box-shadow: inset 3px 0 0 transparent; transition: box-shadow .15s; }
+#usermgmt tr.user-row:hover td:first-child { box-shadow: inset 3px 0 0 var(--blue-bright); }
+
+/* avatar + name */
+#usermgmt .user-row-name { gap: 12px; min-width: 0; font-weight: 600; color: var(--text); }
+#usermgmt .user-row-avatar {
+    width: 38px; height: 38px;
+    font-size: 15px;
+    color: var(--blue-bright);
+    background: linear-gradient(145deg, color-mix(in srgb, var(--blue-bright) 22%, transparent), color-mix(in srgb, var(--blue-bright) 6%, transparent));
+    border: 1px solid var(--u-chip-line);
+    box-shadow: 0 8px 16px -12px color-mix(in srgb, var(--blue-bright) 80%, transparent);
+}
+
+/* role chips: soft pills, one colour per kind */
+#usermgmt .role-tag {
+    display: inline-flex; align-items: center;
+    padding: 4px 12px;
+    border-radius: 99px;
+    font-size: 11.5px; font-weight: 500; letter-spacing: .8px;
+    color: var(--blue-bright);
+    background: var(--u-chip-bg);
+    border: 1px solid var(--u-chip-line);
+}
+#usermgmt .role-tag.cashier  { color: var(--u-cyan);    background: color-mix(in srgb, var(--u-cyan) 12%, transparent);    border-color: color-mix(in srgb, var(--u-cyan) 34%, transparent); }
+#usermgmt .role-tag.customer { color: var(--u-warn-fg); background: var(--u-warn-bg); border-color: var(--u-warn-line); }
+#usermgmt .role-tag.gm       { color: var(--u-warn-fg); background: var(--u-warn-bg); border-color: var(--u-warn-line); }
+
+/* status pills (Active / Disabled / Pending / Expired) */
+#usermgmt .status-pill.disabled { color: var(--u-bad-fg); background: var(--u-bad-bg); border-color: var(--u-bad-line); }
+
+/* pending invitations: actions sit on the right */
+#usermgmt .um-pending th:last-child,
+#usermgmt .um-pending td:last-child { text-align: right; white-space: nowrap; }
+#usermgmt .um-pending td:last-child { display: table-cell; }
+#usermgmt .um-pending .btn-sm {
+    min-height: 32px; padding: 5px 14px;
+    border-radius: 99px; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--u-line); background: var(--u-surface-flat); color: var(--text);
+    transition: background .15s, border-color .15s, color .15s;
+}
+#usermgmt .um-pending .btn-sm + .btn-sm { margin-left: 6px; }
+#usermgmt .um-pending .btn-sm:hover { border-color: var(--blue-bright); background: var(--u-hover); }
+#usermgmt .um-pending .btn-sm[data-invite-cancel]:hover {
+    border-color: var(--u-bad-line); background: var(--u-bad-bg); color: var(--u-bad-fg);
+}
+
+/* empty + loading rows */
+#usermgmt .no-results-row:hover { background: transparent; }
+#usermgmt .no-results-row td {
+    padding: 40px 20px !important;
+    text-align: center;
+    font-size: 14.5px; color: var(--text-dim);
+}
+
+/* ---------- pagination bar (sits flush inside the panel; look comes from ui2-pager.css) ---------- */
+#usermgmt .pager {
+    margin: 0;
+    padding: 12px 24px;
+    border-top: 1px solid var(--u-line-soft);
+    background: var(--u-head-bg);
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 760px) {
+    #usermgmt .panel-head { padding: 18px 16px 14px; }
+    #usermgmt .inv-filters { width: 100%; }
+    #usermgmt .inv-select { flex: 1 1 0; min-width: 0; }
+    #usermgmt thead th, #usermgmt tbody td { padding-left: 14px; padding-right: 14px; }
+    #usermgmt .pager { padding: 12px 16px; }
+    #usermgmt .ui2-actions { width: 100%; }
+    #usermgmt .ui2-actions .btn-primary, #usermgmt .ui2-actions .btn-secondary { flex: 1 1 auto; justify-content: center; }
+}
+/* Account lifecycle actions stay readable in the shared edit dialog. */
+#accountViewToggle { display: flex; flex-wrap: wrap; gap: 8px; }
+#accountViewToggle .pill-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    border-radius: 99px; padding: 7px 14px; white-space: normal;
+}
+#accountViewToggle .pill-btn .count { border-radius: 99px; padding: 2px 7px; }
+#editUserModalOverlay .modal-footer { flex-wrap: wrap; gap: 10px; }
+#editUserModalOverlay .modal-footer > button { max-width: 100%; white-space: normal; height: auto; }
+#accountStatusFilter[hidden], #editUserDeleteBtn[hidden] { display: none; }

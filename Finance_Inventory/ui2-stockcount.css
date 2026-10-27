@@ -1,0 +1,410 @@
+/* =========================================================
+   ui2-stockcount.css — Stock Count page only (#stockcount.ui2)
+   Needs ui2-core.css loaded before it.
+   (Uses #stockcount so it wins over style.css and the small
+   <style> block that stock-count-admin.js injects.)
+   Every colour is a token, so light and dark both work.
+========================================================= */
+
+#stockcount > .ui2-hero { margin-bottom: 22px; }
+#stockcount .panel { margin-bottom: 22px; }
+#stockcount .panel:last-child { margin-bottom: 0; }
+#stockcount .dim { color: var(--text-dim); }
+
+/* ---------- badges ---------- */
+#stockcount .sc-titlerow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#stockcount .sc-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 12px 4px 10px;
+    border-radius: 99px;
+    border: 1px solid transparent;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+#stockcount .sc-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+#stockcount .sc-badge.ok  { color: var(--u-ok-fg);  background: var(--u-ok-bg);  border-color: var(--u-ok-line); }
+#stockcount .sc-badge.bad { color: var(--u-bad-fg); background: var(--u-bad-bg); border-color: var(--u-bad-line); }
+
+/* ---------- schedule & rules: three accent cards ---------- */
+#stockcount .sc-sched .panel-head { margin-bottom: 18px; }
+#stockcount .sc-rules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 14px;
+}
+#stockcount .sc-rule {
+    --accent: var(--blue-bright);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    gap: 14px;
+    padding: 16px 18px;
+    border-radius: 12px;
+    border: 1px solid var(--u-line-soft);
+    background: var(--u-surface-flat);
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+#stockcount .sc-rule.green { --accent: var(--green); }
+#stockcount .sc-rule.red   { --accent: var(--red); }
+#stockcount .sc-rule::before {
+    content: "";
+    position: absolute;
+    top: -40px; right: -40px;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 22%, transparent), transparent 68%);
+    pointer-events: none;
+}
+#stockcount .sc-rule:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--u-line));
+    box-shadow: 0 16px 30px -22px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+#stockcount .sc-rule > * { position: relative; z-index: 1; }
+#stockcount .sc-rule-ico {
+    flex: none;
+    width: 38px; height: 38px;
+    display: grid; place-items: center;
+    border-radius: 11px;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+}
+#stockcount .sc-rule-ico .ico { width: 19px; height: 19px; vertical-align: 0; }
+#stockcount .sc-rule-body { min-width: 0; }
+#stockcount .sc-rule-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+}
+#stockcount .sc-rule-title { font-size: 15.5px; font-weight: 600; color: var(--text); margin-top: 5px; line-height: 1.3; }
+#stockcount .sc-rule.red .sc-rule-title { color: var(--u-bad-fg); }
+#stockcount .sc-rule-line { font-size: 13px; line-height: 1.45; color: var(--text-dim); margin-top: 4px; }
+#stockcount .sc-rule-foot {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 3px 11px;
+    border-radius: 99px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: .3px;
+    color: var(--blue-bright);
+    background: var(--u-chip-bg);
+    border: 1px solid var(--u-chip-line);
+}
+
+/* ---------- start / locked / in-progress ---------- */
+#stockcount .sc-lock {
+    border-radius: 12px;
+    border: 1px solid var(--u-line-soft);
+    background: var(--u-surface-flat);
+    padding: 14px 16px;
+}
+#stockcount .sc-lock-row { display: flex; align-items: center; justify-content: space-between; gap: 12px 18px; flex-wrap: wrap; }
+#stockcount .sc-lock-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
+#stockcount .sc-lock-ico {
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border-radius: 10px;
+    color: var(--u-bad-fg);
+    background: var(--u-bad-bg);
+    border: 1px solid var(--u-bad-line);
+}
+#stockcount .sc-lock-ico .ico { width: 17px; height: 17px; vertical-align: 0; }
+#stockcount .sc-lock-text { font-size: 14px; color: var(--text-dim); }
+#stockcount .sc-lock-text b { color: var(--text); font-weight: 600; }
+#stockcount .sc-manual { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--u-line-soft); }
+#stockcount .sc-manual[hidden] { display: none; }
+#stockcount .sc-manual .sc-hint { margin: 12px 0 0; }
+
+#stockcount .sc-top { gap: 14px; margin-bottom: 0; }
+#stockcount .sc-top label,
+#stockcount .sc-set label,
+#stockcount .sc-explain label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+}
+#stockcount .sc-hint { font-size: 13px; color: var(--text-dim); }
+
+#stockcount .sc-sum {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 18px;
+    font-size: 14px;
+    color: var(--text-dim);
+}
+/* single-line summary on the start panel stays plain; count sheet gets stat tiles */
+#stockcount .sc-sum > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border-radius: 99px;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line-soft);
+}
+#stockcount .sc-sum b { font-size: 16px; color: var(--text); font-weight: 600; }
+#stockcount .sc-sum b.sc-down { color: var(--u-bad-fg); }
+#stockcount .sc-sum b.sc-up   { color: var(--u-ok-fg); }
+
+#stockcount .sc-bar { gap: 10px; margin: 0 0 18px; }
+#stockcount .sc-bar > b.mono {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 15px;
+    letter-spacing: .5px;
+    color: var(--text);
+}
+#stockcount .sc-bar > .dim { font-size: 13.5px; }
+
+#stockcount .sc-banner {
+    margin: 0 0 18px;
+    padding: 13px 16px 13px 18px;
+    border-radius: 12px;
+    border: 1px solid var(--u-chip-line);
+    background: linear-gradient(110deg, var(--u-chip-bg), transparent 75%), var(--u-surface);
+    box-shadow: inset 4px 0 0 var(--blue-bright);
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--text-dim);
+}
+#stockcount .sc-banner b { color: var(--text); font-weight: 600; }
+#stockcount .sc-banner.warn {
+    border-color: var(--u-warn-line);
+    background: linear-gradient(110deg, var(--u-warn-bg), transparent 75%), var(--u-surface);
+    box-shadow: inset 4px 0 0 var(--amber);
+}
+
+#stockcount .sc-err {
+    border-radius: 10px;
+    padding: 9px 14px;
+    font-size: 14px;
+    color: var(--u-bad-fg);
+    background: var(--u-bad-bg);
+    border: 1px solid var(--u-bad-line);
+}
+
+/* ---------- form controls (same pill look as Inventory / Stock Flow) ---------- */
+#stockcount .form-input,
+#stockcount .form-select {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 15px;
+    border-radius: 10px;
+    border: 1px solid var(--u-line);
+    background-color: var(--u-surface-flat);
+    color: var(--text);
+    transition: border-color .15s, box-shadow .15s;
+}
+#stockcount .form-input:hover,
+#stockcount .form-select:hover { border-color: var(--u-chip-line); }
+#stockcount .form-input:focus,
+#stockcount .form-select:focus {
+    border-color: var(--blue-bright);
+    box-shadow: 0 0 0 3px var(--u-chip-bg);
+    outline: none;
+}
+#stockcount .form-input.field-invalid,
+#stockcount .form-select.field-invalid { border-color: var(--red); }
+
+#stockcount .inv-search,
+#stockcount .inv-select {
+    min-height: 42px;
+    border-radius: 99px;
+    border: 1px solid var(--u-line);
+    background-color: var(--u-surface-flat);
+    color: var(--text);
+    transition: border-color .15s, box-shadow .15s;
+}
+#stockcount .inv-search {
+    min-width: 260px;
+    padding: 8px 16px 8px 42px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238fa1b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 15px 50%;
+    background-size: 17px 17px;
+}
+#stockcount .inv-select { padding: 8px 14px; color: var(--text-dim); }
+#stockcount .inv-search:hover,
+#stockcount .inv-select:hover { border-color: var(--u-chip-line); }
+#stockcount .inv-search:focus,
+#stockcount .inv-select:focus {
+    border-color: var(--blue-bright);
+    box-shadow: 0 0 0 3px var(--u-chip-bg);
+    outline: none;
+}
+#stockcount .sc-chk {
+    padding: 8px 14px;
+    border-radius: 99px;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line);
+    color: var(--text-dim);
+    font-size: 13.5px;
+    transition: border-color .15s, background .15s;
+}
+#stockcount .sc-chk:hover { border-color: var(--u-chip-line); background: var(--u-hover); }
+#stockcount .sc-chk input { accent-color: var(--blue-bright); }
+
+/* ---------- buttons ---------- */
+#stockcount .btn-primary,
+#stockcount .btn-danger,
+#stockcount .btn-secondary {
+    border-radius: 10px;
+    font-weight: 600;
+    letter-spacing: .6px;
+    transition: transform .15s, filter .15s, border-color .15s, background .15s, color .15s, box-shadow .15s;
+}
+#stockcount .btn-primary { padding: 10px 18px; box-shadow: 0 12px 24px -14px color-mix(in srgb, var(--blue-bright) 85%, transparent); }
+#stockcount .btn-primary:hover { transform: translateY(-1px); }
+#stockcount .btn-danger {
+    padding: 10px 16px;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--u-bad-fg);
+    background: var(--u-bad-bg);
+    border: 1px solid var(--u-bad-line);
+}
+#stockcount .btn-danger:hover { color: #fff; background: var(--red); border-color: var(--red); }
+#stockcount .btn-sm { padding: 6px 14px; font-size: 13px; border-radius: 99px; }
+#stockcount .sc-acts { gap: 10px; }
+#stockcount .sc-acts > button { height: 42px; }
+
+/* ---------- tables ---------- */
+#stockcount .table-wrapper { overflow-x: auto; }
+#stockcount tbody td.mono,
+#stockcount .mono { font-family: "IBM Plex Mono", monospace; letter-spacing: .3px; }
+#stockcount tbody td.r,
+#stockcount thead th.r { text-align: right; }
+#stockcount tbody tr:last-child td { border-bottom: 0; }
+#stockcount .sc-empty { text-align: center; padding: 34px 16px; color: var(--text-dim); font-size: 14.5px; }
+#stockcount .sc-subline { font-size: 12.5px; margin-top: 3px; line-height: 1.4; }
+
+/* history: product number + dates */
+#stockcount .sc-hist tbody td:first-child { font-weight: 600; color: var(--text); }
+#stockcount .sc-hist td.dim { white-space: nowrap; }
+
+/* count sheet: scrolls inside its card so the header stays visible */
+#stockcount .sc-sheet-panel .table-wrapper { max-height: 68vh; overflow: auto; }
+#stockcount .sc-sheet thead th { position: sticky; top: 0; z-index: 2; background: var(--u-head-bg); box-shadow: 0 1px 0 var(--u-line-soft); }
+html:not([data-theme="light"]) #stockcount .sc-sheet thead th { background: color-mix(in srgb, var(--card) 92%, #fff 8%); }
+#stockcount .sc-sheet tbody td:nth-child(2) { color: var(--text); font-weight: 500; min-width: 220px; }
+#stockcount .sc-sheet tbody td:first-child { color: var(--text-dim); }
+
+/* row states: soft tint + 4px rail, like Inventory */
+#stockcount .sc-sheet tbody tr { box-shadow: inset 4px 0 0 transparent; }
+#stockcount .sc-sheet tbody tr.sc-row-diff { box-shadow: inset 4px 0 0 var(--amber); }
+#stockcount .sc-sheet tbody tr.sc-row-diff td { background: color-mix(in srgb, var(--amber) 7%, transparent); }
+#stockcount .sc-sheet tbody tr.sc-row-over,
+#stockcount .sc-sheet tbody tr.sc-row-over.sc-row-diff { box-shadow: inset 4px 0 0 var(--red); }
+#stockcount .sc-sheet tbody tr.sc-row-over td,
+#stockcount .sc-sheet tbody tr.sc-row-over.sc-row-diff td { background: var(--u-bad-bg); }
+#stockcount .sc-sheet tbody tr.sc-row-diff:hover td { background: var(--u-warn-bg); }
+#stockcount .sc-sheet tbody tr.sc-row-over:hover td { background: color-mix(in srgb, var(--red) 18%, transparent); }
+
+/* counted-quantity box: compact, mono, easy to hit */
+#stockcount .sc-sheet input.sc-in {
+    width: 104px;
+    min-height: 38px;
+    padding: 6px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 14.5px;
+    font-weight: 600;
+    text-align: right;
+    border-radius: 9px;
+}
+#stockcount .sc-sheet input.sc-note { min-width: 160px; min-height: 38px; padding: 6px 12px; font-size: 14px; border-radius: 9px; }
+#stockcount .sc-sheet input::placeholder { color: var(--text-faint); }
+
+/* difference colours */
+#stockcount .sc-up   { color: var(--u-ok-fg);  font-weight: 600; }
+#stockcount .sc-down { color: var(--u-bad-fg); font-weight: 600; }
+#stockcount .sc-same { color: var(--text-faint); }
+
+/* small tags (Weekly / Monthly / Recount / Above limit) become soft chips */
+#stockcount .sc-tag,
+#stockcount .sc-auto {
+    margin-left: 7px;
+    padding: 1px 9px;
+    border-radius: 99px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+    background: var(--u-surface-flat);
+    border: 1px solid var(--u-line);
+    color: var(--text-dim);
+    vertical-align: 1px;
+}
+#stockcount .sc-tag.wk,
+#stockcount .sc-auto { color: var(--blue-bright); background: var(--u-chip-bg); border-color: var(--u-chip-line); }
+#stockcount .sc-tag.bad { color: var(--u-bad-fg); background: var(--u-bad-bg); border-color: var(--u-bad-line); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+    #stockcount .sc-bar .inv-search { flex: 1 1 220px; min-width: 0; }
+    #stockcount .sc-bar .sp { display: none; }
+    #stockcount .sc-acts { margin-left: 0; width: 100%; }
+}
+@media (max-width: 700px) {
+    #stockcount .sc-rules { grid-template-columns: minmax(0, 1fr); }
+    #stockcount .sc-sheet-panel .table-wrapper { max-height: 60vh; }
+    #stockcount .sc-sheet input.sc-in { width: 88px; }
+}
+
+/* ---------- manual count: reason card ---------- */
+#stockcount .sc-manual { margin-top: 14px; padding-top: 0; border-top: 0; }
+#stockcount .sc-reason-card {
+    position: relative;
+    overflow: hidden;
+    padding: 20px 22px;
+    border-radius: 12px;
+    border: 1px solid var(--u-chip-line);
+    background: linear-gradient(110deg, var(--u-chip-bg), transparent 70%), var(--u-surface);
+    box-shadow: inset 4px 0 0 var(--blue-bright);
+    animation: scReasonIn .22s ease both;
+}
+@keyframes scReasonIn { from { opacity: 0; transform: translateY(-6px); } }
+#stockcount .sc-reason-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+#stockcount .sc-reason-ico {
+    flex: none;
+    width: 38px; height: 38px;
+    display: grid; place-items: center;
+    border-radius: 11px;
+    color: var(--blue-bright);
+    background: var(--u-chip-bg);
+    border: 1px solid var(--u-chip-line);
+}
+#stockcount .sc-reason-ico .ico { width: 19px; height: 19px; vertical-align: 0; }
+#stockcount .sc-reason-title { font-family: "Oswald", sans-serif; font-weight: 600; font-size: 16px; letter-spacing: .6px; text-transform: uppercase; color: var(--text); }
+#stockcount .sc-reason-sub { font-size: 13.5px; color: var(--text-dim); margin-top: 2px; }
+#stockcount .sc-req {
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: 99px;
+    font-size: 10px;
+    letter-spacing: .8px;
+    color: var(--u-bad-fg);
+    background: var(--u-bad-bg);
+    border: 1px solid var(--u-bad-line);
+    vertical-align: 1px;
+}
+#stockcount .sc-other { margin-top: 14px; }
+#stockcount .sc-other[hidden] { display: none; }
+#stockcount .sc-reason-card .sc-err { margin-top: 14px; }
+#stockcount .sc-reason-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px 18px; flex-wrap: wrap; margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--u-line-soft); }
+#stockcount .sc-reason-foot .sc-hint { margin: 0; }
