@@ -199,3 +199,13 @@ html[data-theme="light"] #usermgmt { --u-on-accent: #ffffff; }
     #usermgmt .ui2-actions { width: 100%; }
     #usermgmt .ui2-actions .btn-primary, #usermgmt .ui2-actions .btn-secondary { flex: 1 1 auto; justify-content: center; }
 }
+/* Account lifecycle actions stay readable in the shared edit dialog. */
+#accountViewToggle { display: flex; flex-wrap: wrap; gap: 8px; }
+#accountViewToggle .pill-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    border-radius: 99px; padding: 7px 14px; white-space: normal;
+}
+#accountViewToggle .pill-btn .count { border-radius: 99px; padding: 2px 7px; }
+#editUserModalOverlay .modal-footer { flex-wrap: wrap; gap: 10px; }
+#editUserModalOverlay .modal-footer > button { max-width: 100%; white-space: normal; height: auto; }
+#accountStatusFilter[hidden], #editUserDeleteBtn[hidden] { display: none; }

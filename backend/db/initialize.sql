@@ -7,6 +7,7 @@
 \ir 008_production.sql
 \ir 009_customer_registration.sql
 \ir 026_user_sessions.sql
+\ir 028_user_soft_delete.sql
 \ir 025_security_hardening.sql
 INSERT INTO roles (role_key,label) VALUES
  ('finance','Finance-Admin Officer'), ('cashier','Sales Staff / Cashier'), ('customer','Customer');

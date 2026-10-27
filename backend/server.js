@@ -744,6 +744,8 @@ async function audit(client, user, action, detail) {
     [user.id, user.name, user.roleLabel, action, detail, ctx.ip ? String(ctx.ip).slice(0, 64) : null, ctx.ua ? String(ctx.ua).slice(0, 300) : null]);
 }
 
+const userLifecycle = require('./user-lifecycle')({ pool, tx, audit, revocation, sessions, forgetAccountCheck, ValidationError });
+
 app.locals.alerts = require('./security-alerts')({ mailer: require('./mailer') });   // detective control: alerts on repeated failed sign-ins (OWASP A09)
 require('./login-lockout')({ app, pool, wrap, audit, str, EMAIL_RE });
 /* The ONLY place a sign-in session is started. Called after the password AND the one-time code (login-otp.js) were right,
@@ -1545,16 +1547,18 @@ app.post('/api/inventory/automation/production-run', auth('finance'), wrap(async
 
 /* Customer directory belongs to the cashier, not Finance. Never expose other staff accounts. */
 app.get('/api/pos/customer-directory', auth('cashier'), wrap(async (req, res) => {
+  await userLifecycle.ready();
   // the directory also says when they joined and how much they have done in the shop, so the cashier can tell regulars apart
   const { rows } = await pool.query(`SELECT u.user_id AS id, u.full_name AS name, u.email, u.phone, u.status, u.username,
     to_char(u.last_login AT TIME ZONE $1, 'Mon DD, YYYY HH12:MI AM') AS "lastLogin",
     to_char(u.created_at AT TIME ZONE $1, 'Mon DD, YYYY') AS joined, (EXTRACT(EPOCH FROM u.created_at) * 1000)::bigint AS "joinedAt",
     (SELECT count(*)::int FROM orders o WHERE o.customer_id = u.user_id) AS orders,
     (SELECT count(*)::int FROM product_reviews pr WHERE pr.user_id = u.user_id) AS reviews
-    FROM users u JOIN roles r ON r.role_id=u.role_id WHERE r.role_key='customer' ORDER BY u.full_name`, [TZ]);
+    FROM users u JOIN roles r ON r.role_id=u.role_id WHERE r.role_key='customer' AND u.deleted_at IS NULL ORDER BY u.full_name`, [TZ]);
   res.json(rows);
 }));
 app.get('/api/pos/customers/:id/profile', auth('cashier'), wrap(async (req,res) => {
+  await userLifecycle.ready();
   if (!/^\d+$/.test(req.params.id)) return res.status(400).json({error:'Invalid customer ID'});
   // Same details Finance sees, minus the company TIN. Never any password hash, token or consent record.
   const {rows}=await pool.query(`SELECT u.user_id,u.full_name AS name,u.email,u.phone,u.status,u.username,
@@ -1562,7 +1566,7 @@ app.get('/api/pos/customers/:id/profile', auth('cashier'), wrap(async (req,res) 
     u.gender,u.company_name,u.company_position,(u.email_verified_at IS NOT NULL) AS email_verified,
     to_char(u.created_at AT TIME ZONE $2,'Mon DD, YYYY') AS joined,
     to_char(u.last_login AT TIME ZONE $2,'Mon DD, YYYY HH12:MI AM') AS last_login
-    FROM users u JOIN roles r ON r.role_id=u.role_id WHERE u.user_id=$1 AND r.role_key='customer'`,[req.params.id,TZ]);
+    FROM users u JOIN roles r ON r.role_id=u.role_id WHERE u.user_id=$1 AND r.role_key='customer' AND u.deleted_at IS NULL`,[req.params.id,TZ]);
   if(!rows.length)return res.status(404).json({error:'Customer not found'});
   const u=rows[0], guess=u.first_name==null?splitFullName(u.name):null;
   res.json({ id:u.user_id, name:u.name, username:u.username, email:u.email, phone:u.phone||'', status:u.status,
@@ -1573,15 +1577,18 @@ app.get('/api/pos/customers/:id/profile', auth('cashier'), wrap(async (req,res) 
 }));
 /* ---------- users & audit (finance only) ---------- */
 app.get('/api/users', auth('finance'), wrap(async (req, res) => {
+  await userLifecycle.ready();
+  const deleted = req.query.deleted === '1';
   const { rows } = await pool.query(
-    `SELECT u.user_id, u.full_name, u.username, u.email, r.label, r.role_key, u.status,
+    `SELECT u.user_id, u.full_name, u.username, u.email, r.label, r.role_key, u.status, u.deleted_at,
             to_char(u.last_login AT TIME ZONE $1, 'YYYY-MM-DD HH12:MI AM') AS last_login,
             EXTRACT(EPOCH FROM u.last_login)::bigint AS last_login_epoch,
             (u.avatar IS NOT NULL) AS has_avatar
        FROM users u JOIN roles r USING (role_id)
-      ORDER BY u.last_login DESC NULLS LAST, u.full_name`, [TZ]);   // most recent sign-in first; accounts that never signed in go last
+      WHERE (u.deleted_at IS NOT NULL) = $2
+      ORDER BY u.last_login DESC NULLS LAST, u.full_name`, [TZ, deleted]);   // most recent sign-in first; accounts that never signed in go last
   res.json(rows.map(u => ({ id: u.user_id, name: u.full_name, username: u.username, email: u.email, role: u.label,
-    roleKey: u.role_key, status: u.status, lastLogin: u.last_login || 'Never',
+    roleKey: u.role_key, status: u.status, deletedAt: u.deleted_at, lastLogin: u.last_login || 'Never',
     lastLoginAt: u.last_login_epoch == null ? null : Number(u.last_login_epoch), hasAvatar: !!u.has_avatar,
     isYou: u.user_id === req.user.id })));   // the page hides Disable on your own row
 }));
@@ -1589,6 +1596,7 @@ app.get('/api/users', auth('finance'), wrap(async (req, res) => {
 // Read-only registered customer details for Finance/Admin Customer Management.
 // Never expose password hashes, verification tokens, or private consent records.
 app.get('/api/customers/:id/profile', auth('finance'), wrap(async (req, res) => {
+  await userLifecycle.ready();
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id) || id < 1) return res.status(404).json({ error: 'Customer not found' });
   const { rows } = await pool.query(`SELECT u.user_id, u.full_name, u.username, u.email, u.phone, u.status,
@@ -1599,7 +1607,7 @@ app.get('/api/customers/:id/profile', auth('finance'), wrap(async (req, res) => 
       to_char(u.created_at AT TIME ZONE $2, 'Mon DD, YYYY') AS joined,
       to_char(u.last_login AT TIME ZONE $2, 'Mon DD, YYYY HH12:MI AM') AS last_login
     FROM users u JOIN roles r ON r.role_id = u.role_id
-    WHERE u.user_id = $1 AND r.role_key = 'customer'`, [id, TZ]);
+    WHERE u.user_id = $1 AND r.role_key = 'customer' AND u.deleted_at IS NULL`, [id, TZ]);
   if (!rows.length) return res.status(404).json({ error: 'Customer not found' });
   const u = rows[0]; const guess = u.first_name == null ? splitFullName(u.full_name) : null;
   res.json({ id: u.user_id, name: u.full_name, username: u.username, email: u.email,
@@ -1649,8 +1657,10 @@ app.patch('/api/users/:id', auth('finance'), wrap(async (req, res) => {
   const sent = PROFILE_FIELDS.filter((k) => b[k] !== undefined);
   if (sent.length) throw new ValidationError({ role: 'Finance can only change the role. Personal details are changed by the account owner in My Profile' });
   const out = await tx(async (client) => {
-    const t = (await client.query(`SELECT u.user_id, u.full_name, u.email, u.status, r.role_key, r.label FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1 FOR UPDATE`, [id])).rows[0];
+    await userLifecycle.lock(client, req.user);
+    const t = (await client.query(`SELECT u.user_id, u.full_name, u.email, u.status, u.deleted_at, r.role_key, r.label FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1 FOR UPDATE`, [id])).rows[0];
     if (!t) throw new ValidationError({ id: 'Account not found' });
+    if (t.deleted_at) throw new ValidationError({ id: 'Restore this deleted account before changing its role' });
     const roleKey = str(b.roleKey);
     if (!['finance', 'cashier', 'customer'].includes(roleKey)) throw new ValidationError({ role: 'Choose a valid role' });
     if (roleKey === t.role_key) return { t, roleKey, changed: false };
@@ -1669,40 +1679,22 @@ app.patch('/api/users/:id', auth('finance'), wrap(async (req, res) => {
   res.json({ ok: true, name: out.t.full_name, email: out.t.email, roleKey: out.roleKey, changed: out.changed });
 }));
 
-// Delete a CUSTOMER account that has no history yet (no orders, quotations, reviews or payments) — e.g. one made by mistake.
-// A customer with history is disabled instead, so their orders and invoices keep pointing at a real account. Staff accounts are never deleted here.
+// Soft deletion preserves staff attribution, customer history and all related records.
 app.delete('/api/users/:id', auth('finance'), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid request' });
-  const out = await tx(async (client) => {
-    const u = (await client.query(`SELECT u.user_id, u.full_name, u.email, r.role_key FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1 FOR UPDATE`, [id])).rows[0];
-    if (!u) throw new ValidationError({ id: 'Account not found' });
-    if (u.role_key !== 'customer') throw new ValidationError({ id: 'Staff accounts are disabled, not deleted, so the audit log keeps who did what' });
-    const used = (await client.query(`SELECT
-        (SELECT count(*) FROM orders WHERE customer_id = $1) + (SELECT count(*) FROM quote_requests WHERE customer_id = $1) +
-        (SELECT count(*) FROM product_reviews WHERE user_id = $1) AS n`, [id])).rows[0];
-    if (+used.n > 0) throw new ValidationError({ id: `${u.full_name} has orders, quotations or reviews, so the account is kept for the records. Disable it instead` });
-    // things that belong only to the account itself go with it
-    for (const t of ['customer_addresses', 'notifications', 'cart_items']) {
-      const has = (await client.query(`SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = 'user_id'`, [t])).rowCount;
-      if (has) await client.query(`DELETE FROM ${t} WHERE user_id = $1`, [id]);
-    }
-    try { await client.query('SAVEPOINT del_user'); await client.query('DELETE FROM users WHERE user_id = $1', [id]); }
-    catch (err) {
-      if (err.code !== '23503') throw err;                    // still referenced somewhere: keep it, disable instead
-      await client.query('ROLLBACK TO SAVEPOINT del_user');
-      throw new ValidationError({ id: `${u.full_name} is still linked to other records, so the account is kept. Disable it instead` });
-    }
-    await audit(client, req.user, 'Record deleted', `Customer account deleted — ${u.full_name} (${u.email}); it had no orders, quotations or reviews`);
-    return u;
-  });
-  res.json({ ok: true, name: out.full_name });
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid request' });
+  res.json(await userLifecycle.change(id, req.user));
+}));
+app.post('/api/users/:id/restore', auth('finance'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid request' });
+  res.json(await userLifecycle.change(id, req.user, true));
 }));
 
 // Finance can disable / re-enable any account, including another Finance-Admin (e.g. one who left the company). Two rules:
 //   - never your own account (another Finance-Admin has to do it), so nobody locks themselves out by mistake;
 //   - at least one active Finance-Admin must remain, or nobody could manage the system any more.
-// Finance rows are locked while checking, so two admins disabling each other at the same moment cannot both succeed.
+// Finance lifecycle decisions share a transaction lock, so concurrent changes cannot remove every administrator.
 // The disabled person is signed out on their next request (see accountStillValid above).
 app.patch('/api/users/:id/status', auth('finance'), wrap(async (req, res) => {
   const id = Number(req.params.id);
@@ -1710,8 +1702,10 @@ app.patch('/api/users/:id/status', auth('finance'), wrap(async (req, res) => {
   if (!Number.isInteger(id) || !['active', 'disabled'].includes(status)) return res.status(400).json({ error: 'Invalid request' });
   if (id === req.user.id && status === 'disabled') return res.status(403).json({ error: 'You cannot disable your own account. Ask another Finance-Admin to do it.' });
   const out = await tx(async (c) => {
-    const t = (await c.query('SELECT u.full_name, u.status, r.role_key, r.label FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1 FOR UPDATE OF u', [id])).rows[0];
+    await userLifecycle.lock(c, req.user);
+    const t = (await c.query('SELECT u.full_name, u.status, u.deleted_at, r.role_key, r.label FROM users u JOIN roles r USING (role_id) WHERE u.user_id = $1 FOR UPDATE OF u', [id])).rows[0];
     if (!t) return { code: 404, error: 'Account not found' };
+    if (t.deleted_at) return { code: 409, error: 'Restore this deleted account before changing its status' };
     if (t.status === status) return { ok: true, t };
     if (t.role_key === 'finance' && status === 'disabled') {
       const left = (await c.query(`SELECT u.user_id FROM users u JOIN roles r USING (role_id) WHERE r.role_key = 'finance' AND u.status = 'active' FOR UPDATE OF u`)).rows

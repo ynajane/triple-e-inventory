@@ -8,7 +8,7 @@
     "create-user": "node scripts/create-user.js",
     "test:security": "node test/security.test.js && node test/rbac.test.js && node test/security-alerts.test.js && node test/login-otp.test.js && node test/db-hardening.test.js && node --test test/numeric-validation.test.js test/recovery.test.js test/production-config.test.js",
     "test:data-integrity": "node --test test/transaction-integrity.test.js test/payment-safeguards.test.js && node test/payment-terms.test.js && node test/quote-rules.test.js && node test/quote-chain.test.js && node test/quote-desk.test.js",
-    "test:startup": "node --test test/startup.test.js",
+    "test:startup": "node --test test/startup.test.js test/user-lifecycle.test.js",
     "test:cashier-ui": "node --test test/cashier-ui.test.js",
     "check:production": "node scripts/check-production.js"
   },

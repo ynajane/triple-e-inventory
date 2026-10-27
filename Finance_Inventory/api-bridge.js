@@ -153,10 +153,10 @@
       console.warn('[api-bridge] ' + path + ' failed: ' + e.message); return fallback;
     });
     const archivedRes = soft('/products?archived=1', archivedProductData.slice());
-    const [inventory, products, suppliers, movements, users, audit, reasons, categories, salesRes] = await Promise.all([
+    const [inventory, products, suppliers, movements, audit, reasons, categories, salesRes] = await Promise.all([
       soft('/inventory', inventoryCache), soft('/products', productCatalogData.slice()),
       soft('/suppliers', supplierData.slice()), soft('/movements?limit=1000', movementCache),
-      soft('/users', userAccountsData.slice()), soft('/audit', auditLogData.slice()), soft('/reasons', REASONS), soft('/categories', CATEGORIES),
+      soft('/audit', auditLogData.slice()), soft('/reasons', REASONS), soft('/categories', CATEGORIES),
       soft('/sales', { sales: [] })]);
     salesCache = (salesRes && salesRes.sales) || [];
     replace(archivedProductData, Array.isArray(await archivedRes) ? await archivedRes : []);
@@ -183,7 +183,7 @@
     movementCache = movements;
     safe(renderMovementLog);
     safe(renderReports);
-    replace(userAccountsData, users);   // User Management lists staff AND customer accounts (filter by role on the page)
+    if (typeof window.reloadUserAccounts === 'function') await window.reloadUserAccounts(false);
     replace(auditLogData, audit);
 
     const low = inventory.filter((i) => getStockStatus(i) === 'low');
@@ -701,12 +701,18 @@
         : '<div class="sup-empty">In-house production — made by the company, so no supplier is needed.</div>');
   }
 
-  /* ---------- Storage location dropdown (locations already used by products + a starter list; last option adds a new one) ---------- */
+  /* ---------- Storage locations belong to the selected product department ---------- */
   const NEW_LOCATION = '__new_location__';
-  const STARTER_LOCATIONS = ['Warehouse A', 'Warehouse B', 'Warehouse C', 'Storeroom'];
+  const STARTER_LOCATIONS = {
+    'Raw Materials': ['Raw Materials Storage'],
+    'Finishing Supplies': ['Finishing Supplies Storage'],
+    'Finished Goods': ['Finished Goods Storage']
+  };
   function locationList() {
     const seen = new Map();
-    STARTER_LOCATIONS.concat((productCatalogData || []).map((p) => p && p.location)).forEach((l) => {
+    const department = $('npDept').value;
+    (STARTER_LOCATIONS[department] || []).concat((productCatalogData || [])
+      .filter((p) => p && p.department === department).map((p) => p.location)).forEach((l) => {
       l = clean(l); if (l && !seen.has(l.toLowerCase())) seen.set(l.toLowerCase(), l);
     });
     return Array.from(seen.values()).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -716,7 +722,9 @@
     if (!sel || sel.tagName !== 'SELECT') return;
     sel.innerHTML = '<option value="">Select a location…</option>' +
       locationList().map((l) => '<option value="' + esc(l) + '">' + esc(l) + '</option>').join('') +
-      '<option value="' + NEW_LOCATION + '">+ Add new location…</option>';
+      ($('npDept').value ? '<option value="' + NEW_LOCATION + '">+ Add new location…</option>' : '');
+    sel.disabled = !$('npDept').value;
+    delete sel.dataset.auto;
     setLocationValue(keep);
   }
   function setLocationValue(name) {
@@ -1019,7 +1027,7 @@
     if (!overlay || !form || form.dataset.bridge) return;
     form.dataset.bridge = '1';
     $('npDept').addEventListener('change', () => {
-      fillCategories(); syncCostField(); syncPriceField(); validateField('npListPrice', false); syncSupplierPick(); syncWeightField();
+      fillCategories(); fillLocations(''); validateField('npLocation', false); syncCostField(); syncPriceField(); validateField('npListPrice', false); syncSupplierPick(); syncWeightField();
       const sku = productModalState(); syncUnitField(sku ? productCatalogData.find((p) => p.sku === sku) : null); validateField('npUnit', false);
       applyDeptDefaults(); suggestSku();
     });

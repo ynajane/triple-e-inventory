@@ -4440,6 +4440,8 @@ const userAccountsData = [
 ];
 
 const pendingInvitesData = [];
+let accountView = "current";
+let accountReloadVersion = 0;
 
 
 function getInitials(name) {
@@ -4477,25 +4479,34 @@ function renderAccountsTable() {
         return;
     }
 
-    // staff AND customer accounts are managed here (create by invitation, edit, disable / enable, delete a customer with no history)
-    const staffCount = userAccountsData.filter(u => u.roleKey !== "customer").length;
-    const custCount = userAccountsData.length - staffCount;
+    // Deleted accounts have their own view; ordinary counts and filters use current accounts.
+    const viewUsers = userAccountsData.filter(u => !!u.deletedAt === (accountView === "deleted"));
+    document.querySelectorAll("#accountViewToggle [data-view]").forEach(button => {
+        const selected = button.dataset.view === accountView;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-pressed", String(selected));
+        button.querySelector(".count").textContent = String(userAccountsData.filter(u => !!u.deletedAt === (button.dataset.view === "deleted")).length);
+    });
+    const staffCount = viewUsers.filter(u => u.roleKey !== "customer").length;
+    const custCount = viewUsers.length - staffCount;
     if (count) count.textContent = `${staffCount} staff \u00B7 ${custCount} customer${custCount === 1 ? "" : "s"}`;
 
     const roleSel = document.getElementById("accountRoleFilter");
     const roleWanted = roleSel ? roleSel.value : "all";
     // status filter: active accounts, or disabled ones (anything that is not active cannot sign in)
     const statusSel = document.getElementById("accountStatusFilter");
-    const statusWanted = statusSel ? statusSel.value : "all";
+    const statusWanted = statusSel && accountView !== "deleted" ? statusSel.value : "all";
+    if (statusSel) statusSel.hidden = accountView === "deleted";
     const isActive = (u) => u.status === "active";
     if (statusSel) {
-        const act = userAccountsData.filter(isActive).length, dis = userAccountsData.length - act;
-        statusSel.options[0].textContent = `All statuses (${userAccountsData.length})`;
+        const act = viewUsers.filter(isActive).length, dis = viewUsers.length - act;
+        statusSel.options[0].textContent = `All statuses (${viewUsers.length})`;
         statusSel.options[1].textContent = `Active accounts (${act})`;
         statusSel.options[2].textContent = `Disabled accounts (${dis})`;
     }
     const visible = userAccountsData
         .map((user, index) => ({ user, index }))
+        .filter(x => !!x.user.deletedAt === (accountView === "deleted"))
         .filter(x => roleWanted === "all" || (roleWanted === "staff" ? x.user.roleKey !== "customer" : x.user.roleKey === roleWanted))
         .filter(x => statusWanted === "all" || (statusWanted === "active" ? isActive(x.user) : !isActive(x.user)))
         // latest sign-in on top; accounts that have never signed in go to the bottom (then by name)
@@ -4503,14 +4514,14 @@ function renderAccountsTable() {
             String(a.user.name || "").localeCompare(String(b.user.name || "")));
 
     if (count && (roleWanted !== "all" || statusWanted !== "all")) {
-        count.textContent = `${visible.length} of ${userAccountsData.length} accounts`;
+        count.textContent = `${visible.length} of ${viewUsers.length} accounts`;
     }
 
     if (visible.length === 0) {
 
         tableBody.innerHTML = `
             <tr class="no-results-row">
-                <td colspan="5">${statusWanted === "disabled" ? "No disabled accounts." : statusWanted === "active" ? "No active accounts match this filter." : "No accounts found."}</td>
+                <td colspan="5">${accountView === "deleted" ? "No deleted accounts match this filter." : statusWanted === "disabled" ? "No disabled accounts." : statusWanted === "active" ? "No active accounts match this filter." : "No accounts found."}</td>
             </tr>
         `;
 
@@ -4544,7 +4555,7 @@ function renderAccountsTable() {
 
                 <td>
                     <span class="status-pill ${user.status}">
-                        ${user.status === "active" ? "Active" : "Disabled"}
+                        ${user.deletedAt ? "Deleted" : user.status === "active" ? "Active" : "Disabled"}
                     </span>
                 </td>
 
@@ -4751,6 +4762,7 @@ function closeInviteUserModal() {
 
 
 async function reloadUserAccounts(showSpinner) {
+    const version = ++accountReloadVersion;
     const tableBody = document.getElementById("accountsTableBody");
     if (showSpinner && tableBody && userAccountsData.length === 0) {
         tableBody.innerHTML = `
@@ -4760,20 +4772,24 @@ async function reloadUserAccounts(showSpinner) {
         `;
     }
     try {
-        const res = await fetch("/api/users", {
+        const [res, deletedRes] = await Promise.all([fetch("/api/users", {
             credentials: "same-origin",
             headers: { "Accept": "application/json" }
-        });
+        }), fetch("/api/users?deleted=1", { credentials: "same-origin", headers: { "Accept": "application/json" } })]);
+        if (version !== accountReloadVersion) return;
         if (res.status === 401) return;
-        if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) {
-                userAccountsData.splice(0, userAccountsData.length, ...data);
+        if (!res.ok || !deletedRes.ok) throw new Error("Could not load accounts");
+        {
+            const [data, deleted] = await Promise.all([res.json(), deletedRes.json()]);
+            if (version !== accountReloadVersion) return;
+            if (Array.isArray(data) && Array.isArray(deleted)) {
+                userAccountsData.splice(0, userAccountsData.length, ...data, ...deleted);
                 renderAccountsTable();
             }
         }
     } catch (err) {
         console.warn("[users] could not reload accounts:", err.message);
+        inviteToast("Could not refresh accounts. Try Refresh again.", true);
     }
     if (typeof loadPendingInvites === "function") {
         loadPendingInvites().catch(() => {});
@@ -4788,6 +4804,12 @@ function initUserManagement() {
     loadPendingInvites();
     reloadUserAccounts(false);
     initEditUserModal();
+    document.querySelectorAll("#accountViewToggle [data-view]").forEach(button => {
+        button.addEventListener("click", () => {
+            accountView = button.dataset.view;
+            renderAccountsTable();
+        });
+    });
 
     const accountRoleFilter = document.getElementById("accountRoleFilter");
     if (accountRoleFilter) accountRoleFilter.addEventListener("change", renderAccountsTable);
@@ -4994,7 +5016,7 @@ function initUserManagement() {
    EDIT USER MODAL
 ===================================================== */
 
-let editingUserIndex = null;
+let editingUserId = null;
 let editUserMounted = false;
 let editUserLoaded = false;
 
@@ -5004,11 +5026,11 @@ function openEditUserModal(index) {
     const overlay = document.getElementById("editUserModalOverlay");
     const user = userAccountsData[index];
     if (!overlay || !user) return;
-    editingUserIndex = index;
+    editingUserId = user.id;
 
     // Finance does not edit personal information: the details are shown read-only, only the role can change
     const isCust = user.roleKey === "customer";
-    const canChange = !isCust && !user.isYou;
+    const canChange = !isCust && !user.isYou && !user.deletedAt;
     const role = document.getElementById("editUserRole");
     const info = document.getElementById("editUserInfo");
     const title = document.getElementById("editUserTitle");
@@ -5025,11 +5047,12 @@ function openEditUserModal(index) {
         .then(async res => {
             const d = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(d.error || "Could not load this account");
-            if (editingUserIndex !== index) return;
+            if (editingUserId !== user.id) return;
             const born = d.birthdate ? new Date(d.birthdate + "T00:00:00").toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" }) : "";
             if (info) info.innerHTML = '<dl class="eu-grid">' +
                 row("Name", d.name) + row("Email", d.email) + row("Mobile", d.phone) +
-                row("Status", d.status === "active" ? "Active" : "Disabled") + row("Birthdate", born) + row("Gender", d.gender) +
+                row("Status", user.deletedAt ? "Deleted" : d.status === "active" ? "Active" : "Disabled") +
+                (user.deletedAt ? row("Deleted", new Date(user.deletedAt).toLocaleString("en-PH")) : "") + row("Birthdate", born) + row("Gender", d.gender) +
                 (isCust ? row("Company", d.companyName) + row("Position", d.companyPosition) + row("TIN", d.companyTin) : "") + '</dl>';
             editUserLoaded = true;
             if (saveBtn) saveBtn.disabled = !canChange;
@@ -5052,7 +5075,7 @@ function openEditUserModal(index) {
         const footer = overlay.querySelector(".modal-footer");
         if (footer) footer.insertBefore(statusBtn, footer.firstChild);
     }
-    if (user.isYou) {
+    if (user.isYou || user.deletedAt) {
         statusBtn.style.display = "none";
     } else {
         statusBtn.style.display = "";
@@ -5090,6 +5113,41 @@ function openEditUserModal(index) {
         };
     }
 
+    let deleteBtn = document.getElementById("editUserDeleteBtn");
+    if (!deleteBtn) {
+        deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.id = "editUserDeleteBtn";
+        overlay.querySelector(".modal-footer").prepend(deleteBtn);
+    }
+    deleteBtn.hidden = !!user.isYou;
+    deleteBtn.disabled = false;
+    deleteBtn.className = user.deletedAt ? "btn-secondary" : "btn-danger-sm";
+    deleteBtn.textContent = user.deletedAt ? "Restore account" : "Delete account";
+    deleteBtn.onclick = async () => {
+        const restore = !!user.deletedAt;
+        deleteBtn.disabled = true;
+        try {
+            if (!(await uiConfirm({
+                title: `${restore ? "Restore" : "Delete"} ${user.name}?`,
+                message: restore
+                    ? "The account returns to the accounts list as disabled. Enable it separately to allow sign-in again."
+                    : "The account moves to Deleted and all sessions end. Orders, payments and audit history are kept. You can restore the account later.",
+                confirm: restore ? "Restore" : "Delete account", danger: !restore
+            }))) return;
+            const res = await fetch("/api/users/" + user.id + (restore ? "/restore" : ""), {
+                method: restore ? "POST" : "DELETE", credentials: "same-origin",
+                headers: { "Content-Type": "application/json" }
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error((data.fields && data.fields.id) || data.error || "Request failed");
+            closeEditUserModal();
+            await reloadUserAccounts(false);
+            inviteToast(user.name + (restore ? " restored as disabled" : " moved to Deleted"));
+        } catch (e) { inviteToast(e.message, true); }
+        finally { deleteBtn.disabled = false; }
+    };
+
     overlay.classList.add("open");
     document.body.style.overflow = "hidden";
     document.documentElement.style.overflow = "hidden";
@@ -5124,7 +5182,7 @@ function closeEditUserModal() {
         error.classList.remove("show");
     }
 
-    editingUserIndex = null;
+    editingUserId = null;
 
 }
 
@@ -5186,14 +5244,14 @@ function initEditUserModal() {
 
             event.preventDefault();
 
-            const user = userAccountsData[editingUserIndex];
+            const user = userAccountsData.find(u => u.id === editingUserId);
 
             if (!user || !editUserLoaded) {
                 return;
             }
 
             const isCust = user.roleKey === "customer";
-            if (isCust || user.isYou) return;                       // nothing Finance can change here
+            if (isCust || user.isYou || user.deletedAt) return;                       // nothing Finance can change here
             if (error) error.classList.remove("show");
             const roleSel = document.getElementById("editUserRole");
             const roleKey = roleSel.value === "Cashier" ? "cashier" : "finance";

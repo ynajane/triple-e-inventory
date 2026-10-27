@@ -12,7 +12,7 @@
 
     function update() {
         var users = [], invites = [];
-        try { if (typeof userAccountsData !== "undefined" && Array.isArray(userAccountsData)) users = userAccountsData; } catch (e) {}
+        try { if (typeof userAccountsData !== "undefined" && Array.isArray(userAccountsData)) users = userAccountsData.filter(function (u) { return !u.deletedAt; }); } catch (e) {}
         try { if (typeof pendingInvitesData !== "undefined" && Array.isArray(pendingInvitesData)) invites = pendingInvitesData; } catch (e) {}
 
         var staff = users.filter(function (u) { return u.roleKey !== "customer"; }).length;

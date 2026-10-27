@@ -1473,7 +1473,7 @@
                     <div>
                         <div class="ui2-eyebrow"><span class="ui2-live"></span> Administration</div>
                         <h1>User Management</h1>
-                        <p>Everyone who can sign in: staff, cashiers and shop customers. Invite people, change roles, and switch accounts on or off.</p>
+                        <p>Manage staff, cashiers and shop customers. Invite people, change roles, manage sign-in access, or delete and restore accounts.</p>
                     </div>
                     <div class="ui2-actions">
                         <button class="btn-primary" id="inviteUserBtn" type="button">
@@ -1486,7 +1486,7 @@
                 <div class="stats">
                     <div class="stat-card" style="--accent:var(--blue-bright)">
                         <div class="ui2-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-                        <div class="stat-label">TOTAL ACCOUNTS</div>
+                        <div class="stat-label">CURRENT ACCOUNTS</div>
                         <div class="stat-value" id="umKpiTotal">&mdash;</div>
                         <div class="stat-foot" id="umKpiTotalFoot">Loading...</div>
                     </div>
@@ -1515,10 +1515,14 @@
                         <div>
                             <div class="panel-title">Accounts</div>
                             <div class="panel-sub" id="accountCount">2 accounts</div>
-                            <div class="um-hint">Click any account row to view card, edit role, or manage status</div>
+                            <div class="um-hint">Click an account to view details, manage access, delete or restore</div>
                         </div>
 
-                        <!-- role + status filters (same ids, script.js reads them) -->
+                        <div class="pill-bar" id="accountViewToggle" role="group" aria-label="Account view">
+                            <button type="button" class="pill-btn active" data-view="current" aria-pressed="true">Current<span class="count">0</span></button>
+                            <button type="button" class="pill-btn" data-view="deleted" aria-pressed="false">Deleted<span class="count">0</span></button>
+                        </div>
+                        <!-- role + status filters -->
                         <div class="inv-filters">
                             <select id="accountRoleFilter" class="inv-select" aria-label="Filter accounts by role">
                                 <option value="all">All roles</option>
@@ -3506,6 +3510,7 @@
                     <div class="form-group">
                         <label class="form-label" for="npLocation">Storage Location <span class="required-mark">*</span></label>
                         <select id="npLocation" class="form-select"><option value="">Select a location…</option></select>
+                        <div class="field-hint">Locations are listed for the selected department. Choose a department first.</div>
                         <div id="npLocationNewWrap" style="display:none; margin-top:8px">
                             <input type="text" id="npLocationNew" class="form-input" placeholder="Type the new storage location" maxlength="100" autocomplete="off">
                         </div>
@@ -3628,8 +3633,8 @@
     <script src="password-change.js?v=2"></script>
     <script src="ui-confirm.js?v=1"></script>
     <script src="form-assist.js?v=3"></script>
-    <script src="script.js?v=34"></script>
-    <script src="api-bridge.js?v=39"></script>
+    <script src="script.js?v=35"></script>
+    <script src="api-bridge.js?v=40"></script>
     <script src="sales-orders.js?v=17"></script>
     <link rel="stylesheet" href="sales-admin.css?v=10">
     <link rel="stylesheet" href="reports-sales.css?v=13">
@@ -3640,7 +3645,7 @@
     <link rel="stylesheet" href="product-details.css?v=2">
     <link rel="stylesheet" href="ui2-products.css?v=1">
     <link rel="stylesheet" href="ui2-suppliers.css?v=1">
-    <link rel="stylesheet" href="ui2-usermgmt.css?v=1">
+    <link rel="stylesheet" href="ui2-usermgmt.css?v=2">
     <link rel="stylesheet" href="ui2-pager.css?v=1">
     <link rel="stylesheet" href="ui2-auditlog.css?v=1">
     <link rel="stylesheet" href="ui2-reports.css?v=1">
@@ -3673,7 +3678,7 @@
     <script src="sidebar.js?v=3"></script>
     <script src="sales-hub.js?v=4"></script>
     <script src="table-pagination.js"></script>
-    <script src="ui2-usermgmt.js?v=1"></script>
+    <script src="ui2-usermgmt.js?v=2"></script>
     <script src="ui2-auditlog.js?v=1"></script>
     <script src="operations-schedule.js"></script>
 
