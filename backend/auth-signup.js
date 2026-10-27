@@ -15,7 +15,8 @@ const mailer = require('./mailer');
 
 const INVITE_TTL_HOURS = Math.min(Math.max(Number(process.env.INVITE_TTL_HOURS) || 72, 1), 24 * 14);
 // Finance can also set up a CUSTOMER account (User Management); the customer chooses their own password from the link
-const INVITE_ROLES = { finance: 'Finance-Admin Officer', cashier: 'Sales Staff / Cashier', customer: 'Customer (online shop)' };
+// Staff only: customers register themselves on the sign-in page, so Finance cannot invite them.
+const INVITE_ROLES = { finance: 'Finance-Admin Officer', cashier: 'Sales Staff / Cashier' };
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const NAME_RE = /^\p{L}[\p{L}\p{M} ]*$/u;          // letters and spaces only (no digits, symbols, dots, dashes)
 const titleCase = (v) => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase().replace(/(^|\s)(\p{L})/gu, (m, sp, ch) => sp + ch.toUpperCase());
