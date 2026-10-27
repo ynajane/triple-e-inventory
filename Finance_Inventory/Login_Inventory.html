@@ -742,23 +742,20 @@
   .notice, .form-error, .countdown{ border-radius:10px; }
   .legal-box{ border-radius:16px; }
   .mail-icon{ border-radius:50%; }
-  .site-foot{ position:relative; z-index:1; text-align:center; padding:0 16px 28px; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--steel-light); }
+  .site-foot{ position:relative; z-index:1; text-align:center; padding:0 16px 22px; margin-top:auto; font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--steel-light); }
   .site-foot a{ color:var(--blue-bright); text-decoration:none; }
   .site-foot a:hover{ text-decoration:underline; }
 
   /* fill the page: the card sits in the middle of the screen next to a short intro, and the footer stays at the bottom */
   body{ display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; }
-  .shell{ flex:1; display:flex; align-items:center; justify-content:center; gap:clamp(36px,7vw,110px); padding:clamp(20px,4vh,48px) clamp(16px,4vw,48px); position:relative; z-index:1; }
+  .shell{ flex:1; display:flex; align-items:flex-start; justify-content:center; padding:clamp(28px,6vh,64px) clamp(16px,4vw,48px) clamp(24px,4vh,40px); position:relative; z-index:1; }
   .shell .wrap{ margin:0; flex:0 1 452px; width:100%; padding:0; }
   .shell .wrap.wide{ flex-basis:532px; }
-  .side{ flex:0 1 400px; }
-  .side-tag{ display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:11.5px; letter-spacing:1.8px; text-transform:uppercase; color:var(--blue-bright); margin-bottom:14px; }
-  .side h2{ font-family:'Oswald',sans-serif; font-weight:600; font-size:clamp(26px,2.6vw,36px); line-height:1.2; margin:0 0 20px; }
-  .side ul{ list-style:none; margin:0 0 20px; padding:0; display:grid; gap:12px; }
-  .side li{ padding:12px 14px; border:1px solid var(--border); border-radius:10px; background:rgba(13,26,38,.55); color:var(--text-dim); font-size:14px; line-height:1.5; }
-  .side li b{ color:var(--text); }
-  .side p{ margin:0; font-family:'IBM Plex Mono',monospace; font-size:11.5px; letter-spacing:1.4px; text-transform:uppercase; color:var(--steel-light); }
-  @media (max-width:960px){ .side{ display:none; } .shell{ align-items:flex-start; } }
+  /* big desktop screens: scale the whole page (bar, card, footer) up together so it is not a small card in a sea of empty space */
+  .shell{ align-items:center; }
+  @media (min-width:1400px){ .site-nav, .shell, .site-foot{ zoom:1.2; } }
+  @media (min-width:1700px){ .site-nav, .shell, .site-foot{ zoom:1.4; } }
+  @media (min-width:2200px){ .site-nav, .shell, .site-foot{ zoom:1.75; } }
   @media (max-width:640px){
     .site-links a:not(.cta){ display:none; }
     .site-brand small{ display:none; }
@@ -790,17 +787,6 @@
   </header>
 
   <main class="shell">
-  <aside class="side" aria-label="About your account">
-    <span class="side-tag">Triple E Metal Products</span>
-    <h2>One account for your orders, quotations and payments.</h2>
-    <ul>
-      <li><b>Customers</b> track orders, request quotations and pay securely online.</li>
-      <li><b>Staff</b> sign in to the cashier counter and the inventory and finance desk.</li>
-      <li><b>Protected</b> with secure sign-in and automatic sign-out of old sessions.</li>
-    </ul>
-    <p>Quality metal products since 1999.</p>
-  </aside>
-
   <div class="wrap" id="wrap">
     <div class="ticks">
       <span></span><span></span><span></span><span></span><span></span>
