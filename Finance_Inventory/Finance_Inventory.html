@@ -3404,6 +3404,15 @@
                 </div>
 
 
+                <!-- FINISHED GOODS: MATERIALS NEEDED (bill of materials, per 1 unit) -->
+                <div id="npBomSection" class="np-bom-section" hidden>
+                    <div class="form-section-label">Materials Needed &middot; Finished Goods Only <span class="required-mark">*</span></div>
+                    <p class="field-hint" id="npBomHint">The Raw Materials and Finishing Supplies needed to make 1 unit of this product.</p>
+                    <div class="form-group">
+                        <div id="npBomList" class="np-bom-list"></div>
+                    </div>
+                </div>
+
                 <div class="form-section-label">
                     Stock &amp; Pricing
                 </div>
@@ -3494,8 +3503,9 @@
 
                 <div class="form-group" id="npWeightWrap" style="display:none">
                     <label class="form-label" for="npWeight">Weight per piece (kg)</label>
-                    <input type="text" id="npWeight" class="form-input" placeholder="Optional, e.g. 1.25" inputmode="decimal" maxlength="10" autocomplete="off">
-                    <div class="field-hint" id="npWeightHint">Used to work out the delivery fee for heavy orders. Leave blank if not known: the delivery fee is then just the area rate.</div>
+                    <input type="text" id="npWeight" class="form-input" placeholder="Auto" inputmode="decimal" maxlength="10" autocomplete="off" readonly>
+                    <label class="check-row" style="margin-top:6px"><input type="checkbox" id="npWeightManual"><span class="check-label">Set manually</span></label>
+                    <div class="field-hint" id="npWeightHint">Used to work out the delivery fee for heavy orders.</div>
                 </div>
 
                 <div class="form-row">
@@ -3544,16 +3554,6 @@
                         </label>
                         <div id="npSource" class="sup-readonly"></div>
                         <div class="field-hint">View only. Raw Materials and Finishing Supplies are bought from suppliers &mdash; manage them in Supplier Management. Finished Goods are made by the company (in-house production).</div>
-                    </div>
-                </div>
-
-
-                <!-- FINISHED GOODS: MATERIALS NEEDED (bill of materials, per 1 unit) -->
-                <div id="npBomSection" class="np-bom-section" hidden>
-                    <div class="form-section-label">Materials Needed &middot; Finished Goods Only <span class="required-mark">*</span></div>
-                    <p class="field-hint" id="npBomHint">The Raw Materials and Finishing Supplies needed to make 1 unit of this product.</p>
-                    <div class="form-group">
-                        <div id="npBomList" class="np-bom-list"></div>
                     </div>
                 </div>
 
@@ -3651,7 +3651,7 @@
     <link rel="stylesheet" href="ui2-reports.css?v=1">
     <link rel="stylesheet" href="ui2-notifications.css?v=1">
     <script src="quote-guide.js?v=2"></script>
-    <script src="sales-admin.js?v=17"></script>
+    <script src="sales-admin.js?v=18"></script>
     <script src="reports-tabs.js?v=3"></script>
     <script src="reports-jump.js?v=3"></script>
     <script src="reports-sales.js?v=4"></script>
@@ -3664,7 +3664,7 @@
     <script src="refund-admin.js?v=2"></script>
     <script src="stock-count-admin.js?v=10"></script>
     <script src="production-admin.js?v=6"></script>
-    <script src="product-materials.js?v=2"></script>
+    <script src="product-materials.js?v=3"></script>
     <script src="pricing-admin.js?v=3"></script>
     <script src="quick-stock.js?v=4"></script>
     <script src="finished-goods-shop.js?v=5"></script>

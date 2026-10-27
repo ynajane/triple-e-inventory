@@ -39,11 +39,38 @@
     sec.hidden = !on;
     if (on && !st.rows.length && !st.loading && !editingSku()) { st.rows.push({ sku: '', qty: '' }); }
     if (on) render();
+    syncWeight();
+  }
+
+  /* ---------- weight per piece: the mass of the materials one piece needs (mass units only), unless set manually ---------- */
+  function syncWeight() {
+    const w = $('npWeight'), man = $('npWeightManual');
+    if (!w || !man || !isFG() || st.loading || st.failed) return;
+    let kg = 0, ignored = false;
+    st.rows.forEach((r) => {
+      const m = material(r.sku), n = Number(r.qty);
+      if (!m || !(n > 0)) return;
+      const c = conv(n, r.entryUnit || m.unit, 'kg');
+      if (c == null) ignored = true; else kg += c;
+    });
+    kg = Math.round(kg * 1000) / 1000;
+    const auto = kg > 0 ? String(kg) : '';
+    if (!st.weightInit) {        // first look at this product: an existing weight that differs from the recipe stays as a manual entry
+      st.weightInit = true;
+      const cur = w.value.trim();
+      man.checked = cur !== '' && Math.abs(Number(cur) - kg) > 0.0005;
+    }
+    w.readOnly = !man.checked;
+    if (!man.checked) w.value = auto;
+    const hint = $('npWeightHint');
+    if (hint) hint.textContent = man.checked
+      ? 'Used to work out the delivery fee for heavy orders. Leave blank if not known: the delivery fee is then just the area rate.'
+      : 'Automatic: the total weight of the materials needed for 1 piece' + (ignored ? ' (materials not measured by weight are left out)' : '') + '. Used to work out the delivery fee for heavy orders. Tick “Set manually” to enter a different weight.';
   }
 
   /* ---------- the form was opened (new or edit) ---------- */
   async function onOpen() {
-    st.rows = []; st.dirty = false; st.failed = ''; st.loadedFor = null;
+    st.rows = []; st.dirty = false; st.failed = ''; st.loadedFor = null; st.weightInit = false;
     const sku = editingSku(), my = ++st.seq;
     const catalog = typeof productCatalogData !== 'undefined' ? productCatalogData : [];   // script.js global
     const item = sku ? catalog.find((p) => p.sku === sku) : null;
@@ -303,6 +330,8 @@
     const overlay = $('newProductModalOverlay'), dept = $('npDept');
     if (!overlay || !dept || !$('npBomSection')) return;
     bind();
+    document.addEventListener('triplee:recipe-changed', syncWeight);
+    const wm = $('npWeightManual'); if (wm) wm.addEventListener('change', syncWeight);
     dept.addEventListener('change', sync);
     const unit = $('npUnit'); if (unit) unit.addEventListener('change', () => { if (isFG()) render(); });
     let wasOpen = false;

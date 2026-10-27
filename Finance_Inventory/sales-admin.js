@@ -18,7 +18,7 @@
   const STATUSES = ['Pending Confirmation', 'Paid', 'Packed', 'Out for Delivery', 'Ready for Pickup', 'Delivered', 'Picked Up', 'Cancelled', 'Completed', 'Void Pending', 'Voided'];
 
   let sourceTab = 'POS';
-  let sales = [], FLOW = {}, quotesData = [], quick = 'all', shown = 100, openRef = null, busy = false, pendingErr = null, built = false, loading = false;
+  let sales = [], FLOW = {}, quotesData = [], debtOrders = [], quick = 'all', shown = 100, openRef = null, busy = false, pendingErr = null, built = false, loading = false;
 
   /* ---------- small helpers ---------- */
   async function api(path, options) {
@@ -234,7 +234,19 @@
       acts: [{ a: 'approve', label: 'Approve & restock', restock: true, fx: 'Refund approved and the items go back into stock.' },
         { a: 'approve', label: 'Approve (damaged)', restock: false, ghost: true, fx: 'Refund approved; the items are NOT put back in stock.' },
         { a: 'reject', label: 'Reject', ghost: true, fx: 'No refund is made.' }] }); });
-    return out.sort((a, b) => (b.g ? b.g.score : 50) - (a.g ? a.g.score : 50));   // quote approvals first, most urgent on top
+    // money decisions from Payment Terms: overdue balance holds and credit exceptions waiting for a second Finance approver
+    debtOrders.forEach((o) => {
+      const held = o.status === 'On Hold', pend = o.creditPending;
+      if (!held && !pend) return;
+      out.push({ key: (held ? 'hold:' : 'credit:') + o.no, kind: 'link', go: 'payment-terms', goLabel: 'Open Balance decisions', id: o.no, ref: o.no, cls: held ? 'void' : 'quote',
+        tag: held ? 'Overdue balance hold' : 'Credit approval', party: o.customer || 'Customer', amount: o.outstanding,
+        line: 'Balance unpaid' + (o.balanceDueAt ? ' since ' + new Date(o.balanceDueAt).toLocaleDateString('en-PH') : ''),
+        reason: held ? 'Held after the grace period. Extend the due date, grant a credit exception, or cancel and decide the down payment.' : 'Waiting for a second Finance user: ' + (pend.note || ''),
+        g: { score: held ? 95 : 80, tone: held ? 'urgent' : 'soon', text: '' },
+        rows: [R('Order', o.no), R('Customer', o.customer), R('Order total', peso(o.total)), R('Paid so far', peso(o.paidAmount)), R('Balance', peso(o.outstanding)),
+          R('Status', o.status), R('Balance due', o.balanceDueAt ? new Date(o.balanceDueAt).toLocaleString('en-PH') : ''), R('Credit request', pend && pend.note)].filter(Boolean), acts: [] });
+    });
+    return out.sort((a, b) => (b.g ? b.g.score : 50) - (a.g ? a.g.score : 50));   // overdue holds and quote approvals first, most urgent on top
   }
 
   function renderApprovals() {
@@ -294,7 +306,7 @@
       h = head + '<dl class="sa-info">' + it.rows.map((r) => infoRow(r[0], r[1])).join('') + '</dl>' +
         (it.price ? discountBox(it) : '') +
         (it.note ? '<label class="sa-dx-field">Note to the cashier (needed to send back' + (dx.draft ? '; drafted from the rules this price failed, edit it if needed' : '') + ')<textarea id="dxNote" rows="2" maxlength="500">' + esc(dx.note || '') + '</textarea></label>' : '') + err +
-        '<div class="sa-actions">' + (it.kind === 'quote' ? '<button type="button" class="btn-secondary btn-sm" data-sa-go="quotes">Open in Quote Requests</button>' : '') + it.acts.map((a, i) => '<button type="button" class="' + (a.ghost ? 'btn-secondary' : 'btn-primary' + (a.danger ? ' btn-danger-action' : '')) + ' btn-sm" data-dx="pick" data-i="' + i + '">' + esc(a.label) + '</button>').join('') + '</div>';
+        '<div class="sa-actions">' + (it.go ? '<button type="button" class="btn-primary btn-sm" data-sa-go="' + esc(it.go) + '">' + esc(it.goLabel) + '</button>' : '') + (it.kind === 'quote' ?'<button type="button" class="btn-secondary btn-sm" data-sa-go="quotes">Open in Quote Requests</button>' : '') + it.acts.map((a, i) => '<button type="button" class="' + (a.ghost ? 'btn-secondary' : 'btn-primary' + (a.danger ? ' btn-danger-action' : '')) + ' btn-sm" data-dx="pick" data-i="' + i + '">' + esc(a.label) + '</button>').join('') + '</div>';
     }
     $('saModalBody').innerHTML = h;
   }
@@ -343,12 +355,13 @@
   }
   function renderPendingBar(n) {
     const bar = document.getElementById('shPendingBar'); if (!bar) return;
-    const total = n.cancelCount + n.voidReturnCount + n.quoteCount, was = bar.hidden;
+    const total = n.cancelCount + n.voidReturnCount + n.quoteCount + n.balanceCount, was = bar.hidden;
     if (!total) { bar.hidden = true; bar.innerHTML = ''; if (!was && window.TripleESalesHub) window.TripleESalesHub.measure(); return; }
     const parts = [];
     if (n.quoteCount) parts.push(n.quoteCount + ' quote ' + (n.quoteCount === 1 ? 'approval' : 'approvals'));
     if (n.cancelCount) parts.push(n.cancelCount + ' order ' + (n.cancelCount === 1 ? 'cancellation' : 'cancellations'));
     if (n.voidReturnCount) parts.push(n.voidReturnCount + ' void / return');
+    if (n.balanceCount) parts.push(n.balanceCount + ' overdue balance / credit');
     const since = quotesData.filter((q) => q.status === 'pending_approval' && q.proposedAt).map((q) => q.proposedAt);
     const oldest = since.length ? Math.min.apply(null, since) : 0;
     const old = oldest ? ' · oldest waiting ' + waitingText(oldest) : '';
@@ -377,9 +390,10 @@
     badge('orders', cancelCount, 'cancellation request(s) to answer');
     badge('sales', voidReturnCount, 'void / return request(s) to answer');
     badge('quotes', quoteCount, 'quote price / terms approval(s) waiting for you');
-    badge('sales-overview', cancelCount + voidReturnCount + quoteCount, 'decision request(s) to answer');
-    renderPendingBar({ cancelCount, voidReturnCount, quoteCount });
-    const totalAttn = cancelCount + voidReturnCount + quoteCount;
+    const balanceCount = debtOrders.filter((o) => o.status === 'On Hold' || o.creditPending).length;
+    badge('sales-overview', cancelCount + voidReturnCount + quoteCount + balanceCount, 'decision request(s) to answer');
+    renderPendingBar({ cancelCount, voidReturnCount, quoteCount, balanceCount });
+    const totalAttn = cancelCount + voidReturnCount + quoteCount + balanceCount;
     const attn = document.getElementById('salesNavAttention');
     if (attn) {
       if (totalAttn > 0) {
@@ -441,10 +455,12 @@
     if (loading && !force) return;
     loading = true;
     try {
-      const [data, quotes] = await Promise.all([
+      const [data, quotes, debt] = await Promise.all([
         api('/sales'),
-        api('/finance/quotes').catch(() => [])
+        api('/finance/quotes').catch(() => []),
+        api('/finance/receivables').catch(() => null)
       ]);
+      debtOrders = debt && Array.isArray(debt.orders) ? debt.orders : [];
       sales = Array.isArray(data.sales) ? data.sales : [];
       FLOW = data.flow || FLOW;
       quotesData = Array.isArray(quotes) ? quotes : [];
