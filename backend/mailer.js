@@ -36,7 +36,37 @@ function renderTemplate(file, vars, { html = true } = {}) {
 
 const gmailConfigured = () => !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
 const mailgunConfigured = () => !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
-const isConfigured = () => gmailConfigured() || mailgunConfigured();
+const brevoConfigured = () => !!process.env.BREVO_API_KEY;
+const isConfigured = () => brevoConfigured() || gmailConfigured() || mailgunConfigured();
+
+/* Brevo over HTTPS (port 443). Use this on a host that blocks outgoing SMTP (Render's free plan does), where the SMTP route
+   times out. BREVO_API_KEY = an API key (not the SMTP key) that is allowed to send transactional email.
+   MAIL_FROM must be a sender verified in Brevo, e.g. Triple E Metal Products <you@gmail.com>. */
+async function sendViaBrevo({ to, subject, html, text }) {
+  const raw = String(process.env.MAIL_FROM || '').trim();
+  const m = raw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
+  const sender = m ? { name: m[1].trim() || 'Triple E Metal Products', email: m[2].trim() } : { name: 'Triple E Metal Products', email: raw };
+  if (!/^[^@\s]+@[^@\s]+$/.test(sender.email)) return { sent: false, reason: 'MAIL_FROM must be a sender address verified in Brevo' };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': String(process.env.BREVO_API_KEY).trim(), 'Content-Type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ sender, to: [].concat(to).map((email) => ({ email: String(email).trim() })), subject, htmlContent: html || undefined, textContent: text || undefined }),
+      signal: ctrl.signal
+    });
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => '')).slice(0, 300);
+      console.error('[mail] Brevo refused the message (' + res.status + '): ' + detail);
+      return { sent: false, reason: res.status === 401 ? 'Brevo API key was rejected' : 'Brevo could not send the email (' + res.status + ')' };
+    }
+    return { sent: true };
+  } catch (err) {
+    console.error('[mail] could not reach Brevo:', err.message);
+    return { sent: false, reason: 'Could not reach Brevo' };
+  } finally { clearTimeout(timer); }
+}
 
 let gmailTransport = null;
 async function sendViaGmail({ to, subject, html, text }) {
@@ -67,6 +97,7 @@ async function sendViaGmail({ to, subject, html, text }) {
 }
 
 async function sendMail({ to, subject, html, text, tag }) {
+  if (brevoConfigured()) return sendViaBrevo({ to, subject, html, text });
   if (gmailConfigured()) return sendViaGmail({ to, subject, html, text });
   const from = process.env.MAIL_FROM || ('Triple E Metal Products <no-reply@' + (process.env.MAILGUN_DOMAIN || 'localhost') + '>');
   if (!mailgunConfigured()) {
