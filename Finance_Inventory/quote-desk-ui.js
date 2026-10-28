@@ -980,7 +980,7 @@
     province: () => (pqFulfil() !== 'Delivery' ? '' : !el('pqProvince').value ? 'Choose the province.' : pqNoCover),
     city: () => { if (pqFulfil() !== 'Delivery') return ''; const v = pqClean(el('pqCity').value); return !v ? 'Choose the city or municipality.' : PQG.cities.length && !pqCode(PQG.cities, v) ? 'Pick the city / municipality from the list.' : ''; },
     barangay: () => { if (pqFulfil() !== 'Delivery') return ''; const v = pqClean(el('pqBrgy').value); return !v ? 'Choose the barangay.' : PQG.barangays.length && !pqCode(PQG.barangays, v) ? 'Pick the barangay from the list.' : ''; },
-    street: () => { const v = el('pqStreet').value.trim(); return pqFulfil() === 'Delivery' && v && v.length < 5 ? 'Enter the house no. and street, or leave it empty.' : ''; }
+    street: () => { const v = el('pqStreet').value.trim(); if (pqFulfil() !== 'Delivery' || !v) return ''; if (!/^[\p{L}\p{M}\p{N}\s.,#\/'’&()°-]+$/u.test(v)) return "House / unit no. and street can only have letters, numbers, spaces and . , # / - ( ) & '"; return v.length < 5 || !/\p{L}/u.test(v) ? 'Enter the house no. and street, or leave it empty.' : ''; }
   };
   const pqField = (f) => pqErr(f, PQ_CHECK[f]());
   // same coverage as a POS delivery sale (Finance > Delivery rates): the cashier sees it before the request is logged
@@ -1309,3 +1309,9 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', window.initQuoteDesk);
   else window.initQuoteDesk();
 })();
+
+/* house / unit field: drop characters an address cannot have (emoji, < > { } ; = etc.) as they are typed */
+document.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t && ['pqStreet'].includes(t.id)) { const c = t.value.replace(/[^\p{L}\p{M}\p{N}\s.,#\/'’&()°-]/gu, ''); if (c !== t.value) t.value = c; }
+});

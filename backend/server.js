@@ -520,6 +520,7 @@ async function validateShipTo(b) {
   if (recipient && !e.recipient && !/^[\p{L}][\p{L}\p{M}\s.,'’-]*$/u.test(recipient)) e.recipient = 'Recipient name can only have letters, spaces, . , \' and -';
   const addressLine = text(e, 'addressLine', b.addressLine, 'House / unit no., street, block, lot', { min: 5, max: 150 });
   if (addressLine && !e.addressLine && !/[\p{L}]/u.test(addressLine)) e.addressLine = 'Enter the street name, e.g. "Blk 5 Lot 12 Sampaguita St."';
+  if (addressLine && !e.addressLine && !/^[\p{L}\p{M}\p{N}\s.,#\/'’&()°-]+$/u.test(addressLine)) e.addressLine = "House / unit no. and street can only have letters, numbers, spaces and . , # / - ( ) & '";
   const landmark = text(e, 'landmark', b.landmark, 'Landmark', { max: 120, required: false });
   const region = str(b.region);
   if (!region) e.region = 'Choose a region';

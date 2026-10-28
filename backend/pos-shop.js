@@ -254,6 +254,11 @@ module.exports = function mount({ app, pool, auth, wrap, tx, audit, ValidationEr
     if (!requestId) throw bad('requestId', 'Sale request identifier is required. Refresh the POS page.');
     const previous = await pool.query('SELECT * FROM pos_xendit_payments WHERE cashier_id=$1 AND request_id=$2', [req.user.id, requestId]);
     if (previous.rowCount) return res.json(posPaymentJson(previous.rows[0]));
+    // same rule as a cash sale: an online payment cannot even be started without an open cash shift that is still allowed to sell
+    const openShift = await pool.query('SELECT opened_at FROM pos_cash_shifts WHERE cashier_id=$1 AND closed_at IS NULL', [req.user.id]);
+    if (!openShift.rowCount) throw bad('cashShift', 'Open your Cash Shift before taking a payment.');
+    if (app.locals.shiftIsStale && app.locals.shiftIsStale(openShift.rows[0].opened_at)) throw bad('cashShift', 'Your cash shift from an earlier day is still open. Count and close it, then open a new shift, before taking a payment.');
+    if (app.locals.shiftMustClose && app.locals.shiftMustClose(openShift.rows[0].opened_at)) throw bad('cashShift', 'It is time to close your cash shift. Count the drawer and close it first; no more payments can be taken on this shift.');
     const lines = readLines(b.items);
     const cust = readCustomer(b);
     const dlv = await readPosDelivery(pool, b);

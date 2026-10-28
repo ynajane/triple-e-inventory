@@ -619,6 +619,14 @@
 
   .check{ display:flex; gap:10px; align-items:flex-start; font-family:'Inter',sans-serif; font-size:13px; line-height:1.45; letter-spacing:0; text-transform:none; color:var(--text-dim); cursor:pointer; margin-bottom:4px; }
   .check input{ width:17px; height:17px; flex:none; margin-top:2px; padding:0; accent-color:var(--blue-bright); box-shadow:none; }
+  /* checkboxes and radio buttons use the theme colours instead of the browser's white boxes */
+  .check input[type="checkbox"], .fp-choice input[type="radio"]{ -webkit-appearance:none; appearance:none; display:inline-grid; place-content:center; background:rgba(7,17,26,.55); border:1.5px solid var(--steel-light); cursor:pointer; transition:background .15s, border-color .15s; }
+  .check input[type="checkbox"]{ border-radius:5px; }
+  .check input[type="checkbox"]::after{ content:""; width:9px; height:5px; border:solid #08131f; border-width:0 0 2px 2px; transform:rotate(-45deg) translate(1px,-1px); opacity:0; }
+  .fp-choice input[type="radio"]::after{ content:""; width:8px; height:8px; border-radius:50%; background:#08131f; opacity:0; }
+  .check input[type="checkbox"]:checked, .fp-choice input[type="radio"]:checked{ background:linear-gradient(180deg, var(--blue-bright), var(--blue)); border-color:var(--blue-bright); }
+  .check input[type="checkbox"]:checked::after, .fp-choice input[type="radio"]:checked::after{ opacity:1; }
+  .check input[type="checkbox"]:hover, .fp-choice input[type="radio"]:hover{ border-color:var(--blue-bright); }
   .check-wrap{ margin:4px 0 14px; }
   .check-wrap .error-text{ margin:2px 0 8px 27px; }
   .check-wrap.invalid .error-text{ display:block; }
@@ -1082,6 +1090,7 @@
         <div class="center-actions">
           <button type="button" class="submit" id="ceToLogin" hidden>Sign in</button>
         </div>
+        <p class="back-row"><a href="#" class="link" id="ceBack">Back to sign in</a></p>
       </div>
 
       <!-- ===== SIGN-IN CODE (second step of every sign-in: email or text message) ===== -->
@@ -1815,6 +1824,7 @@
     m.classList.add('show'); m.textContent = r && r.data && r.data.message ? r.data.message : 'Could not reach the server. Try again.';
     startResendCooldown(60);
   });
+  $('ceBack').addEventListener('click', (e) => { e.preventDefault(); clearInterval(pollTimer); showScreen('loginScreen'); });
   $('ceToLogin').addEventListener('click', () => { clearInterval(pollTimer); $('email').value = pendingEmail; $('password').value = ''; clearLoginState(); showScreen('loginScreen'); });
 
   /* ---------- sign-in code screen: the second step of EVERY sign-in. The person chooses email or text message. ---------- */

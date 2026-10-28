@@ -173,6 +173,8 @@ function mount({ app, pool, limits } = {}) {
   if (isProd() && (secret.length < 32 || /replace-with|changeme|secret$/i.test(secret)))
     console.warn('[security] JWT_SECRET is short or still a placeholder. Use at least 32 random characters in production.');
   if (isProd() && String(process.env.LOGIN_OTP || '').trim().toLowerCase() === 'off') console.warn('[security] LOGIN_OTP=off in production: sign-in has no second factor. Remove it from .env.');
+  for (const k of ['EMAIL_VERIFICATION', 'PHONE_VERIFICATION'])
+    if (isProd() && String(process.env[k] || '').trim().toLowerCase() === 'off') console.warn('[security] ' + k + '=off in production: new accounts are not verified. Remove it from .env.');
   if (isProd() && !cookieSecure()) console.warn('[security] COOKIE_SECURE is off in production: the session cookie can travel over plain HTTP.');
 
   const general = rateLimiter({ windowMs: 60000, max: (limits && limits.general) || num(process.env.RATE_LIMIT_PER_MIN, 600) });

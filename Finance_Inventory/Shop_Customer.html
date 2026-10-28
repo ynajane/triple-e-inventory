@@ -1590,7 +1590,7 @@ const QCHECK = {                                    // one rule per field; each 
   province: () => qAddr !== 'new' ? '' : !$('qProvince').value ? 'Choose the province.' : qNoCover,
   city: () => { if (qAddr !== 'new') return ''; const v = qClean($('qCity').value); return !v ? 'Choose the city or municipality.' : QG.cities.length && !qCode(QG.cities, v) ? 'Pick the city / municipality from the list.' : ''; },
   barangay: () => { if (qAddr !== 'new') return ''; const v = qClean($('qBrgy').value); return !v ? 'Choose the barangay.' : QG.barangays.length && !qCode(QG.barangays, v) ? 'Pick the barangay from the list.' : ''; },
-  street: () => { const v = $('qStreet').value.trim(); return qAddr === 'new' && v && v.length < 5 ? 'Enter the house no. and street, or leave it empty.' : ''; }
+  street: () => { const v = $('qStreet').value.trim(); if (qAddr !== 'new' || !v) return ''; if (!/^[\p{L}\p{M}\p{N}\s.,#\/'’&()°-]+$/u.test(v)) return "House / unit no. and street can only have letters, numbers, spaces and . , # / - ( ) & '"; return v.length < 5 || !/\p{L}/u.test(v) ? 'Enter the house no. and street, or leave it empty.' : ''; }
 };
 const qField = f => qErr(f, QCHECK[f]());
 /* Name and mobile number come from the signed-in account. They are only filled while the customer has not typed in the box,
@@ -1915,6 +1915,11 @@ $('qDeliveryBox').addEventListener('keydown', e => { if ((e.key === 'Enter' || e
 // check a field when the customer leaves it, and clear its message as soon as they fix it
 $('qRegion').addEventListener('change', qOnRegion); $('qProvince').addEventListener('change', qOnProvince);
 $('qCity').addEventListener('change', qOnCity); $('qBrgy').addEventListener('change', qOnBarangay);
+/* house / unit field: drop characters an address cannot have (emoji, < > { } ; = etc.) as they are typed */
+document.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t && ['qStreet'].includes(t.id)) { const c = t.value.replace(/[^\p{L}\p{M}\p{N}\s.,#\/'’&()°-]/gu, ''); if (c !== t.value) t.value = c; }
+});
 [['qProductName', 'productName'], ['qName', 'contactName'], ['qPhone', 'phone'], ['qCity', 'city'], ['qBrgy', 'barangay'], ['qStreet', 'street']].forEach(([id, f]) => {
   $(id).addEventListener('blur', () => qField(f));
   $(id).addEventListener('input', e => {

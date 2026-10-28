@@ -261,7 +261,7 @@
     need('province', !!s.province, 'Choose a province');
     need('city', !!s.city && (!cities.length || !!codeOf(cities, s.city)), s.city ? 'Pick your city / municipality from the list' : 'Choose a city / municipality');
     need('barangay', !!s.barangay && (!barangays.length || !!codeOf(barangays, s.barangay)), s.barangay ? 'Pick your barangay from the list' : 'Choose a barangay');
-    need('line', s.addressLine.length >= 5 && /\p{L}/u.test(s.addressLine), 'Enter your house / unit no. and street, e.g. Blk 5 Lot 12 Sampaguita St.');
+    need('line', s.addressLine.length >= 5 && /\p{L}/u.test(s.addressLine) && /^[\p{L}\p{M}\p{N}\s.,#\/'’&()°-]+$/u.test(s.addressLine), /^[\p{L}\p{M}\p{N}\s.,#\/'’&()°-]+$/u.test(s.addressLine) ? 'Enter your house / unit no. and street, e.g. Blk 5 Lot 12 Sampaguita St.' : "House / unit no. and street can only have letters, numbers, spaces and . , # / - ( ) & '");
     need('zip', /^\d{4}$/.test(s.zip), 'Enter the 4-digit ZIP code');
     if ((!only || only === 'zip') && !bad.includes('zip') && zipState.ok === false && zipState.key === [s.zip, s.city, s.province, s.barangay].join('|')) { setErr('zip', $('aeErr_zip').textContent || 'ZIP code does not match this city'); bad.push('zip'); }
     if (!only && bad.length) { const el = $('ae_' + bad[0]); if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); } }
@@ -367,3 +367,9 @@
     async reload() { await refresh(); render(); }
   };
 })();
+
+/* house / unit field: drop characters an address cannot have (emoji, < > { } ; = etc.) as they are typed */
+document.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t && ['ae_line'].includes(t.id)) { const c = t.value.replace(/[^\p{L}\p{M}\p{N}\s.,#\/'’&()°-]/gu, ''); if (c !== t.value) t.value = c; }
+});

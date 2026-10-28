@@ -605,6 +605,7 @@ module.exports = function mountShopExtras({ app, pool, auth, wrap, tx, audit, Va
         if (city.length < 2 || city.length > 60 || !/\p{L}/u.test(city)) throw bad('city', 'Enter the city or municipality');
         if (barangay.length < 2 || barangay.length > 60 || !/\p{L}/u.test(barangay)) throw bad('barangay', 'Enter the barangay');
         if (street && (street.length < 5 || street.length > 100)) throw bad('street', 'Enter the house no. and street (5 to 100 characters), or leave it empty');
+        if (street && (!/\p{L}/u.test(street) || !/^[\p{L}\p{M}\p{N}\s.,#\/'’&()°-]+$/u.test(street))) throw bad('street', "House / unit no. and street can only have letters, numbers, spaces and . , # / - ( ) & '");
         area = [street, /^(brgy|barangay)/i.test(barangay) ? barangay : 'Brgy. ' + barangay, city, province].filter(Boolean).join(', ');
       }
       area = area.slice(0, 250);
