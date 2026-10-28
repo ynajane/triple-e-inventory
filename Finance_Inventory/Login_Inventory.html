@@ -830,7 +830,7 @@
           <div class="field" id="emailField">
             <label for="email">Email</label>
             <div class="input-shell">
-              <input type="email" id="email" name="email" placeholder="Enter your email" autocomplete="username" required>
+              <input data-fa-off="1" type="email" id="email" name="email" placeholder="Enter your email" autocomplete="username" required>
             </div>
             <p class="error-text" id="emailError">Enter a valid email address.</p>
           </div>
@@ -838,7 +838,7 @@
           <div class="field" id="passwordField">
             <label for="password">Password</label>
             <div class="input-shell has-toggle">
-              <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
+              <input data-fa-off="1" type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
               <button type="button" class="toggle-vis" id="toggleVis" aria-label="Show password">
                 <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
                 <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a21.6 21.6 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a21.6 21.6 0 0 1-3.17 4.19"/><path d="M14.12 14.12A3 3 0 1 1 9.88 9.88"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
@@ -878,14 +878,14 @@
         <form id="fpStep1" novalidate>
           <div class="field">
             <label for="fpEmail">Email</label>
-            <div class="input-shell"><input type="email" id="fpEmail" maxlength="254" placeholder="Enter your email" autocomplete="username"></div>
+            <div class="input-shell"><input data-fa-off="1" type="email" id="fpEmail" maxlength="254" placeholder="Enter your email" autocomplete="username"></div>
             <p class="error-text" id="fpEmailError">Enter a valid email address.</p>
           </div>
           <div class="field">
             <label>Send the code by</label>
             <div class="fp-choice">
-              <label><input type="radio" name="fpChannel" value="email" checked><span><b>Email</b><small>to the email address of your account</small></span></label>
-              <label><input type="radio" name="fpChannel" value="sms"><span><b>Text message</b><small>to the mobile number registered on your account</small></span></label>
+              <label><input data-fa-off="1" type="radio" name="fpChannel" value="email" checked><span><b>Email</b><small>to the email address of your account</small></span></label>
+              <label><input data-fa-off="1" type="radio" name="fpChannel" value="sms"><span><b>Text message</b><small>to the mobile number registered on your account</small></span></label>
             </div>
           </div>
           <button type="submit" class="submit" id="fpSend">SEND CODE</button>
@@ -895,7 +895,7 @@
           <p class="fp-hint" id="fpSent"></p>
           <div class="field">
             <label for="fpCode">6-digit code</label>
-            <div class="input-shell"><input type="text" id="fpCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456"></div>
+            <div class="input-shell"><input data-fa-off="1" type="text" id="fpCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456"></div>
             <p class="error-text" id="fpCodeError"></p>
           </div>
           <div class="otp-meta" style="margin-bottom:14px">
@@ -904,12 +904,12 @@
           </div>
           <div class="field">
             <label for="fpNew">New password</label>
-            <div class="input-shell has-toggle"><input type="password" id="fpNew" maxlength="72" placeholder="Create a new password" autocomplete="new-password"></div>
+            <div class="input-shell has-toggle"><input data-fa-off="1" type="password" id="fpNew" maxlength="72" placeholder="Create a new password" autocomplete="new-password"></div>
             <p class="error-text" id="fpNewError"></p>
           </div>
           <div class="field">
             <label for="fpConf">Confirm new password</label>
-            <div class="input-shell has-toggle"><input type="password" id="fpConf" maxlength="72" placeholder="Re-enter the new password" autocomplete="new-password"></div>
+            <div class="input-shell has-toggle"><input data-fa-off="1" type="password" id="fpConf" maxlength="72" placeholder="Re-enter the new password" autocomplete="new-password"></div>
             <p class="error-text" id="fpConfError"></p>
           </div>
           <p class="fp-hint" style="margin-bottom:12px">At least 8 characters with an uppercase letter, a lowercase letter, a number and a special character.</p>
@@ -949,25 +949,25 @@
             <div class="field-row">
               <div class="field">
                 <label for="suFirst">First name<span class="req">*</span></label>
-                <div class="input-shell"><input type="text" id="suFirst" maxlength="50" autocomplete="given-name" placeholder="Juan"></div>
+                <div class="input-shell"><input data-fa-off="1" type="text" id="suFirst" maxlength="50" autocomplete="given-name" placeholder="Juan"></div>
                 <p class="error-text" id="e_suFirst"></p>
               </div>
               <div class="field">
                 <label for="suLast">Last name<span class="req">*</span></label>
-                <div class="input-shell"><input type="text" id="suLast" maxlength="50" autocomplete="family-name" placeholder="Dela Cruz"></div>
+                <div class="input-shell"><input data-fa-off="1" type="text" id="suLast" maxlength="50" autocomplete="family-name" placeholder="Dela Cruz"></div>
                 <p class="error-text" id="e_suLast"></p>
               </div>
             </div>
             <div class="field-row">
               <div class="field">
                 <label for="suMiddle">Middle name <span class="opt">(optional)</span></label>
-                <div class="input-shell"><input type="text" id="suMiddle" maxlength="50" autocomplete="additional-name"></div>
+                <div class="input-shell"><input data-fa-off="1" type="text" id="suMiddle" maxlength="50" autocomplete="additional-name"></div>
                 <p class="error-text" id="e_suMiddle"></p>
               </div>
               <div class="field">
                 <label for="suSuffix">Suffix <span class="opt">(optional)</span></label>
                 <div class="input-shell">
-                  <select id="suSuffix" class="placeholder">
+                  <select data-fa-off="1" id="suSuffix" class="placeholder">
                     <option value="">None</option><option>Jr.</option><option>Sr.</option><option>II</option><option>III</option><option>IV</option><option>V</option>
                   </select>
                 </div>
@@ -977,13 +977,13 @@
             <div class="field-row">
               <div class="field">
                 <label for="suBirth">Birthdate<span class="req">*</span></label>
-                <div class="input-shell"><input type="date" id="suBirth" min="1900-01-01" autocomplete="bday"></div>
+                <div class="input-shell"><input data-fa-off="1" type="date" id="suBirth" min="1900-01-01" autocomplete="bday"></div>
                 <p class="error-text" id="e_suBirth"></p>
               </div>
               <div class="field">
                 <label for="suGender">Gender <span class="opt">(optional)</span></label>
                 <div class="input-shell">
-                  <select id="suGender" class="placeholder">
+                  <select data-fa-off="1" id="suGender" class="placeholder">
                     <option value="">Select…</option><option>Male</option><option>Female</option><option>Other</option><option>Prefer Not to Say</option>
                   </select>
                 </div>
@@ -996,13 +996,13 @@
           <div class="step-panel" data-step="2">
             <div class="field">
               <label for="suEmail">Email address<span class="req">*</span></label>
-              <div class="input-shell"><input type="email" id="suEmail" maxlength="254" autocomplete="email" placeholder="you@gmail.com"></div>
+              <div class="input-shell"><input data-fa-off="1" type="email" id="suEmail" maxlength="254" autocomplete="email" placeholder="you@gmail.com"></div>
               <p class="error-text" id="e_suEmail"></p>
               <p class="hint" id="suEmailHint">We&rsquo;ll send a verification link to this address.</p>
             </div>
             <div class="field">
               <label for="suPhone">Mobile number<span class="req">*</span></label>
-              <div class="input-shell"><input type="tel" id="suPhone" maxlength="20" inputmode="tel" autocomplete="tel" placeholder="0917 123 4567"></div>
+              <div class="input-shell"><input data-fa-off="1" type="tel" id="suPhone" maxlength="20" inputmode="tel" autocomplete="tel" placeholder="0917 123 4567"></div>
               <p class="error-text" id="e_suPhone"></p>
               <p class="hint">Philippine mobile number, e.g. 0917 123 4567 or +63 917 123 4567.</p>
             </div>
@@ -1012,14 +1012,14 @@
           <div class="step-panel" data-step="3">
             <div class="field">
               <label for="suPass">Password<span class="req">*</span></label>
-              <div class="input-shell has-toggle"><input type="password" id="suPass" maxlength="72" autocomplete="new-password" placeholder="Create a password"></div>
+              <div class="input-shell has-toggle"><input data-fa-off="1" type="password" id="suPass" maxlength="72" autocomplete="new-password" placeholder="Create a password"></div>
               <div class="strength"><i id="suStrengthBar"></i></div>
               <div class="strength-label" id="suStrengthLabel">Strength: &mdash;</div>
               <p class="error-text" id="e_suPass"></p>
             </div>
             <div class="field">
               <label for="suConfirm">Confirm password<span class="req">*</span></label>
-              <div class="input-shell has-toggle"><input type="password" id="suConfirm" maxlength="72" autocomplete="new-password" placeholder="Re-enter your password"></div>
+              <div class="input-shell has-toggle"><input data-fa-off="1" type="password" id="suConfirm" maxlength="72" autocomplete="new-password" placeholder="Re-enter your password"></div>
               <p class="error-text" id="e_suConfirm"></p>
             </div>
             <div class="checklist-box" id="signupChecklist">
@@ -1031,11 +1031,11 @@
               <div class="checklist-row" data-rule="match"><span class="check-circle"></span>Passwords match</div>
             </div>
             <div class="check-wrap" id="w_suTerms">
-              <label class="check"><input type="checkbox" id="suTerms"><span>I agree to the <a href="#" class="link" data-legal="terms">Terms and Conditions</a>.</span></label>
+              <label class="check"><input data-fa-off="1" type="checkbox" id="suTerms"><span>I agree to the <a href="#" class="link" data-legal="terms">Terms and Conditions</a>.</span></label>
               <p class="error-text" id="e_suTerms"></p>
             </div>
             <div class="check-wrap" id="w_suPrivacy">
-              <label class="check"><input type="checkbox" id="suPrivacy"><span>I acknowledge the <a href="#" class="link" data-legal="privacy">Privacy Policy</a> and how my personal information is used.</span></label>
+              <label class="check"><input data-fa-off="1" type="checkbox" id="suPrivacy"><span>I acknowledge the <a href="#" class="link" data-legal="privacy">Privacy Policy</a> and how my personal information is used.</span></label>
               <p class="error-text" id="e_suPrivacy"></p>
             </div>
           </div>
@@ -1071,12 +1071,12 @@
           <div id="cpBody" hidden>
           <p class="hint">We texted a 6-digit code to <b id="cpPhone">your phone</b>.</p>
           <div class="otp-row" id="otpRow">
-            <input class="otp-digit" inputmode="numeric" autocomplete="one-time-code" maxlength="1" aria-label="Digit 1">
-            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 2">
-            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 3">
-            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 4">
-            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 5">
-            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 6">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" autocomplete="one-time-code" maxlength="1" aria-label="Digit 1">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 2">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 3">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 4">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 5">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 6">
           </div>
           <p class="otp-error" id="otpError" role="alert"></p>
           <div class="otp-meta">
@@ -1111,12 +1111,12 @@
         <div id="loEnter" hidden>
           <p class="hint">We sent a 6-digit code to <b id="loDest">your device</b>. It is only valid for a few minutes.</p>
           <div class="otp-row" id="loOtpRow">
-            <input class="otp-digit" inputmode="numeric" autocomplete="one-time-code" maxlength="1" aria-label="Digit 1">
-            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 2">
-            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 3">
-            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 4">
-            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 5">
-            <input class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 6">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" autocomplete="one-time-code" maxlength="1" aria-label="Digit 1">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 2">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 3">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 4">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 5">
+            <input data-fa-off="1" class="otp-digit" inputmode="numeric" maxlength="1" aria-label="Digit 6">
           </div>
           <p class="otp-error" id="loOtpError" role="alert"></p>
           <div class="otp-meta">
