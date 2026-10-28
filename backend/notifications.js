@@ -421,6 +421,9 @@ module.exports = function ({ app, pool, auth, wrap, TZ }) {
 
   // live push channel (Server-Sent Events): the server only says "something changed", the page then calls /poll
   app.get('/api/notifications/stream', auth(), (req, res) => {
+    // Serverless (Vercel) functions cannot hold a stream open (each one would run until the 300 s timeout and keep
+    // its database connections). 204 tells the browser's EventSource to stop; the page's 10 s polling takes over.
+    if (process.env.VERCEL) return res.status(204).end();
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
     if (res.flushHeaders) res.flushHeaders();

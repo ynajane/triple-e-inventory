@@ -22,12 +22,20 @@ function sslOptions() {
   return { rejectUnauthorized: false };              // encrypted, certificate not checked (set DB_SSL_CA to check it)
 }
 
+// Serverless (Vercel): every running copy of the app opens its own pool, so each one keeps very few connections and
+// lets idle ones go quickly. Supabase's session pooler (port 5432) allows only ~15 clients in total; use port 6543 there.
+const SERVERLESS = !!process.env.VERCEL;
+
 module.exports = function dbConfig() {
-  const ssl = sslOptions(), max = Number(process.env.DB_POOL_MAX) || 10;
+  const ssl = sslOptions();
+  const max = SERVERLESS ? Math.min(Number(process.env.DB_POOL_MAX) || 3, 5) : Number(process.env.DB_POOL_MAX) || 10;
+  const extra = SERVERLESS ? { idleTimeoutMillis: 5000, connectionTimeoutMillis: 10000 } : {};
   if (process.env.DATABASE_URL) {
     let url = process.env.DATABASE_URL.trim();       // a space pasted after "=" in a host's env settings would break the URL
     if (ssl) url = url.replace(/([?&])sslmode=[^&]*(&|$)/i, (m, a, b) => (b ? a : '')).replace(/[?&]$/, '');
-    return { connectionString: url, ssl, max };
+    if (SERVERLESS && /pooler\.supabase\.com:5432\b/.test(url))
+      console.warn('[db] DATABASE_URL uses the Supabase session pooler (port 5432); on Vercel use the transaction pooler (port 6543).');
+    return { connectionString: url, ssl, max, ...extra };
   }
   return {
     host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
@@ -35,6 +43,6 @@ module.exports = function dbConfig() {
     user: process.env.PGUSER || process.env.DB_USER,
     password: process.env.PGPASSWORD || process.env.DB_PASSWORD,
     database: process.env.PGDATABASE || process.env.DB_NAME,
-    ssl, max
+    ssl, max, ...extra
   };
 };
