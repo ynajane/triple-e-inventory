@@ -1841,9 +1841,9 @@ const dir = path.resolve(__dirname, process.env.FRONTEND_DIR || '../Finance_Inve
    sent to the login page (the data routes under /api were already protected; this stops the page itself from opening). */
 const PRIVATE_PAGES = {
   'shop_customer.html': ['customer'],            // online shop: customers only
-  'pos_cashier.html': null,                      // null = any signed-in role (the page itself still checks its own role)
-  'finance_inventory.html': null,
-  'finance_cash_shifts.html': null
+  'pos_cashier.html': ['cashier', 'finance'],    // staff only: a customer who edits the address is sent back to the shop
+  'finance_inventory.html': ['finance'],         // finance only: cashiers and customers are sent to their own page
+  'finance_cash_shifts.html': ['finance']
 };
 const PAGE_HOME = { finance: '/Finance_Inventory.html', cashier: '/POS_Cashier.html', customer: '/Shop_Customer.html' };
 app.use((req, res, next) => {
