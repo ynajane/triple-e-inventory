@@ -1,7 +1,21 @@
 # TRIPLE-E Inventory & POS — Security Documentation
 
 Framework-aligned security package for the BSIT Information Assurance and Security capstone rubric.
-Framework: **OWASP Top 10:2021/2025 + OWASP ASVS (Level 2 chapters V2, V4, V5, V7, V9) + OWASP API Security**, with **ISO/IEC 25010** security characteristics (section 9). Project type: web application + REST API on PostgreSQL.
+Framework: **OWASP Top 10:2021/2025 + OWASP ASVS (Level 2 chapters V2, V4, V5, V7, V9) + OWASP API Security**, with **ISO/IEC 25010** security characteristics (section 9). Project type: web application + REST API on PostgreSQL, hosted in the cloud (Render + Supabase), so the **cloud / infrastructure** guidance (**NIST CSF 2.0** and **CIS Controls v8**) also applies and is mapped in section 5e. OWASP IoT / ETSI EN 303 645 / NIST IoT and OWASP MASVS do not apply: there is no IoT device and no mobile app. (The one phone used as the TextBee text-message gateway is an external service the server calls, not part of the system.)
+
+## Critical Security Requirements checklist
+
+| ✔ | Requirement | Where it is met |
+|---|---|---|
+| ☑ | Security scope and critical assets identified | Section 1 (scope, boundaries, roles, external connections), section 2 (assets and priority) |
+| ☑ | Risk / threat / vulnerability assessment completed | Section 4 (threat model), section 5 (weakness analysis: ASVS, API Top 10), section 6 (risk register with likelihood x impact) |
+| ☑ | Security framework selected based on project type | Web application + API in the cloud: OWASP Top 10, ASVS, API Security, NIST CSF 2.0, CIS Controls v8 (this page, sections 4, 5, 5e) |
+| ☑ | Web/API: OWASP Top 10, ASVS, API Security | Section 4 (Top 10), 5a (ASVS Level 2), 5b (API Security Top 10) |
+| N/A | IoT: OWASP IoT, ETSI EN 303 645, NIST IoT | No IoT devices in the system |
+| N/A | Mobile: OWASP MASVS | No mobile application; the website is responsive, not a native app |
+| ☑ | Network / infrastructure / cloud: NIST CSF, CIS Controls / Benchmarks | Section 5e (NIST CSF 2.0 and CIS Controls v8 mapping) |
+| ☑ | Relevant ISO/IEC 25010 security characteristics considered | Section 9 |
+| ☑ | Security testing and measurable acceptance criteria established | Section 7 (acceptance criteria A1 to A20), section 8 (test plan), Appendix B (manual test log) |
 
 ---
 
@@ -13,7 +27,8 @@ Three-tier architecture:
 |---|---|---|
 | Presentation | Static HTML/CSS/JS in `Finance_Inventory/` (Login, Landing, Shop, POS, Finance, Cash Shifts) | Untrusted (runs in the user's browser) |
 | Application | Node.js/Express API in `backend/` (`server.js` + feature modules, `security.js` hardening layer) | Trusted, enforces all rules |
-| Data | PostgreSQL (`backend/db/*.sql`), connected through `db-config.js` (optional TLS + CA pinning) | Trusted, reachable only from the application tier |
+| Data | PostgreSQL on Supabase (`backend/db/*.sql`), reached only through the connection pooler by `db-config.js` (`DB_SSL=require`, optional CA pinning). Supabase's own web API (Data API) is switched **off** for the project | Trusted, reachable only from the application tier |
+| Hosting | The API and the static front end run as one Docker web service on Render (Singapore), the same region as the database. Render ends HTTPS (TLS) and passes requests on with `TRUST_PROXY=1` | Trusted platform; secrets are set in its environment settings, never in git |
 
 ```
                           INTERNET (untrusted)
@@ -35,17 +50,17 @@ Three-tier architecture:
               |                        |                       |
   ===== TRUST BOUNDARY 2 =====   ===== TRUST BOUNDARY 3 (server-side only, secrets in env) =====
               |                        |                       |
-   DATA TIER: PostgreSQL        Xendit (payments)     Gmail/Mailgun (email), SMS (OTP),
+   DATA TIER: PostgreSQL        Xendit (payments)     Brevo (email, HTTPS API), TextBee (SMS OTP),
    least-privilege DB user,     webhook: shared       address lookups (PSGC/GeoNames)
    TLS (+CA pinning)            secret, constant-time
    backups + restore drill      compare
 ```
 
-Network segmentation: the browser can reach only the proxy/Express (port 80/443); PostgreSQL accepts connections only from the application host (firewall / provider allow-list) and is never exposed to browsers; third-party calls are made only by the server; the front end may load scripts only from `self` and cdnjs.
+Network segmentation: the browser can reach only the proxy/Express (port 80/443); the browser never talks to the database (no database port is reachable from a page, and Supabase's web API is switched off); the database accepts only TLS connections with the application's credentials through Supabase's pooler (an IP allow-list is not used because the Render Free plan has no fixed outgoing address, see residual risk 11); third-party calls are made only by the server; the front end may load scripts only from `self` and cdnjs.
 
 Roles (3): **finance** (admin/finance officer), **cashier**, **customer**. Roles are enforced server-side by `auth('finance'|'cashier'|'customer')`; private HTML pages are also gated server-side (page gate in `server.js`), and the front end is never trusted for authorization.
 
-External connections: Xendit (payments), Gmail/Mailgun (email), SMS provider (OTP), PSGC/GeoNames/Nominatim (address lookup, via `connect-src 'self'` only through the backend), cdnjs (QR library, the only third-party script origin allowed by CSP).
+External connections: Xendit (payments), Brevo (email: verification, invitations, sign-in codes; sent over its HTTPS API because the host blocks SMTP), TextBee (text-message codes, an Android phone used as the gateway), PSGC/GeoNames/Nominatim (address lookup, via `connect-src 'self'` only through the backend), cdnjs (QR library, the only third-party script origin allowed by CSP).
 
 Trust boundaries: browser ↔ API (cookie session + Origin check + CSP), API ↔ database (parameterized SQL, least-privilege DB user `triplee_app`), API ↔ third parties (server-side only, secrets in env).
 
@@ -163,7 +178,8 @@ Status: **Met** = implemented and evidenced, **Partial** = implemented with a st
 | Key rotation | Rotate `JWT_SECRET` every 6 months or on suspected exposure (signs everyone out), rotate DB/mail credentials at the same time, and after any staff departure |
 | Webhook / cron secrets | Compared in constant time (`safeEqual`); cron endpoints return 404 without the key |
 | One-time codes at rest | Stored only as a 64-hex HMAC; a database CHECK constraint refuses anything else, so a plain 6-digit code can never be saved (`db/025`) |
-| Database exposure | Row Level Security on every table and no privileges for Supabase's web roles (`anon`, `authenticated`), so the auto-generated REST API cannot read the data (`db/025`) |
+| Database exposure | Row Level Security on every table and no privileges for Supabase's web roles (`anon`, `authenticated`), so the auto-generated REST API cannot read the data (`db/025`). The Supabase Data API is also switched off for the project, and `db/029_lock_function_access.sql` removes the web roles' right to call any function, so nothing in the public schema can be reached through Supabase's API. The audit run after applying it found 63 of 63 tables with RLS, no table grants for the web roles and 0 functions callable by `anon` |
+| Clipboard | Copy, cut and drag are blocked on every password box and paste is blocked on the confirm box (`password-guard.js`), so a typed password is not copied out of the screen or pasted into the confirm box. A browser-side aid only; the server never returns a password |
 
 ### 5d. Database-tier controls (`backend/db/025_security_hardening.sql`)
 
@@ -179,8 +195,36 @@ Applied once after a backup, as the same user as `DATABASE_URL`: `cd backend && 
 | 6 | `security_purge_expired()`, run by the server every 6 hours: expired codes/tokens deleted after 7 days; the audit log is never purged | Excess personal data kept (RA 10173, R12) | V-1 | test: removes only old rows, executable only by the owner |
 | 7 | Optional `db/optional/readonly-auditor-role.sql`: a read-only role that reads business data and the audit log but never password hashes, e-mail addresses, tokens or codes | Separation of duties, insider misuse | III-1 | test: reads allowed, secrets and writes denied |
 | 8 | `db/026_user_sessions.sql`: one row per signed-in device; per-role device limits (admin 1, cashier 1, customer 3), logout and password change free places, ended sessions purged after 7 days | Shared/stolen account used on many devices, one drawer used from two devices (R1, R4) | III-1 | tests: 4th customer sign-in ends the oldest, admin/cashier limit 1, expired sessions do not count, RLS on the table |
+| 9 | `db/029_lock_function_access.sql`: EXECUTE on every public function revoked from PUBLIC, `anon` and `authenticated`, and the same default for functions created later | The helper and trigger functions callable through Supabase's `/rest/v1/rpc` (R12) | III-2, III-3 | dry run, then applied; audit query reports 0 functions callable by `anon` |
 
 How to check it was applied (Appendix B): `SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND NOT c.relrowsecurity;` returns 0, and `SELECT security_purge_expired();` returns a JSON row count.
+
+### 5e. Cloud / infrastructure guidance: NIST CSF 2.0 and CIS Controls v8 (Rubric II-4, III-3)
+
+Each row says what the system does today and whether it is fully met, partly met, or open.
+
+| NIST CSF 2.0 function | What TRIPLE-E does | Status |
+|---|---|---|
+| **Govern (GV)** | Roles and duties defined (finance officer reviews the audit log weekly, owner receives alerts); risk register with owners (section 6); key rotation rule every 6 months or on exposure (5c); this document is the policy of record | Met |
+| **Identify (ID)** | Asset list and priority (section 2); risk scoring (section 6); `npm audit` as a release gate; the external services are listed with what each can reach (section 1) | Met |
+| **Protect (PR)** | Identity and access: roles checked on the server, one-time code on every sign-in, verified email and mobile, device limits, invitation-only staff accounts. Data security: TLS to the browser and to the database, bcrypt, hashed codes and tokens, row level security, secrets only in the host's environment settings. Platform security: security headers and nonce CSP, Supabase Data API off, functions locked (`db/029`), one Docker image built from the repository | Met |
+| **Detect (DE)** | Append-only audit log with IP and browser; email alerts on repeated failed sign-ins and on a locked finance account (`security-alerts.js`); startup warnings for unsafe production settings (`security.js`) | Met (single instance, see residual risk 3) |
+| **Respond (RS)** | Incident runbook (section 12); account lock-out and unlock link; disabling an account; rotating `JWT_SECRET` signs everyone out | Met |
+| **Recover (RC)** | `backup.sh` and `restore-test.sh` drill with a recorded RTO; the host redeploys from the repository in minutes | Met |
+
+| CIS Controls v8 | Safeguard in TRIPLE-E | Status |
+|---|---|---|
+| 1, 2 Inventory of assets and software | Asset table (section 2); dependencies pinned in `package-lock.json` | Met |
+| 3 Data protection | Data classified by priority; TLS in transit; bcrypt and HMAC at rest; the provider encrypts the database disk (confirm in the Supabase dashboard); retention and purge (`security_purge_expired()`) | Met |
+| 4 Secure configuration | Hardened headers and cookies; `DB_SSL=require`; Supabase Data API off; row level security on all tables; unsafe production settings warned at start-up | Met |
+| 5, 6 Account and access control management | One account per person; staff only by single-use invitation; accounts disabled, not deleted; least privilege by role; second factor on every sign-in; per-role device limits | Met |
+| 7 Continuous vulnerability management | `npm audit` before each release; security tests re-run before release | Met (manual schedule) |
+| 8 Audit log management | Append-only `audit_log`, UPDATE / DELETE / TRUNCATE refused by trigger; weekly review | Met |
+| 11 Data recovery | Checksummed backups and a restore drill | Met |
+| 12, 13 Network infrastructure and monitoring | HTTPS ends at the host; the browser reaches only the web service; database reachable only over TLS with credentials; alerts by email. **No IP allow-list for the database** and no network-level monitoring | Partly met (residual risk 11) |
+| 16 Application software security | OWASP Top 10, ASVS and API Security mappings; nonce CSP; parameterised SQL; automated and manual tests (sections 7 and 8) | Met |
+| 17 Incident response | Runbook with roles, containment, notification within 72 hours | Met |
+| 14 Security awareness training | Not part of the software; the owner briefs staff on phishing and password handling | Out of scope |
 
 ## 6. Risk register (Rubric II-3, III-5)
 
@@ -200,6 +244,10 @@ Likelihood (L) and Impact (I) are rated 1–5; score = L × I; ≥15 High, 8–1
 | R10 | Vulnerable dependency | 3 | 4 | 12 Medium | `npm audit` gate before release; 0 vulnerabilities after upgrade | Low |
 | R11 | Undetected attack | 3 | 3 | 9 Medium | Detective control: `security-alerts.js` emails the owner on 10+ failed sign-ins per IP or account in 10 min and on any finance-account lock-out; test: `security-alerts.test.js` | Low |
 | R12 | PII disclosure (RA 10173) | 2 | 5 | 10 Medium | Role-restricted access, Privacy Policy and consent at sign-up, `no-store` on API, Row Level Security + no web-role access on every table, expired codes purged automatically | Low |
+| R13 | An account is used before its owner is proven (fake or mistyped email or phone) | 3 | 4 | 12 Medium | Sign-in refuses a correct password until BOTH the email (link) and the mobile number (code) are verified; staff accounts exist only through a single-use, hashed, 72-hour invitation link and the role comes from the invitation, never from the form; production start-up warns if `EMAIL_VERIFICATION` or `PHONE_VERIFICATION` is off (`auth-signup.js`, `server.js`, `security.js`) | Low |
+| R14 | A cashier takes money with no drawer accountability, or a shift is left open overnight | 3 | 4 | 12 Medium | A sale or an online payment needs the cashier's own open cash shift; a shift from an earlier day, or one inside the end-of-day window, must be counted and closed first; with `ENFORCE_STORE_HOURS=true` shifts open only in store hours (`cash-shifts.js`, `pos-shop.js`) | Low |
+| R15 | Unsafe or junk characters in free-text address fields | 3 | 3 | 9 Medium | The house / unit field accepts only letters, numbers, spaces and `. , # / - ( ) & '` and needs a letter; unwanted characters are dropped as typed and the same rule is checked again on the server (`shop-address.js`, `pos-delivery.js`, `server.js`, `shop-extras.js`) | Low |
+| R16 | Working through the browser's developer tools (unhiding a button, editing a script, opening another role's page address) | 4 | 4 | 16 High | The browser is never trusted: every `/api` route needs a signed-in user with the right role (403 before any query), private pages are role-gated on the server (a customer who types the finance page address is sent back to the shop), no secrets are in the files the browser downloads | Low |
 
 ## 7. Security acceptance criteria (Rubric IV-2)
 
@@ -207,7 +255,7 @@ A release is acceptable only when all are true:
 
 | # | Criterion | Measure | How verified |
 |---|---|---|---|
-| A1 | Security test suite passes | 75/75 tests (security 13, rbac 15, alerts 7, sign-in code 13, database 18, numeric 3, recovery 4, production configuration 2) | `cd backend && npm run test:security` |
+| A1 | Security test suite passes | Every suite in `npm run test:security` passes with 0 failures: security headers 13, access control 15, alerts 7, sign-in code 13, production guard 5, page gate 6, database hardening, numeric inputs, production configuration. The backup/restore drills (`recovery.test.js`, 4 tests) need a POSIX shell: they are skipped on Windows and run on Linux, WSL or Docker. Record the date and the total of your own run here: ______ | `cd backend && npm run test:security` |
 | A13 | Strict numeric inputs | Reject booleans, arrays, objects and non-decimal text before coercion; preserve valid decimal inputs | `numeric-validation.test.js`, `payment-terms.test.js` |
 | A14 | Transaction integrity and recovery | Concurrent stock/payment/production requests, failed audit writes and a real dump/restore preserve balances and required row counts | `npm run test:data-integrity` (requires local PostgreSQL tools) |
 | A15 | Production configuration | No unsafe configuration findings; deployment/network/provider evidence still required | `npm run check:production`, then manual deployment checks in DATA_PROCESS.md |
@@ -221,6 +269,11 @@ A release is acceptable only when all are true:
 | A6 | Session cookie | httpOnly + sameSite; Secure when `NODE_ENV=production` | cookie test |
 | A7 | Protected routes | Wrong role receives 403 before any database query; 0 unprotected `/api` routes outside the reviewed public list | `rbac.test.js` (role matrix + route audit over 254 routes) |
 | A10 | Alerting works | Threshold, window, cooldown and administrator lock-out alerts fire as specified | `security-alerts.test.js` |
+| A17 | Verification gate | A correct password for an account with an unverified email or mobile number gets 403 `VERIFICATION_REQUIRED` and no session; staff cannot be created from the public sign-up | manual log (Appendix B) and code review of `server.js` login route and `auth-signup.js` |
+| A18 | Nothing reachable through Supabase's API | Data API off; 0 public tables without RLS; 0 table grants and 0 callable functions for `anon` / `authenticated` | Appendix B queries |
+| A19 | Role-gated pages | A customer opening the finance or cashier page address is redirected; a cashier opening the finance page is redirected | manual log (Appendix B) |
+| A20 | Cash-shift rule | No sale or payment without the cashier's open shift; none on a shift that must be closed | manual log (Appendix B), `cash-shift-gate.test.js`, `cash-shift-force-close.test.js` |
+| A21 | Unsafe production settings stop the server | In production the server refuses to start with a placeholder or short `JWT_SECRET` or with no database address (`productionProblems()` in `security.js`, called first thing in `server.js`); the page-role table lists roles for every private page | `production-guard.test.js` (5 tests), `page-gate.test.js` (6 tests), both part of `npm run test:security` |
 | A8 | Recovery | Restore drill completes and RTO is recorded | `scripts/restore-test.sh` log |
 | A9 | Secrets | `JWT_SECRET` ≥ 32 random chars; `.env` untracked | startup warning, `git ls-files backend/.env` returns nothing |
 
@@ -286,7 +339,7 @@ Related characteristics: **Reliability** (pool error handling, backups, restore 
 
 ## 13. Control traceability summary (Rubric VI-1)
 
-Risk → control → test → acceptance criterion: R1 → lockout/limiter → security.test (rate limit) + manual lockout → A1/A7; R2 → parameterized SQL → manual injection test → A3/A7; R3 → nonce CSP → CSP test → A2/A3; R4 → `auth()` → role tests → A7; R5 → Origin guard → CSRF test → A1; R6 → env secrets → startup check → A9; R7 → trigger → trigger test → A1; R8 → backup scripts → restore drill → A8; R10 → npm audit → A5; R11 → security-alerts → alerts test → A10.
+Risk → control → test → acceptance criterion: R1 → lockout/limiter → security.test (rate limit) + manual lockout → A1/A7; R2 → parameterized SQL → manual injection test → A3/A7; R3 → nonce CSP → CSP test → A2/A3; R4 → `auth()` → role tests → A7; R5 → Origin guard → CSRF test → A1; R6 → env secrets → startup check → A9; R7 → trigger → trigger test → A1; R8 → backup scripts → restore drill → A8; R10 → npm audit → A5; R11 → security-alerts → alerts test → A10; R13 → verification gate and invitation-only staff → manual test → A17; R14 → cash-shift gate → `cash-shift-gate.test.js`, `cash-shift-force-close.test.js` → A20; R15 → address character rule (browser and server) → manual test; R16 → server-side role checks and page gate → `rbac.test.js` + manual test → A7/A19.
 
 ## 14. Known residual risks (accepted)
 
@@ -296,7 +349,11 @@ Risk → control → test → acceptance criterion: R1 → lockout/limiter → s
 4. The sign-in code depends on your email service (Gmail/Mailgun) and TextBee phone gateway being up; the user can pick the other method if one fails. Keep `LOGIN_OTP` unset (on) in production.
 5. The application's own database user is the table owner, because the server creates and alters tables at start-up. It therefore cannot be limited to INSERT/SELECT/UPDATE/DELETE yet; splitting it into a migration user and a runtime user requires moving those start-up migrations out of the server first. Mitigation: Row Level Security and the revoked web roles, the append-only audit log, the optional read-only auditor role, and a strong database password in `.env`.
 6. A database superuser can still disable the audit trigger; keep superuser credentials out of the application and review the Supabase dashboard access list.
-7. After deploying the nonce CSP and the sign-in code screen, browser-test every page once (login, sign-up, shop, POS checkout, finance reports, cash shifts): the automated checks cannot exercise the UI.
+7. Controls that run in the browser (blocked copy and paste on password boxes, hidden buttons, field filters) can be bypassed with developer tools. They are conveniences only; the server repeats every rule and decides every request.
+8. The host (Render, Free plan) blocks outgoing SMTP and sleeps an idle service, so email goes through Brevo's HTTPS API and the first request after a pause can take about 30 seconds. Use a paid instance for production.
+9. Keys that were pasted into chat or screenshots while building the system (database password, TextBee, Brevo, Xendit, `JWT_SECRET`) must be rotated before launch and kept only in the host's environment settings.
+10. After deploying the nonce CSP and the sign-in code screen, browser-test every page once (login, sign-up, shop, POS checkout, finance reports, cash shifts): the automated checks cannot exercise the UI.
+11. The database is reachable over the internet through Supabase's pooler, protected by TLS and the application's credentials, not by an IP allow-list (the Render Free plan has no fixed outgoing address). Mitigation: a long random database password kept only in the host's settings, rotated on exposure; row level security and revoked web roles; login attempts to the database are visible in the Supabase logs. For production, use a paid Render instance with a fixed outbound address and turn on Supabase Network Restrictions.
 
 ---
 
@@ -333,6 +390,19 @@ grep -rEn "[ '\"]on(click|error|change|submit|load)=|javascript:|eval\(" ../Fina
 | | Log out on one customer device, sign in on a new one → nobody else is signed out | | |
 | | `node scripts/apply-migration.js db/026_user_sessions.sql --dry-run`, then without `--dry-run`: no error | | |
 | | `SELECT security_purge_expired();` returns a JSON row count | | |
+| | Supabase dashboard: Data API is switched off; the tables show no globe icon | | |
+| | `node scripts/apply-migration.js db/029_lock_function_access.sql --dry-run`, then without `--dry-run`: no error; functions callable by `anon` = 0 | | |
+| | New customer, email not yet verified: right password → "Please verify your email address"; no page opens | | |
+| | Email verified, mobile not yet verified: right password → "Please verify your mobile number" | | |
+| | Sign-up form with `role=finance` in the request → "Staff accounts are created by invitation only" | | |
+| | Invitation link used twice, and after 72 hours → refused | | |
+| | Signed in as a customer, open `/Finance_Inventory.html`, `/POS_Cashier.html`, `/Finance_Cash_Shifts.html` → redirected to the shop | | |
+| | Signed in as a customer, remove a hidden class in developer tools and click a finance action → 403 | | |
+| | Cashier without an open shift tries a cash sale and an online payment → both refused | | |
+| | Cashier with a shift from yesterday, or after the end-of-day time → must count and close before selling | | |
+| | House / unit field: `Blk 5 😀 St` and `<b>` are rejected, `Unit 5, Mabini St.` is accepted (shop, address book, POS delivery, quote forms) | | |
+| | Copy and cut on a password box do nothing; paste into "Confirm password" does nothing | | |
+| | Change password: needs the current password and the code sent to the email or phone; other devices are signed out | | |
 
 ### Data validation and release workflow
 

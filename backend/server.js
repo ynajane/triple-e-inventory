@@ -1,4 +1,5 @@
 require('dotenv').config();
+{ const bad = require('./security').productionProblems(process.env); if (bad.length) { console.error('[startup] Refusing to start in production:\n - ' + bad.join('\n - ')); process.exit(1); } }
 const path = require('path');
 const express = require('express');
 const cookieParser = require('cookie-parser');

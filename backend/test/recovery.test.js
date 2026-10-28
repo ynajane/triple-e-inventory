@@ -1,4 +1,9 @@
-const test = require('node:test');
+const base = require('node:test');
+// These drills run the real backup.sh / restore-test.sh in bash with stub pg_dump/psql, which needs POSIX paths and file modes.
+// On Windows they cannot run (bash resolves to the WSL launcher); run them on Linux, in WSL, or in Docker (see SECURITY.md, A8).
+const test = process.platform === 'win32'
+  ? (name, fn) => base(name, { skip: 'needs a POSIX shell: run on Linux, WSL or Docker' }, fn)
+  : base;
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');

@@ -163,6 +163,22 @@ async function ensureAuditAppendOnly(pool, tries = 3) {
   }
 }
 
+/* ---------- production start-up guard ---------- */
+// In production the server refuses to start when it could only run unsafely or not at all: a placeholder or short JWT secret lets anyone
+// forge a session, and a missing database address makes it fall back to localhost (every request would then fail with a server error).
+// Pure function: returns the list of problems, empty when the settings are acceptable. Development and tests are never blocked.
+function productionProblems(env) {
+  if (String(env.NODE_ENV || '').trim() !== 'production') return [];
+  const problems = [];
+  const secret = String(env.JWT_SECRET || '');
+  if (secret.length < 32 || /replace-with|changeme|secret$/i.test(secret)) problems.push('JWT_SECRET must be at least 32 random characters and not a placeholder.');
+  const dbUrl = String(env.DATABASE_URL || '').trim();
+  const dbParts = (env.PGHOST || env.DB_HOST) && (env.PGUSER || env.DB_USER) && (env.PGDATABASE || env.DB_NAME);
+  if (!dbUrl && !dbParts) problems.push('The database is not configured: set DATABASE_URL (or the DB_HOST, DB_USER, DB_PASSWORD and DB_NAME settings) in the hosting environment settings.');
+  if (dbUrl && !/^postgres(ql)?:\/\//i.test(dbUrl)) problems.push('DATABASE_URL must start with postgresql://');
+  return problems;
+}
+
 /* ---------- mount ---------- */
 function mount({ app, pool, limits } = {}) {
   app.disable('x-powered-by');
@@ -203,4 +219,4 @@ function mount({ app, pool, limits } = {}) {
   if (pool) ensureAuditAppendOnly(pool).catch(() => {});
 }
 
-module.exports = { mount, cookieSecure, securityHeaders, originGuard, sessionGuard, rateLimiter, buildCSP, safeEqual, AUDIT_SQL };
+module.exports = { productionProblems, mount, cookieSecure, securityHeaders, originGuard, sessionGuard, rateLimiter, buildCSP, safeEqual, AUDIT_SQL };
