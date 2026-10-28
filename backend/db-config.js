@@ -25,7 +25,7 @@ function sslOptions() {
 module.exports = function dbConfig() {
   const ssl = sslOptions(), max = Number(process.env.DB_POOL_MAX) || 10;
   if (process.env.DATABASE_URL) {
-    let url = process.env.DATABASE_URL;
+    let url = process.env.DATABASE_URL.trim();       // a space pasted after "=" in a host's env settings would break the URL
     if (ssl) url = url.replace(/([?&])sslmode=[^&]*(&|$)/i, (m, a, b) => (b ? a : '')).replace(/[?&]$/, '');
     return { connectionString: url, ssl, max };
   }
